@@ -78,11 +78,14 @@
     <ClInclude Include="src\IVolumetricVideo.h">
       <Filter>Header Files\VolumetricVideo</Filter>
     </ClInclude>
-    <ClInclude Include="src\FFMPEGTools.h">
-      <Filter>Header Files\AV</Filter>
-    </ClInclude>
     <ClInclude Include="src\Logger.h">
       <Filter>Header Files\Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="src\IDecoder.h">
+      <Filter>Header Files\Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Stream.h">
+      <Filter>Header Files\AV</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -113,11 +116,14 @@
     <ClCompile Include="src\IVolumetricVideo.cpp">
       <Filter>Source Files\VolumetricVideo</Filter>
     </ClCompile>
-    <ClCompile Include="src\FFMPEGTools.cpp">
-      <Filter>Source Files\AV</Filter>
-    </ClCompile>
     <ClCompile Include="src\Logger.cpp">
       <Filter>Source Files\Utils</Filter>
+    </ClCompile>
+    <ClCompile Include="src\IDecoder.cpp">
+      <Filter>Source Files\Utils</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Stream.cpp">
+      <Filter>Source Files\AV</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

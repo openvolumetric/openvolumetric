@@ -24,6 +24,7 @@
     <ProjectGuid>{67ddbaef-fbab-4933-a1a9-f65b40c19534}</ProjectGuid>
     <RootNamespace>NativePlugin</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>VolumetricVideoNativePlugin</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -164,13 +165,14 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="src\AVDecoderFFMPEG.h" />
-    <ClInclude Include="src\FFMPEGTools.h" />
     <ClInclude Include="src\GeometryDecoderDraco.h" />
     <ClInclude Include="src\IAVDecoder.h" />
+    <ClInclude Include="src\IDecoder.h" />
     <ClInclude Include="src\IGeometryDecoder.h" />
     <ClInclude Include="src\ITexture.h" />
     <ClInclude Include="src\IVolumetricVideo.h" />
     <ClInclude Include="src\Logger.h" />
+    <ClInclude Include="src\Stream.h" />
     <ClInclude Include="src\TextureD3D11.h" />
     <ClInclude Include="src\unity-volumetric-video-api.h" />
     <ClInclude Include="src\Unity\IUnityGraphics.h" />
@@ -180,13 +182,14 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\AVDecoderFFMPEG.cpp" />
-    <ClCompile Include="src\FFMPEGTools.cpp" />
     <ClCompile Include="src\GeometryDecoderDraco.cpp" />
     <ClCompile Include="src\IAVDecoder.cpp" />
+    <ClCompile Include="src\IDecoder.cpp" />
     <ClCompile Include="src\IGeometryDecoder.cpp" />
     <ClCompile Include="src\ITexture.cpp" />
     <ClCompile Include="src\IVolumetricVideo.cpp" />
     <ClCompile Include="src\Logger.cpp" />
+    <ClCompile Include="src\Stream.cpp" />
     <ClCompile Include="src\TextureD3D11.cpp" />
     <ClCompile Include="src\unity-volumetric-video-api.cpp" />
     <ClCompile Include="src\VolumetricVideoD3D11.cpp" />

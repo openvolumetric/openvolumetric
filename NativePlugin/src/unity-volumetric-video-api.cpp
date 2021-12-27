@@ -16,17 +16,21 @@
 //
 #include <VolumetricVideoD3D11.h>
 #include <IVolumetricVideo.h>
-#include <FFMPEGTools.h>
 #include <Logger.h>
 
+
 // --------------------------------------------------------------------------
-// Global variables for plugin
+// Unity functions
+// --------------------------------------------------------------------------
+
+// --------------------------------------------------------------------------
+// Global variables for managing plugin instances
+//
 std::list<IVolumetricVideo*> vv_instances;
 typedef std::list<IVolumetricVideo*>::iterator VolumetricVideo_iter;
 
-
-
 // --------------------------------------------------------------------------
+// Function to manage the instances
 //
 bool get_vv_instance(int id, VolumetricVideo_iter* iter)
 {
@@ -45,22 +49,27 @@ bool get_vv_instance(int id, VolumetricVideo_iter* iter)
 
 
 // --------------------------------------------------------------------------
-// SetTimeFromUnity, an example function we export which is called by one of the scripts.
-static float g_Time;
-extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API SetTimeFromUnity(float t) { g_Time = t; }
-
+// UnitySetInterface Functions
+// --------------------------------------------------------------------------
 
 
 // --------------------------------------------------------------------------
-// UnitySetInterfaces
-
+//
 //
 static void UNITY_INTERFACE_API OnGraphicsDeviceEvent(UnityGfxDeviceEventType eventType);
 
+// --------------------------------------------------------------------------
+//
 //
 static IUnityInterfaces* s_UnityInterfaces = NULL;
+
+// --------------------------------------------------------------------------
+//
+//
 static IUnityGraphics* s_Graphics = NULL;
 
+// --------------------------------------------------------------------------
+//
 //
 extern "C" void	UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API UnityPluginLoad(IUnityInterfaces * unityInterfaces)
 {
@@ -72,6 +81,8 @@ extern "C" void	UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API UnityPluginLoad(IUnit
 	OnGraphicsDeviceEvent(kUnityGfxDeviceEventInitialize);
 }
 
+// --------------------------------------------------------------------------
+//
 //
 extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API UnityPluginUnload()
 {
@@ -80,11 +91,17 @@ extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API UnityPluginUnload()
 
 // --------------------------------------------------------------------------
 // GraphicsDeviceEvent
+//
 static UnityGfxRenderer s_DeviceType = kUnityGfxRendererNull;
 
+// --------------------------------------------------------------------------
+//
 //
 static ID3D11Device* g_D3D11Device = NULL;
 
+
+// --------------------------------------------------------------------------
+//
 //
 static void DoEventGraphicsDeviceD3D11(UnityGfxDeviceEventType eventType)
 {
@@ -95,6 +112,8 @@ static void DoEventGraphicsDeviceD3D11(UnityGfxDeviceEventType eventType)
 	}
 }
 
+// --------------------------------------------------------------------------
+//
 //
 static void UNITY_INTERFACE_API OnGraphicsDeviceEvent(UnityGfxDeviceEventType eventType)
 {
@@ -138,6 +157,7 @@ static void UNITY_INTERFACE_API OnGraphicsDeviceEvent(UnityGfxDeviceEventType ev
 // This will be called for GL.IssuePluginEvent script calls; eventID will
 // be the integer passed to IssuePluginEvent. In this example, we just ignore
 // that value.
+//
 static void UNITY_INTERFACE_API OnRenderEvent(int eventID)
 {
 	// Unknown / unsupported graphics device type? Do nothing
@@ -148,21 +168,34 @@ static void UNITY_INTERFACE_API OnRenderEvent(int eventID)
 	VolumetricVideo_iter iter;
 	if (!get_vv_instance(eventID, &iter))
 	{
-		(*iter)->render();
+		LOG("volumetricvideo_quit - cant find instance id: %d", eventID);
+		return;
 	}
+
+	//
+	(*iter)->render();
 }
 
 
 
 // --------------------------------------------------------------------------
 // GetRenderEventFunc, an example function we export which is used to get a rendering event callback function.
+//
 extern "C" UnityRenderingEvent UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API GetRenderEventFunc()
 {
 	return OnRenderEvent;
 }
 
+
+// --------------------------------------------------------------------------
+// General functions
+// --------------------------------------------------------------------------
+
+
+
 // --------------------------------------------------------------------------
 // Open external console to see c++ debug  info
+//
 __declspec(dllexport) void	volumetricvideo_open_external_console()
 {
 	Logger::instance()->open_external_console();
@@ -170,6 +203,7 @@ __declspec(dllexport) void	volumetricvideo_open_external_console()
 
 // --------------------------------------------------------------------------
 // Close external console to see c++ debug  info
+//
 __declspec(dllexport) void	volumetricvideo_close_external_console()
 {
 	Logger::instance()->close_external_console();
@@ -177,7 +211,8 @@ __declspec(dllexport) void	volumetricvideo_close_external_console()
 
 
 // --------------------------------------------------------------------------
-// Init
+// volumetricvideo_init - init plugin - returns instance id to access other functions
+//
 __declspec(dllexport) int volumetricvideo_init(int& ID)
 {
 	LOG("volumetricvideo_init - start");
@@ -192,12 +227,6 @@ __declspec(dllexport) int volumetricvideo_init(int& ID)
 	
 	// Report Instance ID
 	LOG("volumetricvideo_init - id: %d", ID);
-
-	// If this is the first instance then increment
-	if (ID == 0)
-	{
-		ffmpegtools::register_ffmpeg();
-	}
 
 	//Create Volumetric Video Decoder
 	IVolumetricVideo* vv = new VolumetricVideoD3D11(ID);
@@ -214,6 +243,7 @@ __declspec(dllexport) int volumetricvideo_init(int& ID)
 
 // --------------------------------------------------------------------------
 // Quit application
+//
 __declspec(dllexport) void	volumetricvideo_quit(int ID)
 {
 	LOG("volumetricvideo_quit - id: %d",ID);
@@ -222,6 +252,7 @@ __declspec(dllexport) void	volumetricvideo_quit(int ID)
 	VolumetricVideo_iter iter;
 	if (!get_vv_instance(ID, &iter))
 	{
+		LOG("volumetricvideo_quit - cant find instance id: %d", ID);
 		return;
 	}
 
@@ -232,38 +263,187 @@ __declspec(dllexport) void	volumetricvideo_quit(int ID)
 
 
 // --------------------------------------------------------------------------
-// Frame Index to display
-__declspec(dllexport) int	SetFrame(int ID, int frame_index)
+// Decoder functions
+// --------------------------------------------------------------------------
+
+// --------------------------------------------------------------------------
+// Start decoder 
+//
+__declspec(dllexport) int	volumetricvideo_start_decoding(int ID)
 {
+	LOG("volumetricvideo_start_decoding - id: %d", ID);
+
 	//
 	VolumetricVideo_iter iter;
 	if (!get_vv_instance(ID, &iter))
 	{
-		return (*iter)->set_frame(frame_index);
+		LOG("volumetricvideo_start_decoding - cant find instance id: %d", ID);
+		return -1;
+	}
+
+	// Start decoding
+	return (*iter)->start();
+}
+
+// --------------------------------------------------------------------------
+// Stop decoder 
+//
+__declspec(dllexport) int	volumetricvideo_stop_decoding(int ID)
+{
+	LOG("volumetricvideo_stop_decoding - id: %d", ID);
+
+	//
+	VolumetricVideo_iter iter;
+	if (!get_vv_instance(ID, &iter))
+	{
+		LOG("volumetricvideo_stop_decoding - cant find instance id: %d", ID);
+		return -1;
+	}
+
+	// Stop decoding
+	return (*iter)->stop();
+
+}
+
+
+// --------------------------------------------------------------------------
+// Set Frame to display
+//
+__declspec(dllexport) int	volumetricvideo_update(int ID)
+{
+	LOG("volumetricvideo_update - id: %d ", ID);
+
+	//
+	VolumetricVideo_iter iter;
+	if (!get_vv_instance(ID, &iter))
+	{
+		LOG("volumetricvideo_update - cant find instance id: %d", ID);
+		return -1;
+	}
+
+	//Render
+	return (*iter)->render();
+}
+
+
+// --------------------------------------------------------------------------
+// Set Frame to display
+//
+__declspec(dllexport) int	volumetricvideo_seek(int ID, double time)
+{
+	LOG("volumetricvideo_seek - id: %d - time: %d", ID, time);
+
+	//
+	VolumetricVideo_iter iter;
+	if (!get_vv_instance(ID, &iter))
+	{
+		LOG("volumetricvideo_seek - cant find instance id: %d", ID);
+		return -1;
 	}
 
 	//
-	return 0;
+	return (*iter)->seek(time);
 }
 
 
 
 // --------------------------------------------------------------------------
-// Load video function
-__declspec(dllexport) int	LoadVideo(int ID, const char* filename, int& fps, int& width, int& height)
-{
-
-
-	return 0;
-}
-
+// Video functions
+// --------------------------------------------------------------------------
 
 
 // --------------------------------------------------------------------------
-// Set texture Pointer
-__declspec(dllexport) int	SetTexturePointer(int ID, void*& yPointer, void*& uPointer, void*& vPointer)
+// Load Video Resources
+//
+__declspec(dllexport) int	volumetricvideo_load_video(int ID, const char* filepath)
 {
+	LOG("volumetricvideo_load_video - id: %d", ID);
 
+	// Get Instance
+	VolumetricVideo_iter iter;
+	if (!get_vv_instance(ID, &iter))
+	{
+		LOG("volumetricvideo_load_video - cant find instance id: %d", ID);
+		return -1;
+	}
 
-	return 0;
+	// Set Video
+	if (!(*iter)->get_avdecoder_ptr()->init(filepath) == -1)
+	{
+		// Error loading video
+		return -1;
+	}
+
+	//
+	return 1;
 }
+
+
+// --------------------------------------------------------------------------
+// Load Video Resources
+//
+__declspec(dllexport) int	volumetricvideo_get_video_details(int ID, int& width, int& height, double& fps, double& duration)
+{
+	LOG("volumetricvideo_get_video_details - id: %d", ID);
+
+	// Get Instance
+	VolumetricVideo_iter iter;
+	if (!get_vv_instance(ID, &iter))
+	{
+		LOG("volumetricvideo_get_video_details - cant find instance id: %d", ID);
+		return -1;
+	}
+
+	// Get Video properties
+	width		= (*iter)->get_avdecoder_ptr()->get_video_info().width;
+	height		= (*iter)->get_avdecoder_ptr()->get_video_info().height;
+	fps			= (*iter)->get_avdecoder_ptr()->get_video_info().fps;
+	duration	= (*iter)->get_avdecoder_ptr()->get_video_info().total_time;
+
+	return 1;
+}
+
+
+// --------------------------------------------------------------------------
+// Set unity DX11 Textures
+//
+__declspec(dllexport) int	volumetricvideo_get_texture_pointers(int ID, void*& yPointer, void*& uPointer, void*& vPointer)
+{
+	LOG("volumetricvideo_set_texture_pointer - id: %d", ID);
+
+	// Get Instance
+	VolumetricVideo_iter iter;
+	if (!get_vv_instance(ID, &iter))
+	{
+		LOG("volumetricvideo_get_texture_pointers - cant find instance id: %d", ID);
+		return -1;
+	}
+
+	// Get width and height - this info is within the class, just a sanity check
+	int width = (*iter)->get_avdecoder_ptr()->get_video_info().width;
+	int height = (*iter)->get_avdecoder_ptr()->get_video_info().height;
+	LOG("volumetricvideo_set_texture_pointer - %d x %d", width, height);
+
+	// Create texture for instance 
+	int ret = (*iter)->get_texture_ptr()->create(g_D3D11Device, width, height);
+	if (ret == -1)
+	{
+		//
+		return -1;
+	}
+
+	// now get pointers
+	(*iter)->get_texture_ptr()->getResourcePointers(yPointer, uPointer, vPointer);
+
+	//
+	LOG("volumetricvideo_set_texture_pointer - end");
+	return 1;	
+}
+
+
+
+
+//-----------------------------------------------
+// Geometry Functions
+//-----------------------------------------------
+

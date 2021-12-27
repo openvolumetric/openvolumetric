@@ -2,6 +2,7 @@
 
 #include <IVolumetricVideo.h>
 
+#include <thread>
 
 //
 //
@@ -23,22 +24,38 @@ public:
 
 	//--------------------------------------------------------
 	// destructor
-	~VolumetricVideoD3D11() {};
+	~VolumetricVideoD3D11();
+
 
 	//--------------------------------------------------------
-	// inherited function to create rendering resources
-	int create_resources();
+	// inherited function to set video file
+	bool set_video(const char* filepath);
+
+
+	//--------------------------------------------------------
+	//
+	int start();
+
+
+	//--------------------------------------------------------
+	//
+	int stop();
 
 
 	//--------------------------------------------------------
 	// inherited function to set frame index
-	int set_frame(int frame_index);
-
+	int seek(double time);
 
 	//--------------------------------------------------------
 	// inherited function to perform rendering
 	int render();
 
+
+private:
+	
+	//--------------------------------------------------------
+	// Thread for video decoding
+	std::thread m_video_thread;
 
 
 };

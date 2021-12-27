@@ -38,7 +38,9 @@ Logger* Logger::instance()
 	return _instance;
 }
 
-
+//
+//
+//
 void Logger::open_external_console()
 {
 	if (!Logger::instance()->console_active)
@@ -52,6 +54,9 @@ void Logger::open_external_console()
 	}
 }
 
+//
+//
+//
 void Logger::close_external_console()
 {
 	if (Logger::instance()->console_active)
