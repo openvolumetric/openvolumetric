@@ -244,7 +244,7 @@ bool AVDecoderFFMPEG::start_decoding()
 			// If decoding
 			case DECODING:
 			{
-				LOG("AVDecoderFFMPEG::start_decoding - decoding");
+				//LOG("AVDecoderFFMPEG::start_decoding - decoding");
 
 				if (!this->decode())
 				{
@@ -302,7 +302,7 @@ bool AVDecoderFFMPEG::stop_decoding()
 //
 bool AVDecoderFFMPEG::decode()
 {
-	LOG("DecoderFFMPEG::decode - start");
+	//LOG("DecoderFFMPEG::decode - start");
 
 	// Check that the decoder is initialised 
 	if (!m_initialised)
@@ -324,7 +324,7 @@ bool AVDecoderFFMPEG::decode()
 		//Decode Video Frame
 		if (m_video_info.is_enabled && m_packet.stream_index == m_video_stream->index)
 		{
-			LOG("DecoderFFMPEG::decode - calling - decode_video_frame");
+//			LOG("DecoderFFMPEG::decode - calling - decode_video_frame");
 			decode_video_frame();
 		}
 	
@@ -344,7 +344,7 @@ bool AVDecoderFFMPEG::decode()
 //
 bool AVDecoderFFMPEG::decode_video_frame()
 {
-	LOG("DecoderFFMPEG::decode_video_frame - start");
+//	LOG("DecoderFFMPEG::decode_video_frame - start");
 
 	//Send packet to decoder
 	int ret = avcodec_send_packet(m_video_codec_ctx, &m_packet);
@@ -363,17 +363,16 @@ bool AVDecoderFFMPEG::decode_video_frame()
 		{
 			std::lock_guard<std::mutex> lock(m_video_mutex);
 			m_video_frames.push(frame);
-			LOG("DecoderFFMPEG::decode_video_frame - m_video_frames: %d", m_video_frames.size());
+			//LOG("DecoderFFMPEG::decode_video_frame - m_video_frames: %d", m_video_frames.size());
 
 		}
 
 		// Error or End of File 
 		else if (ret == AVERROR(EAGAIN))
 		{
-			char error_str[64];
-			av_make_error_string(error_str, 64, ret);
-			LOG("DecoderFFMPEG::decode_video_frame - ERROR: %s", error_str);
-		
+			//char error_str[64];
+			//av_make_error_string(error_str, 64, ret);
+			//LOG("DecoderFFMPEG::decode_video_frame - ERROR: %s", error_str);
 			break;
 		}
 	}
@@ -446,7 +445,7 @@ bool AVDecoderFFMPEG::seek(double time)
 // --------------------------------------------------------------------------
 bool AVDecoderFFMPEG::get_video_data(uint8_t** outputY, uint8_t** outputU, uint8_t** outputV)
 {
-	LOG("DecoderFFMPEG::get_video_data - start");
+//	LOG("DecoderFFMPEG::get_video_data - start");
 
 	if (this->m_video_frames.empty())
 	{
@@ -478,7 +477,7 @@ bool AVDecoderFFMPEG::get_video_data(uint8_t** outputY, uint8_t** outputU, uint8
 	this->m_video_info.last_time	= timeInSec;
 
 	// Convert time to frameindex
-	int frame_index = timeInSec / this->m_video_info.fps;
+	int frame_index = (int)round(timeInSec * this->m_video_info.fps);
 	LOG("DecoderFFMPEG::get_video_data - frame_index: %d", frame_index);
 	LOG("DecoderFFMPEG::get_video_data - time in sec(s): %f", timeInSec);
 

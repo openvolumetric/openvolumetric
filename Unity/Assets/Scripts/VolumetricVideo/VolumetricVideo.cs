@@ -22,7 +22,7 @@ public class VolumetricVideo : MonoBehaviour
     private MeshRenderer m_mesh_renderer;
 
     // Start time
-    double m_start_time;
+    private double m_start_time;
 
     // Start is called before the first frame update
     void Start()
@@ -35,7 +35,8 @@ public class VolumetricVideo : MonoBehaviour
         m_decoder = new VolumetricVideoDecoder(debug);
         
         // Try to load data
-        if(!m_decoder.init(ref m_mesh_renderer, video_filename))
+        string filepath = Application.streamingAssetsPath  + "/" + video_filename;
+        if(!m_decoder.init(ref m_mesh_renderer, filepath))
         {
             Debug.LogError("VolumetricVideo::Start - Failed to init VolumetricVideoDecoder");
         }
@@ -46,7 +47,7 @@ public class VolumetricVideo : MonoBehaviour
         // Start Decoder
         if(!m_decoder.start_decoding())
         {
-           // Debug.LogError("VolumetricVideo::Start - Failed to start decoding");
+            Debug.LogError("VolumetricVideo::Start - Failed to start decoding");
         }
 
         // Start time of application         
@@ -63,7 +64,17 @@ public class VolumetricVideo : MonoBehaviour
         m_decoder.update(time);
     }
 
+    //
+    void OnApplicationQuit() 
+    {
+		m_decoder.stop_decoding();
+	}
 
+    // 
+	void OnDestroy() 
+    {
+		m_decoder.stop_decoding();
+	}
 
 
 

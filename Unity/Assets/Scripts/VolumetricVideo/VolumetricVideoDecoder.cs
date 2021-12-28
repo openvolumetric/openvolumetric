@@ -8,9 +8,10 @@ using System;
 public class VolumetricVideoDecoder 
 {
     // --------------------------------------
-    // DLL interface
-    const string DLLNAME = "VolumetricVideoNativePlugin";
-
+    // DLL Name
+    const string DLLNAME = "VolumetricVideoNativePlugin1";
+     
+    // DLL Interfacec 
     [DllImport(DLLNAME, EntryPoint="volumetricvideo_open_external_console")]
     private static extern void volumetricvideo_open_external_console();
 
@@ -66,14 +67,17 @@ public class VolumetricVideoDecoder
     // keeps track of last frame index that has been displayed
     private int m_previous_frame;
 
+    private bool m_debug;
+
     //---------------------------------------
     // Constructor
     //
     public VolumetricVideoDecoder(bool debug )
     {
         Debug.Log("VolumetricVideoDecoder - Constructor");
+        m_debug = debug;
 
-        if(debug)
+        if(m_debug)
         {
             Debug.Log("VolumetricVideoDecoder - Opening External Console");
             volumetricvideo_open_external_console();
@@ -85,13 +89,21 @@ public class VolumetricVideoDecoder
     //
     ~VolumetricVideoDecoder()
     {
+        // Release Textures
+        m_YTexture = null;
+        m_UTexture = null;
+        m_VTexture = null;
+        
+        // Close logging terminal
+        if(m_debug)
+        {
+            Debug.Log(String.Format("VolumetricVideoDecoder::~VolumetricVideoDecoder - Closing External Console - id: {0}", m_instance_id));
+            volumetricvideo_close_external_console();
+        }
+
         // quit decoder plugin
         Debug.Log(String.Format("VolumetricVideoDecoder::~VolumetricVideoDecoder - Destructor - id: {0}", m_instance_id));
         volumetricvideo_quit(m_instance_id);
-
-        // Close logging terminal
-        Debug.Log(String.Format("VolumetricVideoDecoder::~VolumetricVideoDecoder - Closing External Console - id: {0}", m_instance_id));
-        volumetricvideo_close_external_console();
     }
 
 
@@ -163,9 +175,7 @@ public class VolumetricVideoDecoder
     // Function to create texture pointers which are then created by the native plugin
     //
     private bool init_textures(ref  MeshRenderer mesh_renderer, int width, int height)
-    {
-        Debug.Log("VolumetricVideoDecoder::init - start");
-        
+    {       
         // Find shader
         try
         {
@@ -200,7 +210,6 @@ public class VolumetricVideoDecoder
         mesh_renderer.material.SetTexture("_VTex", m_VTexture);
 
         //
-        Debug.Log("VolumetricVideoDecoder::init - end");
         return true;
     }
 
@@ -209,6 +218,7 @@ public class VolumetricVideoDecoder
     //
     public bool start_decoding()
     {
+        //
         if(volumetricvideo_start_decoding(m_instance_id) == -1)
         {
             Debug.LogError(String.Format("VolumetricVideoDecoder::start - Failed to start decoder for instance {0}",m_instance_id) );
@@ -224,6 +234,7 @@ public class VolumetricVideoDecoder
     //
     public bool stop_decoding()
     {
+        //
         if(volumetricvideo_stop_decoding(m_instance_id) == -1)
         {
             Debug.LogError(String.Format("VolumetricVideoDecoder::start - Failed to start decoder for instance {0}",m_instance_id) );
@@ -244,7 +255,7 @@ public class VolumetricVideoDecoder
         // Compute frame within the sequence
         int current_frame = (int)( (time * video_fps) % (video_fps*video_duration) );
 
-        //Check if there is a requirement to update the framefa
+        //Check if there is a requirement to update the frame
         if (m_previous_frame != current_frame)
         {
             //
