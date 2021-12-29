@@ -3,6 +3,7 @@
 #include <IAVDecoder.h>
 #include <ITexture.h>
 #include <IGeometryDecoder.h>
+#include <IMeshBuffer.h>
 
 #include <cstddef>
 
@@ -35,13 +36,21 @@ public:
 
 
 	//--------------------------------------------------------
-	// function to implement: get Texture pointers
+	//  get Texture pointers
 	IAVDecoder* get_avdecoder_ptr() { return m_avdecoder; }
 
 
 	//--------------------------------------------------------
-	// function to implement: get Texture pointers
+	// get Texture pointers
 	ITexture* get_texture_ptr() { return m_texture; }
+
+	//--------------------------------------------------------
+	//  get Geometry Decoder pointer
+	IGeometryDecoder* get_geometrydecoder_ptr() { return m_geometrydecoder; }
+
+	//--------------------------------------------------------
+	//  get Mesh Buffer pointer
+	IMeshBuffer* get_meshbuffer() { return m_meshbuffer; }
 
 	//--------------------------------------------------------
 	//
@@ -85,4 +94,9 @@ protected:
 	// Geometry Decoder
 	IGeometryDecoder*	m_geometrydecoder;
 	
+	//--------------------------------------------------------
+	// Mesh Buffer
+	IMeshBuffer*		m_meshbuffer;
+
+
 };

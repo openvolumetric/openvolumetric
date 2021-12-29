@@ -169,9 +169,12 @@
     <ClInclude Include="src\IAVDecoder.h" />
     <ClInclude Include="src\IDecoder.h" />
     <ClInclude Include="src\IGeometryDecoder.h" />
+    <ClInclude Include="src\IMeshBuffer.h" />
     <ClInclude Include="src\ITexture.h" />
     <ClInclude Include="src\IVolumetricVideo.h" />
     <ClInclude Include="src\Logger.h" />
+    <ClInclude Include="src\Mesh.h" />
+    <ClInclude Include="src\MeshBufferD3D11.h" />
     <ClInclude Include="src\Stream.h" />
     <ClInclude Include="src\TextureD3D11.h" />
     <ClInclude Include="src\unity-volumetric-video-api.h" />
@@ -186,9 +189,12 @@
     <ClCompile Include="src\IAVDecoder.cpp" />
     <ClCompile Include="src\IDecoder.cpp" />
     <ClCompile Include="src\IGeometryDecoder.cpp" />
+    <ClCompile Include="src\IMeshBuffer.cpp" />
     <ClCompile Include="src\ITexture.cpp" />
     <ClCompile Include="src\IVolumetricVideo.cpp" />
     <ClCompile Include="src\Logger.cpp" />
+    <ClCompile Include="src\Mesh.cpp" />
+    <ClCompile Include="src\MeshBufferD3D11.cpp" />
     <ClCompile Include="src\Stream.cpp" />
     <ClCompile Include="src\TextureD3D11.cpp" />
     <ClCompile Include="src\unity-volumetric-video-api.cpp" />

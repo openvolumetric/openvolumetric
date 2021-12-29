@@ -27,7 +27,7 @@ TextureD3D11::~TextureD3D11()
 
 //----------------------------------
 //
-int TextureD3D11::create(void* handler, unsigned int width, unsigned int height)
+int TextureD3D11::init(void* handler, unsigned int width, unsigned int height)
 {
 	if (handler == NULL) {
 		return -1;

@@ -13,7 +13,7 @@ public:
 
 	//----------------------------------
 	//	
-	virtual int create(void* handler, unsigned int width, unsigned int height) = 0;
+	virtual int init(void* handler, unsigned int width, unsigned int height) = 0;
 
 	//----------------------------------
 	//

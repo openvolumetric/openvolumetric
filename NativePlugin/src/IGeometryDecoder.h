@@ -1,9 +1,11 @@
 #pragma once
 
+#include <IDecoder.h>
 
-
-class IGeometryDecoder
+class IGeometryDecoder : public IDecoder
 {
+
+public:
 
 	//
 	IGeometryDecoder() {};

@@ -87,6 +87,15 @@
     <ClInclude Include="src\Stream.h">
       <Filter>Header Files\AV</Filter>
     </ClInclude>
+    <ClInclude Include="src\IMeshBuffer.h">
+      <Filter>Header Files\Geometry</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Mesh.h">
+      <Filter>Header Files\Geometry</Filter>
+    </ClInclude>
+    <ClInclude Include="src\MeshBufferD3D11.h">
+      <Filter>Header Files\Geometry</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\unity-volumetric-video-api.cpp">
@@ -124,6 +133,15 @@
     </ClCompile>
     <ClCompile Include="src\Stream.cpp">
       <Filter>Source Files\AV</Filter>
+    </ClCompile>
+    <ClCompile Include="src\IMeshBuffer.cpp">
+      <Filter>Source Files\Geometry</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Mesh.cpp">
+      <Filter>Source Files\Geometry</Filter>
+    </ClCompile>
+    <ClCompile Include="src\MeshBufferD3D11.cpp">
+      <Filter>Source Files\Geometry</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

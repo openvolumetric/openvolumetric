@@ -58,7 +58,7 @@ extern "C"
 	__declspec(dllexport) int	volumetricvideo_load_mesh(int ID, const char* filename, int start_frame, int end_frame);
 
 	// Set mesh pointers
-	__declspec(dllexport) int	volumetricvideo_set_mesh_pointer(int ID);
+	__declspec(dllexport) int	volumetricvideo_set_mesh_pointer(int ID, void* indexBufferHandle, int index_size, void* vertexBufferHandle, int vertex_size);
 
 
 

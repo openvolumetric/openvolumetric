@@ -20,7 +20,7 @@ public:
 
 	//----------------------------------
 	//
-	int create(void* handler, unsigned int width, unsigned int height);
+	int init(void* handler, unsigned int width, unsigned int height);
 
 	//----------------------------------
 	//

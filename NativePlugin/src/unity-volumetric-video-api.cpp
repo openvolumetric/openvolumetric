@@ -425,7 +425,7 @@ __declspec(dllexport) int	volumetricvideo_get_texture_pointers(int ID, void*& yP
 	LOG("volumetricvideo_set_texture_pointer - %d x %d", width, height);
 
 	// Create texture for instance 
-	int ret = (*iter)->get_texture_ptr()->create(g_D3D11Device, width, height);
+	int ret = (*iter)->get_texture_ptr()->init(g_D3D11Device, width, height);
 	if (ret == -1)
 	{
 		//
@@ -447,3 +447,29 @@ __declspec(dllexport) int	volumetricvideo_get_texture_pointers(int ID, void*& yP
 // Geometry Functions
 //-----------------------------------------------
 
+
+// --------------------------------------------------------------------------
+// Set native mesh pointers
+//
+__declspec(dllexport) int	volumetricvideo_set_mesh_pointer(int ID, void* index_buffer_handle, int index_count, void* vertex_buffer_handle, int vertex_count)
+{
+	LOG("volumetricvideo_set_mesh_pointer - id: %d", ID);
+
+	// Get Instance
+	VolumetricVideo_iter iter;
+	if (!get_vv_instance(ID, &iter))
+	{
+		LOG("volumetricvideo_get_texture_pointers - cant find instance id: %d", ID);
+		return -1;
+	}
+	
+	//
+	if (!(*iter)->get_meshbuffer()->init(g_D3D11Device, index_buffer_handle, index_count, vertex_buffer_handle, vertex_count))
+	{
+		return -1;
+	}
+
+	//
+	return 1;
+}
+ 
