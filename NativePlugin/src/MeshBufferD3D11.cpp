@@ -1,9 +1,10 @@
 #include "MeshBufferD3D11.h"
 
-#include <assert.h>
-
 #include <Logger.h>
 #include <Mesh.h>
+
+#include <assert.h>
+#include <thread>
 
 //----------------------------------
 //
@@ -143,31 +144,72 @@ bool MeshBufferD3D11::update()
 	this->m_D3D11Device->GetImmediateContext(&ctx);
 
 	//
-	D3D11_MAPPED_SUBRESOURCE mapped;
-	ctx->Map(m_vertex_buffer_handle, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+	D3D11_MAPPED_SUBRESOURCE mapped_vertexbuffer, mapped_indexbuffer;
+	ctx->Map(m_vertex_buffer_handle, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_vertexbuffer);
+	ctx->Map(m_index_buffer_handle, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_indexbuffer);
 
-	//Pointer to data
-	char* bufferPtr = (char*)mapped.pData;
+	// Update Vertex Buffer
+	std::thread vertex_update_thread = std::thread([&]() {
 
-	float data[8] =	{
-		0.0, 0.0,
-		1.0, 0.0,
-		0.0, 1.0,
-		1.0, 1.0
-	};
+		//Pointer to data
+		char* bufferPtr = (char*)mapped_vertexbuffer.pData;
+		float data[8] = {
+			0.0, 0.0,
+			1.0, 0.0,
+			0.0, 1.0,
+			1.0, 1.0
+		};
 
-	for (int i = 0; i < 4; i++)
+		// Update vertex
+		for (int i = 0; i < 4; i++)
+		{
+			//
+			Vertex& dst = *(Vertex*)bufferPtr;
+			dst.pos[0] = data[i * 2 + 0];			dst.pos[1] = data[i * 2 + 1];			dst.pos[2] = 0.f;
+			dst.normal[0] = 0.f;					dst.normal[1] = 0.f;					dst.normal[2] = -1.f;
+			dst.uv[0] = data[i * 2 + 0];			dst.uv[1] = data[i * 2 + 1];
+			bufferPtr += m_vertex_stride;
+		}
+	});
+
+	// Update Vertex Buffer
+	std::thread index_update_thread = std::thread([&]() {
+
+		//Pointer to data
+		char* bufferPtr_index = (char*)mapped_indexbuffer.pData;
+		int data_index[6] = {
+			0,	2,	1,
+			2,	3,	1
+		};
+
+		// Update vertex
+		for (int i = 0; i < 6; i++)
+		{
+			//
+			int& dst = *(int*)bufferPtr_index;
+			dst = data_index[i];
+
+			bufferPtr_index += m_index_stride;
+		}
+		});
+
+
+	//
+	if (vertex_update_thread.joinable())
 	{
-		//
-		Vertex& dst = *(Vertex*)bufferPtr;
-		dst.pos[0]		= data[i*2+0];			dst.pos[1]		= data[i * 2 + 1];			dst.pos[2]		= 0.f;
-		dst.normal[0]	= 0.f;					dst.normal[1]	= 0.f;						dst.normal[2]	= -1.f;
-		dst.uv[0]		= data[i * 2 + 0];		dst.uv[1]		= data[i * 2 + 1];
-		bufferPtr += m_vertex_stride;
+		vertex_update_thread.join();
+	}
+
+	//
+	if (index_update_thread.joinable())
+	{
+		index_update_thread.join();
 	}
 
 	// Release Context
 	ctx->Unmap(m_vertex_buffer_handle, 0);
+	ctx->Unmap(m_index_buffer_handle, 0);
+
 	ctx->Release();
 
 	//

@@ -12,7 +12,7 @@ public class VolumetricVideoDecoder
 {
     // --------------------------------------
     // DLL Name
-    const string DLLNAME = "VolumetricVideoNativePlugin3";
+    const string DLLNAME = "VolumetricVideoNativePlugin";
 
     // DLL Interfacec 
     [DllImport(DLLNAME, EntryPoint = "GetRenderEventFunc")]
@@ -259,10 +259,10 @@ public class VolumetricVideoDecoder
         }
 
         // Vertex Count 
-        const int vertex_count      = 65535;
-        const int triangle_count    = 2;
+        const int vertex_count = 65535;
+        const int index_count = 150000;
 
-        // specify vertex count and layout
+        // allocated vertex buffer and buffer layout 
         var layout = new[]
         {
             new VertexAttributeDescriptor(VertexAttribute.Position,     VertexAttributeFormat.Float32, 3),
@@ -271,26 +271,37 @@ public class VolumetricVideoDecoder
         };
         mesh.SetVertexBufferParams(vertex_count, layout);
 
-        //
+        // init buffer with zeros - not sure if this is necessary
         NativeArray<Vertex> vert_buffer_data = new NativeArray<Vertex>(vertex_count, Allocator.Temp);
         for (int i = 0; i < vertex_count; i++)
         {
             vert_buffer_data[i] = new Vertex(0, 0, 0, 0, 0, 0, 0, 0);
         }
-
         mesh.SetVertexBufferData(vert_buffer_data, 0, 0, vertex_count);
 
-    //
-        int[] tris_array = new int[6]
+    
+        // Init indexes that make up the triangles
+        int[] tris_array = new int[index_count];
+        for (int i = 0; i < index_count; i++)
         {
-            // lower left triangle
-            0, 2, 1,
-            // upper right triangle
-            2, 3, 1
-        };
+            tris_array[i] = 0;
+        }
         mesh.triangles = tris_array;
+        // TODO - would be nice to get this way working to be consistent 
+        /*      mesh.SetIndexBufferParams(index_count, IndexFormat.UInt32);
+              NativeArray<int> index_buffer_data = new NativeArray<int>(index_count, Allocator.Temp);
+              for (int i = 0; i < index_count; i++)
+              {
+                  index_buffer_data[i] = 0;
+              }
+              mesh.SetIndexBufferData(index_buffer_data, 0, 0, index_count);
 
-          
+              mesh.subMeshCount = 1;
+              mesh.SetSubMesh(0, new SubMeshDescriptor(0, 0, MeshTopology.Triangles));
+      */
+
+
+
         // Mark mesh as dynamic so that it gets updated
         mesh.MarkDynamic();
 
@@ -299,7 +310,7 @@ public class VolumetricVideoDecoder
         IntPtr vertex_buffer    = mesh.GetNativeVertexBufferPtr(0);
 
         // Pass handles to Native Plugin
-        if (volumetricvideo_set_mesh_pointer(m_instance_id, index_buffer, triangle_count*3, vertex_buffer, vertex_count ) == -1)
+        if (volumetricvideo_set_mesh_pointer(m_instance_id, index_buffer, index_count, vertex_buffer, vertex_count ) == -1)
         {
             return false;
         }

@@ -12,6 +12,13 @@ struct Vertex
 	float uv[2];
 };
 
+//
+struct Triangle
+{
+	int index[3];
+};
+
+
 
 // ------------------------------------------------
 // Mesh Data Structure
@@ -22,7 +29,7 @@ struct Mesh
 	std::vector<Vertex> verts;
 
 	// Tris
-	std::vector<int> tris;
+	std::vector<Triangle> tris;
 
 };
 
