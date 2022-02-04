@@ -18,11 +18,12 @@ public:
 	// --------------------------------------------------------------------------
 	struct VideoInfo : public StreamInfo
 	{
-		VideoInfo() : StreamInfo(), width(0), height(0), fps(0.0) {}
+		VideoInfo() : StreamInfo(), width(0), height(0), fps(0.0), frame_count(0) {}
 
 		int width;
 		int height;
 		double fps;
+		int frame_count;
 	};
 
 	// --------------------------------------------------------------------------
@@ -43,7 +44,7 @@ public:
 	// --------------------------------------------------------------------------
 	// 
 	// --------------------------------------------------------------------------
-	virtual bool init(const char* filename) = 0;
+	virtual bool init(const char* filepath) = 0;
 
 	// --------------------------------------------------------------------------
 	// 
@@ -58,10 +59,12 @@ public:
 	// --------------------------------------------------------------------------
 	// 
 	// --------------------------------------------------------------------------
-	virtual bool get_video_data(uint8_t** outputY, uint8_t** outputU, uint8_t** outputV) = 0;
+	virtual int get_video_data(uint8_t** outputY, uint8_t** outputU, uint8_t** outputV) = 0;
 
-
-	virtual void clean_frame_data() = 0;;
+	// --------------------------------------------------------------------------
+	// 
+	// --------------------------------------------------------------------------
+	virtual void clean_frame_data() = 0;
 
 
 protected:

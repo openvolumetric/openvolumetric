@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IVolumetricVideo.h>
+#include <Mesh.h>
 
 #include <thread>
 
@@ -28,11 +29,6 @@ public:
 
 
 	//--------------------------------------------------------
-	// inherited function to set video file
-	bool set_video(const char* filepath);
-
-
-	//--------------------------------------------------------
 	//
 	int start();
 
@@ -50,14 +46,11 @@ public:
 	// inherited function to perform rendering
 	int render();
 
-
 private:
 	
 	//--------------------------------------------------------
-	// Thread for video decoding
-	std::thread m_video_thread;
-
-
+	//
+	Mesh m_mesh;
 };
 
 

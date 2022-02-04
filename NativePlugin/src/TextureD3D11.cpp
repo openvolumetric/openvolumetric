@@ -29,15 +29,20 @@ TextureD3D11::~TextureD3D11()
 //
 int TextureD3D11::init(void* handler, unsigned int width, unsigned int height)
 {
+	// Check handler
 	if (handler == NULL) {
 		return -1;
 	}
 
+	//
 	mD3D11Device = (ID3D11Device*)handler;
+	
+	//
 	mWidthY = (unsigned int)(ceil((float)width / CPU_ALIGMENT) * CPU_ALIGMENT);
 	mHeightY = height;
 	mLengthY = mWidthY * mHeightY;
 
+	//
 	mWidthUV = mWidthY / 2;
 	mHeightUV = mHeightY / 2;
 	mLengthUV = mWidthUV * mHeightUV;
@@ -100,6 +105,9 @@ int TextureD3D11::init(void* handler, unsigned int width, unsigned int height)
 		LOG("TextureD3D11::create - Create shader resource view V fail. %x", result);
 		return -1;
 	}
+
+	// Done 
+	return 1;
 }
 
 //----------------------------------

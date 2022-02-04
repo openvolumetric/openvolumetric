@@ -10,7 +10,11 @@ public class VolumetricVideo : MonoBehaviour
     // -----------------------------
     // Public Member variables 
     public bool debug               = false;
-    public string video_filename    = "";
+    public string video_filename;
+    public string mesh_filepattern;
+    public int mesh_start_index;
+    public int mesh_stop_index;
+
 
 
     // -----------------------------
@@ -44,6 +48,12 @@ public class VolumetricVideo : MonoBehaviour
             Debug.LogError("VolumetricVideo::Start - Failed to init Mesh Buffers");
         }
 
+         // Try to load mesh
+        if(!m_decoder.init_mesh_data(mesh_filepattern, mesh_start_index, mesh_stop_index))
+        {
+            Debug.LogError("VolumetricVideo::Start - Failed to init VolumetricVideoDecoder");
+        }
+
         // Add/Get Mesh renderer
         gameObject.AddComponent<MeshRenderer>();
         m_mesh_renderer = gameObject.GetComponent<MeshRenderer>();
@@ -55,6 +65,7 @@ public class VolumetricVideo : MonoBehaviour
             Debug.LogError("VolumetricVideo::Start - Failed to init VolumetricVideoDecoder");
         }
 
+  
         // Start Decoder
         if(!m_decoder.start_decoding())
         {

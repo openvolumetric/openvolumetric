@@ -263,12 +263,56 @@ __declspec(dllexport) void	volumetricvideo_quit(int ID)
 
 
 // --------------------------------------------------------------------------
+// Set Unity time in decoder
+// --------------------------------------------------------------------------
+__declspec(dllexport) void	volumetricvideo_set_unity_time(int ID, double unity_time)
+{
+	LOG("volumetricvideo_set_global_time - id: %d", ID);
+
+	//
+	VolumetricVideo_iter iter;
+	if (!get_vv_instance(ID, &iter))
+	{
+		LOG("volumetricvideo_set_unity_time - cant find instance id: %d", ID);
+		return;
+	}
+
+	// Set Unity Time in VV Decoder
+	(*iter)->set_unity_time(unity_time);
+}
+
+
+// --------------------------------------------------------------------------
+// Set frame index
+// --------------------------------------------------------------------------
+__declspec(dllexport) void	volumetricvideo_set_frame(int ID, int frame_index)
+{
+	//
+	LOG("volumetricvideo_set_frame - id: %d frame_index: %d", ID, frame_index);
+
+	//
+	VolumetricVideo_iter iter;
+	if (!get_vv_instance(ID, &iter))
+	{
+		LOG("volumetricvideo_set_frame - cant find instance id: %d", ID);
+		return;
+	}
+
+	// Set frame index in VV Decoder
+	(*iter)->set_frame_index(frame_index);
+}
+
+
+
+
+// --------------------------------------------------------------------------
 // Decoder functions
 // --------------------------------------------------------------------------
 
 // --------------------------------------------------------------------------
 // Start decoder 
-//
+// --------------------------------------------------------------------------
+
 __declspec(dllexport) int	volumetricvideo_start_decoding(int ID)
 {
 	LOG("volumetricvideo_start_decoding - id: %d", ID);
@@ -449,6 +493,32 @@ __declspec(dllexport) int	volumetricvideo_get_texture_pointers(int ID, void*& yP
 
 
 // --------------------------------------------------------------------------
+// Load mesh data
+//
+__declspec(dllexport) int	volumetricvideo_load_mesh_data(int ID, char* filepattern, int start_frame, int end_frame)
+{
+	LOG("volumetricvideo_load_mesh - id: %d", ID);
+
+	// Get Instance
+	VolumetricVideo_iter iter;
+	if (!get_vv_instance(ID, &iter))
+	{
+		LOG("volumetricvideo_load_mesh - cant find instance id: %d", ID);
+		return -1;
+	}
+
+	// Load data
+	if (!(*iter)->get_geometrydecoder_ptr()->init(filepattern, start_frame, end_frame))
+	{
+		return -1;
+	}
+
+	//
+	return 1;
+
+}
+
+// --------------------------------------------------------------------------
 // Set native mesh pointers
 //
 __declspec(dllexport) int	volumetricvideo_set_mesh_pointer(int ID, void* index_buffer_handle, int index_count, void* vertex_buffer_handle, int vertex_count)
@@ -469,7 +539,10 @@ __declspec(dllexport) int	volumetricvideo_set_mesh_pointer(int ID, void* index_b
 		return -1;
 	}
 
+
 	//
 	return 1;
 }
  
+
+

@@ -1,6 +1,7 @@
 #pragma once
 
 
+#include <Mesh.h>
 
 class IMeshBuffer
 {
@@ -24,7 +25,8 @@ public:
 
 	//----------------------------------
 	//
-	virtual bool update() = 0;
+	virtual bool update(Mesh * mesh) = 0;
+
 
 };
 

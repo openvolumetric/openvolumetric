@@ -18,6 +18,12 @@ extern "C"
 	// Quit application
 	__declspec(dllexport) void	volumetricvideo_quit(int ID);
 
+	// Set unity time
+	__declspec(dllexport) void	volumetricvideo_set_unity_time(int ID, double unity_time);
+
+	// Set frame index
+	__declspec(dllexport) void	volumetricvideo_set_frame(int ID, int frame_index);
+
 
 	//-----------------------------------------------
 	// Decoding Functions
@@ -53,13 +59,11 @@ extern "C"
 	//-----------------------------------------------
 	// Geometry Functions
 	//-----------------------------------------------
- 
-	// Load mesh Function
-	__declspec(dllexport) int	volumetricvideo_load_mesh(int ID, const char* filename, int start_frame, int end_frame);
+
+	// Load mesh data Function
+	__declspec(dllexport) int	volumetricvideo_load_mesh_data(int ID, char* filepattern, int start_frame, int end_frame);
 
 	// Set mesh pointers
 	__declspec(dllexport) int	volumetricvideo_set_mesh_pointer(int ID, void* indexBufferHandle, int index_size, void* vertexBufferHandle, int vertex_size);
-
-
 
 }
