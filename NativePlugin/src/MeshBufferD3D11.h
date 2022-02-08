@@ -22,7 +22,7 @@ public:
 
 
 	//----------------------------------
-	//sdfs
+	//
 	bool init(void* handler, void* index_buffer_handle, int index_buffer_size, void* vertex_buffer_handle, int vertex_buffer_size);
 
 

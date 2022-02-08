@@ -402,7 +402,7 @@ public class VolumetricVideoDecoder
         //Check if there is a requirement to update the frame
         if (m_previous_frame != current_frame)
         { 
-            // Set time within native plugin
+            // Set frame index to display within native plugin
             volumetricvideo_set_frame(m_instance_id, current_frame);
 
             // Issue render event

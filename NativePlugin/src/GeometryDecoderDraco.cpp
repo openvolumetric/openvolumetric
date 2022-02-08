@@ -8,23 +8,25 @@
 #include "draco/io/file_utils.h"
 #include "draco/io/parser_utils.h"
 
-//----------------------------------
+// --------------------------------------------------------------------------
 // Constructor
-// 
+// --------------------------------------------------------------------------
 GeometryDecoderDraco::GeometryDecoderDraco():
-	IGeometryDecoder(), m_max_buffer_size(64), m_current_frame(0)
+	IGeometryDecoder(), m_max_buffer_size(64)
 {
 
 }
 
-//----------------------------------
+// --------------------------------------------------------------------------
 // Destructor
-// 
-GeometryDecoderDraco::~GeometryDecoderDraco() 
+// --------------------------------------------------------------------------
+GeometryDecoderDraco::~GeometryDecoderDraco()
 {
 }
 
-
+// --------------------------------------------------------------------------
+//
+// --------------------------------------------------------------------------
 bool GeometryDecoderDraco::init(char* filepattern, int start_index, int stop_index)
 {
 	// Allocate Memory
@@ -32,6 +34,7 @@ bool GeometryDecoderDraco::init(char* filepattern, int start_index, int stop_ind
 	m_encoded_meshes.resize(stop_index - start_index + 1);
 
 	// Load each mesh and add to vector
+	#pragma omp parallel for
 	for (int i = start_index; i <= stop_index; i++)
 	{
 		char filepath[1024]; 
@@ -68,11 +71,12 @@ bool GeometryDecoderDraco::init(char* filepattern, int start_index, int stop_ind
  
 // --------------------------------------------------------------------------
 // Start Decoding
-// 
+// --------------------------------------------------------------------------
 bool GeometryDecoderDraco::start_decoding()
 {
 	LOG("GeometryDecoderDraco::start_decoding");
 
+	//
 	if (!this->m_initialised)
 	{
 		LOG("GeometryDecoderDraco::start_decoding - not INITIALIZED");
@@ -81,17 +85,17 @@ bool GeometryDecoderDraco::start_decoding()
 
 	// Create thread start video decoding
 	m_decode_thread = std::thread([&]()
-		{
-			// 
-			m_decoder_state = DECODING;
+	{
+		// 
+		m_decoder_state = DECODING;
 
-			//
-			while (m_decoder_state != STOP)
+		//
+		while (m_decoder_state != STOP)
+		{
+			// Switch based on decoder state
+			switch (m_decoder_state)
 			{
-				// Switch based on decoder state
-				switch (m_decoder_state)
-				{
-					// If decoding
+				// If decoding
 				case DECODING:
 				{
 					if (!this->decode())
@@ -112,13 +116,12 @@ bool GeometryDecoderDraco::start_decoding()
 					m_decoder_state = DECODING;
 					break;
 				}
-				}
 			}
+		}
 
-			//
-			LOG("AVDecoderFFMPEG::start_decoding - end");
-
-		});
+		//
+		LOG("AVDecoderFFMPEG::start_decoding - end");
+	});
 
 	//
 	return true;
@@ -131,22 +134,29 @@ bool GeometryDecoderDraco::start_decoding()
 // --------------------------------------------------------------------------
 bool GeometryDecoderDraco::decode()
 {
-	LOG("AVDecoderFFMPEG::decode");
-
-	if (is_buffer_blocked())
+	//
+	if (!is_buffer_blocked())
 	{
 		//
+		LOG("GeometryDecoderDraco::decode - frame %d", m_current_frame);
+
+		// Decode Mesh
 		Mesh mesh;
-		if (!get_mesh_data(m_current_frame, mesh))
+		if (!convert_draco_to_mesh(m_encoded_meshes[m_current_frame], mesh))
 		{
 			return false;
 		}
 
-		//
+		// construct mesh data struct
+		MeshData mesh_data;
+		mesh_data.mesh			= mesh;
+		mesh_data.frame_index	= m_current_frame;
+	
+		// lock geometry mutex and push
 		std::lock_guard<std::mutex> lock(m_geometry_mutex);
-		m_decoded_meshes.push(mesh);
+		m_decoded_meshes.push(mesh_data);
 
-		//  update current frame
+		// update current frame
 		update_current_frame();
 	}
 
@@ -185,30 +195,50 @@ void GeometryDecoderDraco::update_current_frame()
 }
 
 
-//----------------------------------
+// --------------------------------------------------------------------------
 // get_mesh_data
-// 
-bool GeometryDecoderDraco::get_mesh_data(int index, Mesh& mesh)
+// --------------------------------------------------------------------------
+bool GeometryDecoderDraco::get_mesh_data(int frame_index, Mesh& mesh)
 {
-	LOG("GeometryDecoderDraco::get_mesh_data - getting mesh at index  %d.", index);
+	LOG("GeometryDecoderDraco::get_mesh_data - getting mesh at index  %d.", frame_index);
 
 	//
-	return convert_draco_to_mesh(m_encoded_meshes[index], mesh);
-}
+	for (int i = 0; i < m_decoded_meshes.size(); i++)
+	{
+		//
+		if (m_decoded_meshes.front().frame_index == frame_index)
+		{
+			// Get decoded mesh at front of buffer
+			mesh = m_decoded_meshes.front().mesh;
+			return true;
+		}
+		// requested frame index is greater than the frame at front of buffer - so drop the frame
+		else if (frame_index > m_decoded_meshes.front().frame_index)
+		{
+			// Clear frame at front of the buffer
+			LOG("GeometryDecoderDraco::get_mesh_data - clearing front frame  %d.", m_decoded_meshes.front().frame_index);
+			clear_frame_data();
+		}
+		// frame index is lagging frame at front of buffer therefore wait
+		else if (frame_index < m_decoded_meshes.front().frame_index)
+		{
+			// do nothing
+		}
+		// Should not happen
+		else
+		{
 
-//----------------------------------
-// get current mesh data
-//
-Mesh*  GeometryDecoderDraco::get_current_mesh()
-{
-	return &m_decoded_meshes.front();
-}
+		}
+	}
 
+	//
+	return false;
+}
 
 
 // --------------------------------------------------------------------------
 // 
-//
+// --------------------------------------------------------------------------
 bool GeometryDecoderDraco::convert_draco_to_mesh(DracoData& draco_data, Mesh& mesh_out)
 {
 	// Init Buffer using data
@@ -301,12 +331,9 @@ bool GeometryDecoderDraco::convert_draco_to_mesh(DracoData& draco_data, Mesh& me
 }
 
 
-
-
-
 // --------------------------------------------------------------------------
 // Stop Decoding
-//
+// --------------------------------------------------------------------------
 bool GeometryDecoderDraco::stop_decoding()
 {
 	LOG("GeometryDecoderDraco::stop_decoding");
@@ -326,7 +353,7 @@ bool GeometryDecoderDraco::stop_decoding()
 
 // --------------------------------------------------------------------------
 // Clear front decoded mesh
-//
+// --------------------------------------------------------------------------
 void GeometryDecoderDraco::clear_frame_data()
 {
 	//

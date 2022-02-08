@@ -247,7 +247,6 @@ bool AVDecoderFFMPEG::start_decoding()
 			case DECODING:
 			{
 				//LOG("AVDecoderFFMPEG::start_decoding - decoding");
-
 				if (!this->decode())
 				{
 					m_decoder_state = DECODE_EOF;
@@ -257,7 +256,7 @@ bool AVDecoderFFMPEG::start_decoding()
 			case SEEK:
 			{
 				LOG("AVDecoderFFMPEG::start_decoding - seek");
-
+				// TODO Implement seek controls 
 				break;
 			}
 			case DECODE_EOF:
@@ -271,9 +270,8 @@ bool AVDecoderFFMPEG::start_decoding()
 		}
 
 		//
-		LOG("AVDecoderFFMPEG::start_decoding - end");
-
-		});
+		LOG("AVDecoderFFMPEG::start_decoding - thread end");
+	});
 
 	//
 	return true;
@@ -287,7 +285,7 @@ bool AVDecoderFFMPEG::stop_decoding()
 	//
 	m_decoder_state = STOP;
 
-	//
+	// join main thread
 	if (m_decode_thread.joinable()) 
 	{
 		m_decode_thread.join();
@@ -330,7 +328,6 @@ bool AVDecoderFFMPEG::decode()
 			decode_video_frame();
 		}
 	
-
 		// Unref current packet 
 		av_packet_unref(&m_packet);
 	}
@@ -364,7 +361,7 @@ bool AVDecoderFFMPEG::decode_video_frame()
 		if (ret == 0)
 		{
 			//Get frame index of the decoded frame
-			int frame_index = (int)round(frame->best_effort_timestamp * this->m_video_info.fps);
+			int frame_index = (int)round(av_q2d(m_video_stream->time_base) * frame->best_effort_timestamp * m_video_info.fps);
 
 			// Construct frame data
 			FrameData framedata;
@@ -373,7 +370,7 @@ bool AVDecoderFFMPEG::decode_video_frame()
 
 			// Lock and Push
 			std::lock_guard<std::mutex> lock(m_video_mutex);
-			m_video_frames.push(frame);
+			m_video_frames.push(framedata);
 						
 			//LOG("DecoderFFMPEG::decode_video_frame - m_video_frames: %d", m_video_frames.size());
 			//LOG("DecoderFFMPEG::decode_video_frame - decoded frame: %d", frame_index);
@@ -409,7 +406,7 @@ void AVDecoderFFMPEG::clean_frame_data()
 // --------------------------------------------------------------------------
 //
 // --------------------------------------------------------------------------
-void AVDecoderFFMPEG::free_front_frame(std::queue<AVFrame*>* buffer, std::mutex* mutex)
+void AVDecoderFFMPEG::free_front_frame(std::queue<FrameData>* buffer, std::mutex* mutex)
 {
 	std::lock_guard<std::mutex> lock(*mutex);
 	if (!m_initialised || buffer->size() == 0)
@@ -418,11 +415,13 @@ void AVDecoderFFMPEG::free_front_frame(std::queue<AVFrame*>* buffer, std::mutex*
 	}
 
 	//
-	AVFrame* frame = buffer->front();
-	av_frame_free(&frame);
+	FrameData* frame = &buffer->front();
+	av_frame_free(&frame->data);
 	buffer->pop();
 	update_buffer_state();
 }
+
+
 
 
 // --------------------------------------------------------------------------
@@ -455,20 +454,14 @@ bool AVDecoderFFMPEG::seek(double time)
 // --------------------------------------------------------------------------
 // 
 // --------------------------------------------------------------------------
-int AVDecoderFFMPEG::get_video_data(uint8_t** outputY, uint8_t** outputU, uint8_t** outputV)
+bool AVDecoderFFMPEG::get_video_data(int frame_index, uint8_t** outputY, uint8_t** outputU, uint8_t** outputV)
 {
 //	LOG("DecoderFFMPEG::get_video_data - start");
-
-
-
 	if (this->m_video_frames.empty())
 	{
 		LOG("DecoderFFMPEG::get_video_data - buffer empty");
-		return -1;
+		return false;
 	}
-
-	//
-	std::lock_guard<std::mutex> lock(m_video_mutex);
 
 	//
 	if (!m_initialised || m_video_frames.empty())
@@ -476,11 +469,52 @@ int AVDecoderFFMPEG::get_video_data(uint8_t** outputY, uint8_t** outputU, uint8_
 		*outputY = NULL;
 		*outputU = NULL;
 		*outputV = NULL;
-		return -1;
+		return false;
 	}
 
 	//
-	AVFrame* frame = m_video_frames.front();
+	AVFrame* frame = NULL;
+	for (int i = 0; i < m_video_frames.size(); i++)
+	{
+		// Case 1: Front of buffer is the requested frame
+		if (m_video_frames.front().frame_index == frame_index)
+		{
+			frame = m_video_frames.front().data;
+			break;
+		}
+
+		// Case 2: requested frame is greater than front frame index 
+		else if(frame_index > m_video_frames.front().frame_index )
+		{
+			// Clear front frame
+			free_front_frame(&m_video_frames, &m_video_mutex);
+		}
+
+		// Case 3: requested frame is less than the buffer 
+		else if (frame_index < m_video_frames.front().frame_index)
+		{
+			// Do nothing as requested frame will catch up
+			break;
+		}
+		// Should not occur
+		else
+		{
+
+		}
+	}
+
+
+	if (frame == NULL)
+	{
+		return false;
+	}
+
+
+	// Lock
+	std::lock_guard<std::mutex> lock(m_video_mutex);
+
+	// get decoded frame
+	//AVFrame* frame = m_video_frames.front().data;
 	*outputY = frame->data[0];
 	*outputU = frame->data[1];
 	*outputV = frame->data[2];
@@ -491,12 +525,12 @@ int AVDecoderFFMPEG::get_video_data(uint8_t** outputY, uint8_t** outputU, uint8_
 	this->m_video_info.last_time	= timeInSec;
 
 	// Convert time to frameindex
-	int frame_index = (int)round(timeInSec * this->m_video_info.fps);
-	LOG("DecoderFFMPEG::get_video_data - frame_index: %d", frame_index);
-	LOG("DecoderFFMPEG::get_video_data - time in sec(s): %f", timeInSec);
+	LOG("DecoderFFMPEG::get_video_data - requested frame_index: %d", frame_index);
+	LOG("DecoderFFMPEG::get_video_data - decoded frame_index:   %d", m_video_frames.front().frame_index);
+//	LOG("DecoderFFMPEG::get_video_data - time in sec(s): %f", timeInSec);
 
 	//
-	return frame_index;
+	return true;
 }
 
 

@@ -32,6 +32,8 @@ public class VolumetricVideo : MonoBehaviour
     // Start time
     private double m_start_time;
 
+    private bool started = false;
+
     // Start is called before the first frame update
     void Start()
     {
@@ -81,6 +83,13 @@ public class VolumetricVideo : MonoBehaviour
     //
     void Update()
     {
+        if(!started)
+        {
+            started = true;
+            // Start time of application         
+            m_start_time = AudioSettings.dspTime;
+        }
+
         // Workout the frame number         
         double time =  AudioSettings.dspTime - m_start_time;
         

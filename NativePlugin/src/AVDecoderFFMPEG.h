@@ -65,7 +65,7 @@ public:
 	// --------------------------------------------------------------------------
 	//
 	// --------------------------------------------------------------------------
-	int get_video_data(uint8_t** outputY, uint8_t** outputU, uint8_t** outputV);
+	bool get_video_data(int frame_index, uint8_t** outputY, uint8_t** outputU, uint8_t** outputV);
 
 protected:
 
@@ -108,30 +108,33 @@ protected:
 private:
 
 	// --------------------------------------------------------------------------
-	//
-	// --------------------------------------------------------------------------
-	void free_front_frame(std::queue<AVFrame*>* buffer, std::mutex* mutex);
-
-
-private:
-
-	// --------------------------------------------------------------------------
 	// Data structure to encapsulate frame data
 	// --------------------------------------------------------------------------
 	struct FrameData
 	{
 		//
-		FrameData() : data(NULL), frame_index(0), frame_time(0.0) {};
-		
+		FrameData() : data(NULL), frame_index(0), frame_time(0.0){};
+
 		// frame data
 		AVFrame* data;
-		
+
 		// frame index
 		int frame_index;
-		
+
 		// Frame time
 		double frame_time;
 	};
+
+
+	// --------------------------------------------------------------------------
+	//
+	// --------------------------------------------------------------------------
+	void free_front_frame(std::queue<FrameData>* buffer, std::mutex* mutex);
+
+
+private:
+
+
 
 	// --------------------------------------------------------------------------
 	// AVFormat Context
@@ -150,9 +153,7 @@ private:
 	// Decoding and Buffers
 	// --------------------------------------------------------------------------
 	AVPacket				m_packet;
-	std::queue<AVFrame*>	m_video_frames;
-	//std::queue<FrameData>	m_video_frames;
-
+	std::queue<FrameData>	m_video_frames;
 	unsigned int			m_video_buffer_max;
 
 	// --------------------------------------------------------------------------

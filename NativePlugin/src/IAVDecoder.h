@@ -59,7 +59,7 @@ public:
 	// --------------------------------------------------------------------------
 	// 
 	// --------------------------------------------------------------------------
-	virtual int get_video_data(uint8_t** outputY, uint8_t** outputU, uint8_t** outputV) = 0;
+	virtual bool get_video_data(int frame_index, uint8_t** outputY, uint8_t** outputU, uint8_t** outputV) = 0;
 
 	// --------------------------------------------------------------------------
 	// 

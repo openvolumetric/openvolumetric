@@ -76,11 +76,11 @@ int VolumetricVideoD3D11::start()
 	}
 
 	// Start Decoding - Starts threading
-/*	if (!this->m_geometrydecoder->start_decoding())
+	if (!this->m_geometrydecoder->start_decoding())
 	{
 		return -1;
 	}
-*/	
+	
 	//
 	return 1;
 }
@@ -99,12 +99,12 @@ int VolumetricVideoD3D11::stop()
 		return -1;
 	}
 	
-/*	// Stop decoding geometry
+	// Stop decoding geometry
 	if (!this->m_geometrydecoder->stop_decoding())
 	{
 		return -1;
 	}
-*/
+
 	//
 	return 1;
 }
@@ -123,27 +123,26 @@ int VolumetricVideoD3D11::render()
 	uint8_t * outputV = NULL;
 
 	// Get Frame Data 
-	int frame_index = this->m_avdecoder->get_video_data(&outputY, &outputU, &outputV);
-	if (frame_index == -1)
+	if (!this->m_avdecoder->get_video_data(m_frame_index, &outputY, &outputU, &outputV))
 	{
-		LOG("VolumetricVideoD3D11::render - id: %d - no buffer data - frame: %d", this->m_id, frame_index);
+		LOG("VolumetricVideoD3D11::render - id: %d - no buffer data - frame: %d", this->m_id, m_frame_index);
 		return -1;
 	}
 
-	//Upload video data to texture 
+	// Upload video data to texture 
 	this->m_texture->upload(outputY, outputU, outputV);
 
 	// Get Mesh Data and update buffer
 	Mesh mesh;
-	this->m_geometrydecoder->get_mesh_data(frame_index, mesh);
+	this->m_geometrydecoder->get_mesh_data(m_frame_index, mesh);
 	this->m_meshbuffer->update(&mesh);
 
 	// Clean frame data from the most recently rendered frame
 	this->m_avdecoder->clean_frame_data();
-	//this->m_geometrydecoder->clear_frame_data();
+	this->m_geometrydecoder->clear_frame_data();
 
-	// Return 
-	return frame_index;
+	// Return rendered frame index
+	return m_frame_index;
 }
 
 
