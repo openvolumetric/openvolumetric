@@ -7,19 +7,41 @@ using UnityEngine;
 
 public class VolumetricVideo : MonoBehaviour
 {
-    // -----------------------------
+    //----------------------------------------------------------
     // Public Member variables 
-    public bool debug               = false;
-    public string video_filename;
-    public string mesh_filepattern;
-    public int mesh_start_index;
-    public int mesh_stop_index;
+    //----------------------------------------------------------
+
+    // Geometry inputs
+    [Header("Geometry")]
+    [Tooltip("Pattern to mesh file e.g. /path/to/mesh/%03d.bin.\n" +
+             "Geometry should be encoded using google draco.")]
+    public string meshFilepattern;
+    [Tooltip("Index of first frame")]
+    public int meshStartIndex;
+    [Tooltip("Index of last frame")]
+    public int meshStopIndex;
+
+    // Texture Input
+    [Header("Texture")]
+    [Tooltip("Path to video file containing texture")]
+    public string videoFilename;
+
+    // Playback settings
+    [Header("Playback")]
+    [Tooltip("")]
+    public bool scheduledStart;
+
+    // Debug options
+    [Header("Debug")]
+    [Tooltip("Enable debug, will launch an external console")]
+    public bool debug = false;
 
 
 
-    // -----------------------------
+    //----------------------------------------------------------
     // Private 
-    
+    //----------------------------------------------------------
+
     // Volumetric Video
     private VolumetricVideoDecoder m_decoder;
 
@@ -32,9 +54,12 @@ public class VolumetricVideo : MonoBehaviour
     // Start time
     private double m_start_time;
 
+    // Flag to determine if playback has started
     private bool started = false;
 
+    //----------------------------------------------------------
     // Start is called before the first frame update
+    //----------------------------------------------------------
     void Start()
     {
         // create new volumetric video decoder
@@ -51,7 +76,7 @@ public class VolumetricVideo : MonoBehaviour
         }
 
          // Try to load mesh
-        if(!m_decoder.init_mesh_data(mesh_filepattern, mesh_start_index, mesh_stop_index))
+        if(!m_decoder.init_mesh_data(meshFilepattern, meshStartIndex, meshStopIndex))
         {
             Debug.LogError("VolumetricVideo::Start - Failed to init VolumetricVideoDecoder");
         }
@@ -61,58 +86,73 @@ public class VolumetricVideo : MonoBehaviour
         m_mesh_renderer = gameObject.GetComponent<MeshRenderer>();
         
         // Try to load data
-        string filepath = Path.Combine(Application.streamingAssetsPath, video_filename);
+        string filepath = Path.Combine(Application.streamingAssetsPath, videoFilename);
         if(!m_decoder.init_texture(ref m_mesh_renderer, filepath))
         {
             Debug.LogError("VolumetricVideo::Start - Failed to init VolumetricVideoDecoder");
         }
 
-  
         // Start Decoder
         if(!m_decoder.start_decoding())
         {
             Debug.LogError("VolumetricVideo::Start - Failed to start decoding");
         }
 
-        // Start time of application         
-        m_start_time = AudioSettings.dspTime;
+        // If not scheduled start then 
+        if(!scheduledStart)
+        {
+            m_start_time = AudioSettings.dspTime + 2;
+        }
     }
 
-    //
+    //----------------------------------------------------------
     // Update is called once per frame
-    //
+    //----------------------------------------------------------
     void Update()
     {
-        if(!started)
+        //
+        if(!started && AudioSettings.dspTime >= m_start_time)
         {
             started = true;
             // Start time of application         
             m_start_time = AudioSettings.dspTime;
         }
 
-        // Workout the frame number         
-        double time =  AudioSettings.dspTime - m_start_time;
-        
-        // Set counter in decoder
-        m_decoder.update(time);
+        // If started then begin to update time
+        if (started)
+        {
+            // Workout the frame number         
+            double time = AudioSettings.dspTime - m_start_time;
+
+            // Set counter in decoder
+            m_decoder.update(time);
+        }
     }
 
-    //
-    //
-    //
+    //----------------------------------------------------------
+    // On Application Quit - stop decoding
+    //----------------------------------------------------------
     void OnApplicationQuit() 
     {
 		m_decoder.stop_decoding();
 	}
 
-    //
-    //
-    //
-	void OnDestroy() 
+    //----------------------------------------------------------
+    // On Destroy - stop decoding
+    //----------------------------------------------------------
+    void OnDestroy() 
     {
 		m_decoder.stop_decoding();
 	}
 
+    //----------------------------------------------------------
+    // Option to schedult start based on a DSP time 
+    // Needs to be in the future otherwise it will just start on load
+    //----------------------------------------------------------
+    public void set_scheduled_start(double dspTime)
+    {
+        m_start_time = dspTime;
+    }
 
 
 }
