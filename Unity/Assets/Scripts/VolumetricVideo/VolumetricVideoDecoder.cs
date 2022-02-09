@@ -15,11 +15,11 @@ using System;
 public class VolumetricVideoDecoder 
 {
     //---------------------------------------------
-    // DLL Name
+    // DLL Interface
     //---------------------------------------------
     const string DLLNAME = "VolumetricVideoNativePlugin";
 
-    // DLL Interfacec 
+    // DLL Interfacece
     [DllImport(DLLNAME, EntryPoint = "GetRenderEventFunc")]
     private static extern IntPtr GetRenderEventFunc();
 
