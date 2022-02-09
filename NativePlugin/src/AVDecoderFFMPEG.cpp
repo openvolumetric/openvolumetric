@@ -176,6 +176,7 @@ bool AVDecoderFFMPEG::init_video_context()
 
 // --------------------------------------------------------------------------
 //
+// TODO: ADD AUDIO CONTEXT
 // --------------------------------------------------------------------------
 bool AVDecoderFFMPEG::init(const char* filepath)
 {
@@ -206,9 +207,6 @@ bool AVDecoderFFMPEG::init(const char* filepath)
 	{
 		return false;
 	}
-
-	// TODO ADD AUDIO CONTEXT
-
 
 	// Set decoder init = true
 	this->m_initialised = true;
@@ -472,13 +470,15 @@ bool AVDecoderFFMPEG::get_video_data(int frame_index, uint8_t** outputY, uint8_t
 		return false;
 	}
 
-	//
+	// TODO - Need to undersatand how best to handle these cases - particularly when the frame requested is too far infront/behind
 	AVFrame* frame = NULL;
 	for (int i = 0; i < m_video_frames.size(); i++)
 	{
 		// Case 1: Front of buffer is the requested frame
 		if (m_video_frames.front().frame_index == frame_index)
 		{
+			// Lock and assign frame data 
+			std::lock_guard<std::mutex> lock(m_video_mutex);
 			frame = m_video_frames.front().data;
 			break;
 		}
@@ -503,18 +503,13 @@ bool AVDecoderFFMPEG::get_video_data(int frame_index, uint8_t** outputY, uint8_t
 		}
 	}
 
-
+	// Check that frame has managed to be assigned 
 	if (frame == NULL)
 	{
 		return false;
 	}
 
-
-	// Lock
-	std::lock_guard<std::mutex> lock(m_video_mutex);
-
 	// get decoded frame
-	//AVFrame* frame = m_video_frames.front().data;
 	*outputY = frame->data[0];
 	*outputU = frame->data[1];
 	*outputV = frame->data[2];
@@ -525,8 +520,8 @@ bool AVDecoderFFMPEG::get_video_data(int frame_index, uint8_t** outputY, uint8_t
 	this->m_video_info.last_time	= timeInSec;
 
 	// Convert time to frameindex
-	LOG("DecoderFFMPEG::get_video_data - requested frame_index: %d", frame_index);
-	LOG("DecoderFFMPEG::get_video_data - decoded frame_index:   %d", m_video_frames.front().frame_index);
+//	LOG("DecoderFFMPEG::get_video_data - requested frame_index: %d", frame_index);
+//	LOG("DecoderFFMPEG::get_video_data - decoded frame_index:   %d", m_video_frames.front().frame_index);
 //	LOG("DecoderFFMPEG::get_video_data - time in sec(s): %f", timeInSec);
 
 	//
