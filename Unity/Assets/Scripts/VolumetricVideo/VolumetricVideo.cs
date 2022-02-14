@@ -28,8 +28,8 @@ public class VolumetricVideo : MonoBehaviour
 
     // Playback settings
     [Header("Playback")]
-    [Tooltip("")]
-    public bool scheduledStart;
+    [Tooltip("Enables playback to be started via a script ")]
+    public bool enableScriptedStart;
 
     // Debug options
     [Header("Debug")]
@@ -99,7 +99,7 @@ public class VolumetricVideo : MonoBehaviour
         }
 
         // If not scheduled start then 
-        if(!scheduledStart)
+        if(!enableScriptedStart)
         {
             m_start_time = AudioSettings.dspTime + 2;
         }
