@@ -17,14 +17,12 @@ MeshBufferD3D11::MeshBufferD3D11()
 	// index information
 	m_index_buffer_handle	= NULL;
 	m_index_buffer_size		= -1;
-	m_index_count			= -1;
 	m_index_stride			= -1;
 
 
 	// Vertex information
 	m_vertex_buffer_handle	= NULL;
 	m_vertex_buffer_size	= -1;
-	m_vertex_count			= -1;
 	m_vertex_stride			= -1;
 }
 
@@ -84,13 +82,11 @@ bool MeshBufferD3D11::init(void* handler, void* index_buffer_handle, int index_b
 	LOG("MeshBufferD311::init - index_buffer_handle :      %d", index_buffer_handle);
 	LOG("MeshBufferD311::init - index_buffer_size:         %d", index_buffer_size);
 	LOG("MeshBufferD311::init - index_buffer_size_bytes:   %d", index_buffer_size_bytes);
-	LOG("MeshBufferD311::init - index_count:               %d", m_index_count);
 	LOG("MeshBufferD311::init - index_stride:              %d", m_index_stride);
 	// Report vertex Details
 	LOG("MeshBufferD311::init - vertex_buffer_handle :     %d", vertex_buffer_handle);
 	LOG("MeshBufferD311::init - vertex_buffer_size:        %d", vertex_buffer_size);
 	LOG("MeshBufferD311::init - vertex_buffer_size_bytes:  %d", vertex_buffer_size_bytes);
-	LOG("MeshBufferD311::init - vertex_count:              %d", m_vertex_count);
 	LOG("MeshBufferD311::init - vertex_stride:             %d", m_vertex_stride);
 	
 	// Done
@@ -112,7 +108,6 @@ int MeshBufferD3D11::get_buffer_size(void* bufferHandle)
 	// 
 	return (int)desc.ByteWidth;
 }
-
 
 
 //----------------------------------
@@ -149,11 +144,13 @@ bool MeshBufferD3D11::update(Mesh* mesh)
 	ctx->Map(m_vertex_buffer_handle,	0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_vertexbuffer);
 	ctx->Map(m_index_buffer_handle,		0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_indexbuffer);
 
-	// Update Index Buffer
+	// Update Index Buffer data
 	std::thread index_update_thread = std::thread([&]() 
 	{
 		//Pointer to data
 		char* bufferPtr = (char*)mapped_indexbuffer.pData;
+		memset(bufferPtr, 0, m_index_buffer_size * m_index_stride);
+
 		// Update vertex
 		for (int i = 0; i < mesh->indexes.size(); i++)
 		{
@@ -164,21 +161,8 @@ bool MeshBufferD3D11::update(Mesh* mesh)
 			// increment buffer
 			bufferPtr += m_index_stride;
 		}
-
-		// If the amount of data is less that the existing data then overwrite with zeros
-		for (int i = mesh->indexes.size(); i < m_index_count; i++)
-		{
-			//Set value
-			int& dst = *(int*)bufferPtr;
-			dst = 0;
-
-			// increment buffer
-			bufferPtr += m_index_stride;
-		}
-
-		//Update mesh index count stored in buffers
-		m_index_count = mesh->indexes.size();
 	});
+
 
 	// Update Vertex Buffer
 	std::thread vertex_update_thread = std::thread([&]() 
@@ -186,7 +170,10 @@ bool MeshBufferD3D11::update(Mesh* mesh)
 		//Pointer to data
 		char* bufferPtr = (char*)mapped_vertexbuffer.pData;
 
-		// Update vertex
+		//Zero all data
+		memset(bufferPtr, 0, m_vertex_buffer_size * m_vertex_stride);
+
+		// Update vertex buffer data
 		for (int i = 0; i < mesh->verts.size(); i++)
 		{
 			// Get source vertex 
@@ -201,22 +188,6 @@ bool MeshBufferD3D11::update(Mesh* mesh)
 			// Increment buffer by stride value
 			bufferPtr += m_vertex_stride;
 		}
-
-		// If the amount of data is less that the existing data then overwrite with zeros
-		for (int i = mesh->verts.size(); i < m_vertex_count; i++)
-		{
-			// Get dst vertex and set values
-			Vertex& dst = *(Vertex*)bufferPtr;
-			dst.pos[0] = 0.f;		dst.pos[1] = 0.f;		dst.pos[2] = 0.f;
-			dst.normal[0] = 0.f;	dst.normal[1] = 0.f;	dst.normal[2] = 0.f;
-			dst.uv[0] = 0.f;		dst.uv[1] = 0.f;
-
-			// Increment buffer by stride value
-			bufferPtr += m_vertex_stride;
-		}
-
-		// Update mesh vertex count stored in buffers
-		m_vertex_count = mesh->verts.size();
 	});
 
 
