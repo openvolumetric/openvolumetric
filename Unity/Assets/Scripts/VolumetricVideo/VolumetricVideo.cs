@@ -28,6 +28,8 @@ public class VolumetricVideo : MonoBehaviour
 
     // Playback settings
     [Header("Playback")]
+    [Tooltip("When enabled the content will loop")]
+    public bool enableLoop = false;
     [Tooltip("Enables playback to be started via a script ")]
     public bool enableScriptedStart;
 
@@ -54,8 +56,19 @@ public class VolumetricVideo : MonoBehaviour
     // Start time
     private double m_start_time;
 
-    // Flag to determine if playback has started
-    private bool started = false;
+    // Enum for the Playback state
+    enum PlaybackState
+    {
+        READY,
+        SCHEDULED,
+        STOPPED,
+        PLAYING,
+    };
+
+    // Playback State
+    private PlaybackState m_playback_state;
+
+
 
     //----------------------------------------------------------
     // Start is called before the first frame update
@@ -65,7 +78,7 @@ public class VolumetricVideo : MonoBehaviour
         // create new volumetric video decoder
         m_decoder = new VolumetricVideoDecoder(debug);
 
-        // Geometry part
+        // Geometry 
         gameObject.AddComponent<MeshFilter>();
         m_mesh = gameObject.GetComponent<MeshFilter>().mesh;
 
@@ -101,8 +114,10 @@ public class VolumetricVideo : MonoBehaviour
         // If not scheduled start then 
         if(!enableScriptedStart)
         {
-            m_start_time = AudioSettings.dspTime + 2;
+            m_start_time = AudioSettings.dspTime ;
+            m_playback_state = PlaybackState.SCHEDULED;
         }
+
     }
 
     //----------------------------------------------------------
@@ -110,22 +125,31 @@ public class VolumetricVideo : MonoBehaviour
     //----------------------------------------------------------
     void Update()
     {
-        //
-        if(!started && AudioSettings.dspTime >= m_start_time)
+        // handle the case that playback has been scheduled
+        if (m_playback_state == PlaybackState.SCHEDULED && AudioSettings.dspTime >= m_start_time)
         {
-            started = true;
             // Start time of application         
             m_start_time = AudioSettings.dspTime;
+            m_playback_state = PlaybackState.PLAYING;
         }
 
         // If started then begin to update time
-        if (started)
+        if (m_playback_state == PlaybackState.PLAYING)
         {
             // Workout the frame number         
             double time = AudioSettings.dspTime - m_start_time;
 
             // Set counter in decoder
             m_decoder.update(time);
+
+            if(!enableLoop)
+            {
+                if(m_decoder.ContentLooped)
+                {
+                    m_playback_state = PlaybackState.STOPPED;
+                    m_mesh_renderer.enabled = false;
+                }
+            }
         }
     }
 
@@ -134,7 +158,10 @@ public class VolumetricVideo : MonoBehaviour
     //----------------------------------------------------------
     void OnApplicationQuit() 
     {
-		m_decoder.stop_decoding();
+		if(m_decoder.stop_decoding())
+        {
+            m_playback_state = PlaybackState.STOPPED;
+        }
 	}
 
     //----------------------------------------------------------
@@ -142,8 +169,11 @@ public class VolumetricVideo : MonoBehaviour
     //----------------------------------------------------------
     void OnDestroy() 
     {
-		m_decoder.stop_decoding();
-	}
+        if (m_decoder.stop_decoding())
+        {
+            m_playback_state = PlaybackState.STOPPED;
+        }
+    }
 
     //----------------------------------------------------------
     // Option to schedult start based on a DSP time 
@@ -151,7 +181,8 @@ public class VolumetricVideo : MonoBehaviour
     //----------------------------------------------------------
     public void set_scheduled_start(double dspTime)
     {
-        m_start_time = dspTime;
+        m_start_time        = dspTime;
+        m_playback_state    = PlaybackState.SCHEDULED;
     }
 
 
