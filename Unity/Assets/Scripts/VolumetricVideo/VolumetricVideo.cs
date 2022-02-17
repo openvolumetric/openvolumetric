@@ -2,7 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-
+using UnityEditor;
 
 
 public class VolumetricVideo : MonoBehaviour
@@ -11,8 +11,8 @@ public class VolumetricVideo : MonoBehaviour
     // Public Member variables 
     //----------------------------------------------------------
 
-    // Geometry inputs
-    [Header("Geometry")]
+    // Geometry Settings
+    [Header("Geometry Settings")]
     [Tooltip("Pattern to mesh file e.g. /path/to/mesh/%03d.bin.\n" +
              "Geometry should be encoded using google draco.")]
     public string meshFilepattern;
@@ -21,24 +21,31 @@ public class VolumetricVideo : MonoBehaviour
     [Tooltip("Index of last frame")]
     public int meshStopIndex;
 
-    // Texture Input
-    [Header("Texture")]
+    // Texture Settings
+    [Header("Texture Settings")]
     [Tooltip("Path to video file containing texture")]
     public string videoFilename;
+    [Tooltip("Luminance Correction - Y")]
+    [Range(-0.2F, 0.2F)]
+    public float luminaceCorrection=0.0F;
+    [Tooltip("Chrominance Correction - Blue Projection - U")]
+    [Range(-0.2F, 0.2F)]
+    public float blueProjectionCorrection=0.0F;
+    [Tooltip("Chrominance Correction - Red Projection - V")]
+    [Range(-0.2F, 0.2F)]
+    public float redProjectionCorrection=0.0F;
 
     // Playback settings
-    [Header("Playback")]
+    [Header("Playback Settings")]
     [Tooltip("When enabled the content will loop")]
     public bool enableLoop = false;
     [Tooltip("Enables playback to be started via a script ")]
     public bool enableScriptedStart;
 
     // Debug options
-    [Header("Debug")]
+    [Header("Debug Settings")]
     [Tooltip("Enable debug, will launch an external console")]
     public bool debug = false;
-
-
 
     //----------------------------------------------------------
     // Private 
@@ -47,63 +54,57 @@ public class VolumetricVideo : MonoBehaviour
     // Volumetric Video
     private VolumetricVideoDecoder m_decoder;
 
-    // Mesh Filter - the form of the object
-    private Mesh m_mesh;
-
-    // Mesh Renderer - the way the object looks on screen
-    private MeshRenderer m_mesh_renderer;
-
     // Start time
     private double m_start_time;
 
     // Enum for the Playback state
     enum PlaybackState
     {
-        READY,
+        INIT_FAIL = -1,
+        UNINITIALISED,
+        INITIALISED,
         SCHEDULED,
         STOPPED,
         PLAYING,
     };
 
     // Playback State
-    private PlaybackState m_playback_state;
-
-
+    private PlaybackState m_playback_state = PlaybackState.UNINITIALISED;
+    
 
     //----------------------------------------------------------
     // Start is called before the first frame update
     //----------------------------------------------------------
     void Start()
     {
+        // Add components required to draw mesh
+        MeshFilter mesh_filter = gameObject.AddComponent<MeshFilter>();
+        MeshRenderer mesh_renderer = gameObject.AddComponent<MeshRenderer>();
+
         // create new volumetric video decoder
         m_decoder = new VolumetricVideoDecoder(debug);
-
-        // Geometry 
-        gameObject.AddComponent<MeshFilter>();
-        m_mesh = gameObject.GetComponent<MeshFilter>().mesh;
-
-        //
-       if (!m_decoder.init_mesh(ref m_mesh))
-        {
-            Debug.LogError("VolumetricVideo::Start - Failed to init Mesh Buffers");
-        }
-
-         // Try to load mesh
+             
+        // Init/Load mesh
         if(!m_decoder.init_mesh_data(meshFilepattern, meshStartIndex, meshStopIndex))
         {
-            Debug.LogError("VolumetricVideo::Start - Failed to init VolumetricVideoDecoder");
+            Debug.LogError("VolumetricVideo::Start - Failed to init VolumetricVideoDecoder");        
         }
 
-        // Add/Get Mesh renderer
-        gameObject.AddComponent<MeshRenderer>();
-        m_mesh_renderer = gameObject.GetComponent<MeshRenderer>();
+        // Assigned Mesh to mesh filter Object
+        mesh_filter.mesh = m_decoder.Mesh;
         
-        // Try to load data
+        // Load Texture data
         string filepath = Path.Combine(Application.streamingAssetsPath, videoFilename);
-        if(!m_decoder.init_texture(ref m_mesh_renderer, filepath))
+        if(!m_decoder.init_texture(ref mesh_renderer, filepath))
         {
             Debug.LogError("VolumetricVideo::Start - Failed to init VolumetricVideoDecoder");
         }
+
+        //
+        m_decoder.set_colour_correction_values(luminaceCorrection, blueProjectionCorrection, redProjectionCorrection);
+
+        // Set Player State to Initialised
+        m_playback_state = PlaybackState.INITIALISED;
 
         // Start Decoder
         if(!m_decoder.start_decoding())
@@ -111,13 +112,15 @@ public class VolumetricVideo : MonoBehaviour
             Debug.LogError("VolumetricVideo::Start - Failed to start decoding");
         }
 
+        // Set Player State to Initialised
+        m_playback_state = PlaybackState.PLAYING;
+
         // If not scheduled start then 
         if(!enableScriptedStart)
         {
             m_start_time = AudioSettings.dspTime ;
             m_playback_state = PlaybackState.SCHEDULED;
         }
-
     }
 
     //----------------------------------------------------------
@@ -142,15 +145,14 @@ public class VolumetricVideo : MonoBehaviour
             // Set counter in decoder
             m_decoder.update(time);
 
-            if(!enableLoop)
+            //
+            if(!enableLoop && m_decoder.ContentLooped)
             {
-                if(m_decoder.ContentLooped)
-                {
-                    m_playback_state = PlaybackState.STOPPED;
-                    m_mesh_renderer.enabled = false;
-                }
+                m_playback_state = PlaybackState.STOPPED;
+                m_decoder.MeshRenderer.enabled = false;
             }
-        }
+         }
+
     }
 
     //----------------------------------------------------------
@@ -185,5 +187,16 @@ public class VolumetricVideo : MonoBehaviour
         m_playback_state    = PlaybackState.SCHEDULED;
     }
 
+
+    //----------------------------------------------------------
+    // On Destroy - stop decoding
+    //----------------------------------------------------------
+    private void OnValidate()
+    {
+        if(m_playback_state == PlaybackState.PLAYING)
+        {
+            m_decoder.set_colour_correction_values(luminaceCorrection, blueProjectionCorrection, redProjectionCorrection);
+        }
+    }
 
 }

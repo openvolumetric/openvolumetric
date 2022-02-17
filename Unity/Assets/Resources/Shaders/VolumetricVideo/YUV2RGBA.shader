@@ -10,6 +10,11 @@ Shader "VolumetricVideo/YUV2RGBA"
 		_YTex("Y channel", 2D) = "black" {}
 		_UTex("U channel", 2D) = "gray" {}
 		_VTex("V channel", 2D) = "gray" {}
+		_LuminanceCorrection("Luminance Correction", float) = 0.0
+		_BlueProjectionCorrection("Blue Projection Correction", float) = 0.0
+		_RedProjectionCorrection("Red Projection Correction", float) = 0.0
+
+
 	}
 	SubShader
 	{
@@ -44,7 +49,11 @@ Shader "VolumetricVideo/YUV2RGBA"
 			sampler2D _UTex;
 			sampler2D _VTex;
 			float4 _MainTex_ST;
-			
+			float _LuminanceCorrection;
+			float _RedProjectionCorrection;
+			float _BlueProjectionCorrection;
+
+			// Vertex Shader
 			v2f vert (appdata v)
 			{
 				v2f o;
@@ -54,20 +63,29 @@ Shader "VolumetricVideo/YUV2RGBA"
 				return o;
 			}
 			
+			// Fragment Shader
 			fixed4 frag (v2f i) : SV_Target
 			{
+				// Inverse the y UV coordinate
 				float2 inv_uv = float2(i.uv.x, 1.0 - i.uv.y);
-				float ych = tex2D(_YTex, inv_uv).a;
-				float uch = tex2D(_UTex, inv_uv).a * 0.872 - 0.436;		//	Scale from 0 ~ 1 to -0.436 ~ +0.436
-				float vch = tex2D(_VTex, inv_uv).a * 1.230 - 0.615;		//	Scale from 0 ~ 1 to -0.615 ~ +0.615
-				/*	BT.601	*/
+
+				//Get YUV Values
+				float ych = tex2D(_YTex, inv_uv).a + _LuminanceCorrection;
+				float uch = tex2D(_UTex, inv_uv).a * 0.872 - 0.436 + _BlueProjectionCorrection;		//	Scale from 0 ~ 1 to -0.436 ~ +0.436
+				float vch = tex2D(_VTex, inv_uv).a * 1.230 - 0.615 + _RedProjectionCorrection;		//	Scale from 0 ~ 1 to -0.615 ~ +0.615
+										/*	BT.601	*/
+				// Convert to RGB
 				float rch = clamp(ych + 1.13983 * vch, 0.0, 1.0);
 				float gch = clamp(ych - 0.39465 * uch - 0.58060 * vch, 0.0, 1.0);
 				float bch = clamp(ych + 2.03211 * uch, 0.0, 1.0);
 				
+				// Set final Colour
 				fixed4 col = fixed4(rch, gch, bch, 1.0);
 
+				// Apply Fog
 				UNITY_APPLY_FOG(i.fogCoord, col);
+				
+				// Return
 				return col;
 			}
 			ENDCG
