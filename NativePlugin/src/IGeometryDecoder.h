@@ -42,7 +42,11 @@ public:
 	// function to clear 
 	// --------------------------------------------------------------------------
 	virtual void clear_frame_data() = 0;
-	   
+	
+
+	virtual void destroy() = 0;
+
+
 
 protected:
 

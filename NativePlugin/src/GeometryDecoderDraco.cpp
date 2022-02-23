@@ -25,6 +25,24 @@ GeometryDecoderDraco::~GeometryDecoderDraco()
 }
 
 // --------------------------------------------------------------------------
+// Destroy
+// --------------------------------------------------------------------------
+void GeometryDecoderDraco::destroy()
+{
+	LOG("GeometryDecoderDraco::destroy - start");
+
+	//
+	flush_buffer();
+
+	//
+	m_encoded_meshes.clear();
+
+	//
+	LOG("GeometryDecoderDraco::destroy - stop");
+}
+
+
+// --------------------------------------------------------------------------
 //
 // --------------------------------------------------------------------------
 bool GeometryDecoderDraco::init(char* filepattern, int start_index, int stop_index)
@@ -336,6 +354,7 @@ bool GeometryDecoderDraco::convert_draco_to_mesh(DracoData& draco_data, Mesh& me
 // --------------------------------------------------------------------------
 bool GeometryDecoderDraco::stop_decoding()
 {
+	//
 	LOG("GeometryDecoderDraco::stop_decoding");
 
 	//
@@ -359,5 +378,21 @@ void GeometryDecoderDraco::clear_frame_data()
 	//
 	std::lock_guard<std::mutex> lock(m_geometry_mutex);
 	m_decoded_meshes.pop();
+}
+
+// --------------------------------------------------------------------------
+// Flush Buffers
+// --------------------------------------------------------------------------
+void GeometryDecoderDraco::flush_buffer()
+{
+	LOG("GeometryDecoderDraco::flush_buffer - start");
+
+	while (!m_decoded_meshes.empty())
+	{
+		clear_frame_data();
+	}
+
+	//
+	LOG("GeometryDecoderDraco::flush_buffer - stop");
 }
 

@@ -22,8 +22,33 @@ TextureD3D11::TextureD3D11()
 //
 TextureD3D11::~TextureD3D11()
 {
-	destroy();
 }
+
+//----------------------------------
+//	
+void TextureD3D11::destroy()
+{
+	LOG("TextureD3D11::destroy - start");
+
+	mD3D11Device = NULL;
+	mWidthY = mHeightY = mLengthY = 0;
+	mWidthUV = mHeightUV = mLengthUV = 0;
+
+	for (int i = 0; i < TEXTURE_NUM; i++) {
+		if (mTextures[i] != NULL) {
+			mTextures[i]->Release();
+			mTextures[i] = NULL;
+		}
+
+		if (mShaderResourceView[i] != NULL) {
+			mShaderResourceView[i]->Release();
+			mShaderResourceView[i] = NULL;
+		}
+	}
+	LOG("TextureD3D11::destroy - end");
+}
+
+
 
 //----------------------------------
 //
@@ -200,23 +225,3 @@ void TextureD3D11::upload(unsigned char* ych, unsigned char* uch, unsigned char*
 	ctx->Release();
 }
 
-//----------------------------------
-//	
-void TextureD3D11::destroy() 
-{
-	mD3D11Device = NULL;
-	mWidthY = mHeightY = mLengthY = 0;
-	mWidthUV = mHeightUV = mLengthUV = 0;
-
-	for (int i = 0; i < TEXTURE_NUM; i++) {
-		if (mTextures[i] != NULL) {
-			mTextures[i]->Release();
-			mTextures[i] = NULL;
-		}
-
-		if (mShaderResourceView[i] != NULL) {
-			mShaderResourceView[i]->Release();
-			mShaderResourceView[i] = NULL;
-		}
-	}
-}

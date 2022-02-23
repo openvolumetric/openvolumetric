@@ -256,6 +256,9 @@ __declspec(dllexport) void	volumetricvideo_quit(int ID)
 		return;
 	}
 
+	// Destroy volumetric video decoder - free up resources
+	(*iter)->destroy();
+
 	// delete contents of pointer and erase from list
 	delete (*iter);
 	vv_instances.erase(iter);

@@ -205,7 +205,24 @@ public class VolumetricVideoDecoder
         return true;
     }
 
-        //----------------------------------------------------------
+    //----------------------------------------------------------
+    // Vertex Data structure
+    //----------------------------------------------------------
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    struct Vertex
+    {
+        public Vertex(float x, float y, float z, float nx, float ny, float nz, float u, float v)
+        {
+            pos     = new Vector3(x, y, z);
+            normal  = new Vector3(nx, ny, nz);
+            uv      = new Vector3(u, v);
+        }
+        public Vector3 pos;
+        public Vector3 normal;
+        public Vector2 uv;
+    }
+
+    //----------------------------------------------------------
     // Start the decoder
     //----------------------------------------------------------
     private bool init_mesh()
@@ -217,7 +234,7 @@ public class VolumetricVideoDecoder
             return false;
         }
 
-        //
+        // Create New Mesh
         m_mesh = new Mesh();
 
         // Mark mesh as dynamic so it is writable and accessiable on the CPU
@@ -243,6 +260,7 @@ public class VolumetricVideoDecoder
             vert_buffer_data[i] = new Vertex(0, 0, 0, 0, 0, 0, 0, 0);
         }
         m_mesh.SetVertexBufferData(vert_buffer_data, 0, 0, vertex_count);
+        vert_buffer_data.Dispose();
 
         // Init indexes that make up the triangles
         int[] tris_array = new int[index_count];
@@ -388,25 +406,6 @@ public class VolumetricVideoDecoder
         return true;
     }
 
-    //----------------------------------------------------------
-    // Vertex Data structure
-    //----------------------------------------------------------
-    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
-    struct Vertex
-    {
-        public Vertex(float x, float y, float z, float nx, float ny, float nz, float u, float v)
-        {
-            pos     = new Vector3(x, y, z);
-            normal  = new Vector3(nx, ny, nz);
-            uv      = new Vector3(u, v);
-        }
-        public Vector3 pos;
-        public Vector3 normal;
-        public Vector2 uv;
-    }
-
-
-
 
     //----------------------------------------------------------
     // Start the decoder
@@ -485,6 +484,9 @@ public class VolumetricVideoDecoder
             // Issue render event
             GL.IssuePluginEvent(GetRenderEventFunc(), m_instance_id);
 
+            // Recalculate Mesh Bounds
+            m_mesh.RecalculateBounds();
+            
             // flag to detect that the content has looped
             if(current_frame < m_previous_frame)
             {

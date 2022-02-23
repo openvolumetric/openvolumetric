@@ -171,7 +171,7 @@ MonoBehaviour:
   luminaceCorrection: 0
   blueProjectionCorrection: 0
   redProjectionCorrection: 0
-  enableLoop: 0
+  enableLoop: 1
   enableScriptedStart: 1
   debug: 0
 --- !u!1 &283537296
@@ -224,9 +224,9 @@ MonoBehaviour:
   luminaceCorrection: 0
   blueProjectionCorrection: 0
   redProjectionCorrection: 0
-  enableLoop: 0
+  enableLoop: 1
   enableScriptedStart: 1
-  debug: 0
+  debug: 1
 --- !u!1 &922564373
 GameObject:
   m_ObjectHideFlags: 0

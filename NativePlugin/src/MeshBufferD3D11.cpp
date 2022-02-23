@@ -8,7 +8,7 @@
 
 //----------------------------------
 //
-//
+//----------------------------------
 MeshBufferD3D11::MeshBufferD3D11()
 {
 	// Device Pointer
@@ -28,16 +28,25 @@ MeshBufferD3D11::MeshBufferD3D11()
 
 //----------------------------------
 //
-//
+//----------------------------------
 MeshBufferD3D11::~MeshBufferD3D11()
 {
 
 }
 
+//----------------------------------
+//
+//----------------------------------
+void MeshBufferD3D11::destroy()
+{
+	// TODO
+}
+
+
 
 //----------------------------------
 //
-//
+//----------------------------------
 bool MeshBufferD3D11::init(void* handler, void* index_buffer_handle, int index_buffer_size, void* vertex_buffer_handle, int vertex_buffer_size)
 {
 	// Check device handler

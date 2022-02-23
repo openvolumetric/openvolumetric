@@ -10,8 +10,8 @@
 #include <iostream>
 
 //----------------------------------------------
-//
-//
+// 
+//----------------------------------------------
 VolumetricVideoD3D11::VolumetricVideoD3D11(int ID) : IVolumetricVideo(ID)
 {
 	LOG("VolumetricVideoD3D11::VolumetricVideoD3D11 - Constructor - %d", ID);
@@ -31,26 +31,44 @@ VolumetricVideoD3D11::VolumetricVideoD3D11(int ID) : IVolumetricVideo(ID)
 
 //----------------------------------------------
 // 
-//
+//----------------------------------------------
 VolumetricVideoD3D11::~VolumetricVideoD3D11() 
 {
 	LOG("VolumetricVideoD3D11::~VolumetricVideoD3D11 - id: %d ", this->m_id);
+}
 
-	delete this->m_avdecoder;
+
+//----------------------------------------------
+// 
+//----------------------------------------------
+void VolumetricVideoD3D11::destroy()
+{
+	LOG("VolumetricVideoD3D11::destroy - start id: %d ", this->m_id);
+
+	//  Clean up texture resources
+	this->m_texture->destroy();
 	delete this->m_texture;
 
+	// Clean up avdecoder resources
+	this->m_avdecoder->destroy();
+	delete this->m_avdecoder;
+
+	this->m_geometrydecoder->destroy();
 	delete this->m_geometrydecoder;
+	
+	this->m_meshbuffer->destroy();
 	delete this->m_meshbuffer;
+	
+	LOG("VolumetricVideoD3D11::destroy - end id: %d ", this->m_id);
+
 }
 
 
 
 
-
-
-//--------------------------------------------------------
-//
-//
+//----------------------------------------------
+// 
+//----------------------------------------------
 int VolumetricVideoD3D11::start()
 {
 	LOG("VolumetricVideoD3D11::start - id: %d", this->m_id);
@@ -86,9 +104,9 @@ int VolumetricVideoD3D11::start()
 }
 
 
-//--------------------------------------------------------
-//
-//
+//----------------------------------------------
+// 
+//----------------------------------------------
 int VolumetricVideoD3D11::stop()
 {
 	LOG("VolumetricVideoD3D11::stop - id: %d", this->m_id);
@@ -111,8 +129,8 @@ int VolumetricVideoD3D11::stop()
 
 
 //----------------------------------------------
-//
-//
+// 
+//----------------------------------------------
 int VolumetricVideoD3D11::render()
 {
 //	LOG("VolumetricVideoD3D11::render - id: %d", this->m_id);
@@ -148,8 +166,8 @@ int VolumetricVideoD3D11::render()
 
 
 //----------------------------------------------
-//
-//
+// 
+//----------------------------------------------
 int VolumetricVideoD3D11::seek(double time)
 {
 	LOG("VolumetricVideoD3D11::seek - id: %d time: %f", this->m_id, time);

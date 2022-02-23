@@ -32,6 +32,19 @@ AVDecoderFFMPEG::~AVDecoderFFMPEG()
 {
 	//
 	LOG("AVDecoderFFMPEG::~AVDecoderFFMPEG" );
+}
+
+
+// --------------------------------------------------------------------------
+//
+// --------------------------------------------------------------------------
+void AVDecoderFFMPEG::destroy()
+{
+	//
+	LOG("AVDecoderFFMPEG::destroy - start");
+
+	// Delete Buffer Data
+	flush_buffers();
 
 	//Free all Context variables
 	if (m_avformat_ctx != NULL)
@@ -56,8 +69,10 @@ AVDecoderFFMPEG::~AVDecoderFFMPEG()
 
 	// Other Variables
 	this->m_decoder_state = STOP;
-}
 
+	//
+	LOG("AVDecoderFFMPEG::destroy - stop");
+}
 
 
 // --------------------------------------------------------------------------
@@ -281,6 +296,9 @@ bool AVDecoderFFMPEG::start_decoding()
 bool AVDecoderFFMPEG::stop_decoding()
 {
 	//
+	LOG("AVDecoderFFMPEG::stop_decoding");
+
+	//
 	m_decoder_state = STOP;
 
 	// join main thread
@@ -300,7 +318,7 @@ bool AVDecoderFFMPEG::stop_decoding()
 // --------------------------------------------------------------------------
 bool AVDecoderFFMPEG::decode()
 {
-	//LOG("DecoderFFMPEG::decode - start");
+	//	LOG("DecoderFFMPEG::decode - start");
 
 	// Check that the decoder is initialised 
 	if (!m_initialised)
@@ -420,6 +438,28 @@ void AVDecoderFFMPEG::free_front_frame(std::queue<FrameData>* buffer, std::mutex
 }
 
 
+// --------------------------------------------------------------------------
+// Delete all data in the buffers
+// --------------------------------------------------------------------------
+void AVDecoderFFMPEG::flush_buffers()
+{
+	//
+	LOG(" AVDecoderFFMPEG::flush_buffers - start");
+
+	//
+	//std::lock_guard<std::mutex> lock(m_video_mutex);
+
+	//
+	while(!m_video_frames.empty())
+	{
+		clean_frame_data();
+	}
+
+	//
+	LOG(" AVDecoderFFMPEG::flush_buffers - end");
+}
+
+
 
 
 // --------------------------------------------------------------------------
@@ -440,7 +480,7 @@ bool AVDecoderFFMPEG::seek(double time)
 	//seek to frame
 	if (av_seek_frame(m_avformat_ctx, -1, timeStamp, AVSEEK_FLAG_BACKWARD) < 0)
 	{
-		LOG("AVDecoderFFMPEG::seek - seek time fail \n");
+		LOG("AVDecoderFFMPEG::seek - seek time fail");
 		return false;
 	}
 
@@ -574,3 +614,6 @@ void AVDecoderFFMPEG::update_buffer_state()
 		}
 	}
 }
+
+
+
