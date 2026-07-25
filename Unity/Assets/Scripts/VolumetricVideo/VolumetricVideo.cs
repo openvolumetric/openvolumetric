@@ -2,7 +2,6 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEditor;
 
 
 public class VolumetricVideo : MonoBehaviour
@@ -53,9 +52,11 @@ public class VolumetricVideo : MonoBehaviour
 
     // Volumetric Video
     private VolumetricVideoDecoder m_decoder;
+    private AudioSource m_audio_source;
 
     // Start time
     private double m_start_time;
+    private bool m_has_scheduled_start;
 
     // Enum for the Playback state
     enum PlaybackState
@@ -100,6 +101,23 @@ public class VolumetricVideo : MonoBehaviour
             Debug.LogError("VolumetricVideo::Start - Failed to init VolumetricVideoDecoder");
         }
 
+        if(!m_decoder.init_audio())
+        {
+            Debug.LogError("VolumetricVideo::Start - Failed to initialise audio");
+        }
+        else if(m_decoder.HasAudio)
+        {
+            m_audio_source = gameObject.GetComponent<AudioSource>();
+            if(m_audio_source == null)
+            {
+                m_audio_source = gameObject.AddComponent<AudioSource>();
+            }
+            m_audio_source.playOnAwake = false;
+            m_audio_source.loop = enableLoop;
+            m_audio_source.spatialBlend = 0.0F;
+            m_audio_source.clip = m_decoder.AudioClip;
+        }
+
         //
         m_decoder.set_colour_correction_values(luminaceCorrection, blueProjectionCorrection, redProjectionCorrection);
 
@@ -112,14 +130,16 @@ public class VolumetricVideo : MonoBehaviour
             Debug.LogError("VolumetricVideo::Start - Failed to start decoding");
         }
 
-        // Set Player State to Initialised
-        m_playback_state = PlaybackState.PLAYING;
+        m_playback_state = PlaybackState.INITIALISED;
 
-        // If not scheduled start then 
         if(!enableScriptedStart)
         {
-            m_start_time = AudioSettings.dspTime ;
+            set_scheduled_start(AudioSettings.dspTime + 0.1);
+        }
+        else if(m_has_scheduled_start)
+        {
             m_playback_state = PlaybackState.SCHEDULED;
+            schedule_audio();
         }
     }
 
@@ -131,8 +151,6 @@ public class VolumetricVideo : MonoBehaviour
         // handle the case that playback has been scheduled
         if (m_playback_state == PlaybackState.SCHEDULED && AudioSettings.dspTime >= m_start_time)
         {
-            // Start time of application         
-            m_start_time = AudioSettings.dspTime;
             m_playback_state = PlaybackState.PLAYING;
         }
 
@@ -160,6 +178,10 @@ public class VolumetricVideo : MonoBehaviour
     //----------------------------------------------------------
     void OnApplicationQuit() 
     {
+        if(m_audio_source != null)
+        {
+            m_audio_source.Stop();
+        }
 		if(m_decoder.stop_decoding())
         {
             m_playback_state = PlaybackState.STOPPED;
@@ -171,6 +193,10 @@ public class VolumetricVideo : MonoBehaviour
     //----------------------------------------------------------
     void OnDestroy() 
     {
+        if(m_audio_source != null)
+        {
+            m_audio_source.Stop();
+        }
         if (m_decoder.stop_decoding())
         {
             m_playback_state = PlaybackState.STOPPED;
@@ -184,7 +210,17 @@ public class VolumetricVideo : MonoBehaviour
     public void set_scheduled_start(double dspTime)
     {
         m_start_time        = dspTime;
+        m_has_scheduled_start = true;
         m_playback_state    = PlaybackState.SCHEDULED;
+        schedule_audio();
+    }
+
+    private void schedule_audio()
+    {
+        if(m_audio_source != null && m_audio_source.clip != null)
+        {
+            m_audio_source.PlayScheduled(m_start_time);
+        }
     }
 
 

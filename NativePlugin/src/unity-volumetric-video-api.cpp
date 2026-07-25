@@ -493,6 +493,37 @@ VOLUMETRIC_VIDEO_API int	volumetricvideo_get_video_details(int ID, int& width, i
 	return 1;
 }
 
+VOLUMETRIC_VIDEO_API int volumetricvideo_get_audio_details(
+	int ID, int& sample_rate, int& channels)
+{
+	VolumetricVideo_iter iter;
+	if (!get_vv_instance(ID, &iter))
+		return -1;
+
+	const IAVDecoder::AudioInfo info =
+		(*iter)->get_avdecoder_ptr()->get_audio_info();
+	if (!info.is_enabled)
+	{
+		sample_rate = 0;
+		channels = 0;
+		return 0;
+	}
+
+	sample_rate = info.sample_rate;
+	channels = info.channels;
+	return 1;
+}
+
+VOLUMETRIC_VIDEO_API int volumetricvideo_read_audio(
+	int ID, float* samples, int sample_count)
+{
+	VolumetricVideo_iter iter;
+	if (!get_vv_instance(ID, &iter) || samples == NULL || sample_count <= 0)
+		return -1;
+
+	return (*iter)->get_avdecoder_ptr()->read_audio(samples, sample_count);
+}
+
 
 // --------------------------------------------------------------------------
 // Set unity DX11 Textures

@@ -20,6 +20,11 @@ Textures are enocded using ffmpeg h265. The following command can be used to enc
     ffmpeg -i %06d.png  -s 1024x1024 -c:v libx265 -crf 25  -pix_fmt yuv420p -x265-params keyint=20:min-keyint=1:bframes=0:slices=6 -r $FRAMERATE output.mmp4
 ``
 
+If the media file also contains an audio stream, the native plugin decodes it
+to interleaved stereo floating-point PCM. Unity plays it through a streaming
+`AudioClip` scheduled from the same DSP timestamp as the geometry and texture
+streams. Media without audio continues to play normally.
+
 
 ### Contributors:
 
@@ -105,3 +110,15 @@ native plugin.
 The first FFmpeg build can take a significant amount of time. Subsequent builds
 reuse vcpkg's installed tree; CI should additionally configure a vcpkg binary
 cache.
+
+### Future development
+
+- Replace the macOS backend's per-frame Metal staging-buffer allocations with
+  a reusable ring sized for the maximum number of frames in flight. Preserve
+  the current command-buffer ordering so texture and mesh memory is never
+  overwritten while the GPU is reading it. Consider representing this as a
+  cross-platform upload abstraction: Metal and future Vulkan backends would
+  manage an explicit ring and synchronization, while D3D11 can continue using
+  its driver-managed `D3D11_MAP_WRITE_DISCARD` buffer renaming. Validate the
+  change with frame-time and allocation profiling and confirm that texture
+  flicker does not return.

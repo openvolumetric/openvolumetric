@@ -56,6 +56,12 @@ extern "C"
 	// Get Video Details
 	VOLUMETRIC_VIDEO_API int	volumetricvideo_get_video_details(int ID, int& width, int& height, double& fps, double& duration);
 
+	// Get decoded audio output format. Returns 0 when no audio stream exists.
+	VOLUMETRIC_VIDEO_API int	volumetricvideo_get_audio_details(int ID, int& sample_rate, int& channels);
+
+	// Pull interleaved float PCM. Unavailable samples are filled with silence.
+	VOLUMETRIC_VIDEO_API int	volumetricvideo_read_audio(int ID, float* samples, int sample_count);
+
 	// Set texture Pointer
 	VOLUMETRIC_VIDEO_API int	volumetricvideo_get_texture_pointers(int ID, void*& yPointer, void*& uPointer, void*& vPointer);
 

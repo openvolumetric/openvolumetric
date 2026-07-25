@@ -17,11 +17,19 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 find_package(FFMPEG REQUIRED)
+find_library(VV_SWRESAMPLE_LIBRARY
+  NAMES swresample
+  PATHS ${FFMPEG_LIBRARY_DIRS}
+  REQUIRED
+)
 
 add_library(VolumetricVideoFFmpeg INTERFACE)
 target_include_directories(VolumetricVideoFFmpeg INTERFACE ${FFMPEG_INCLUDE_DIRS})
 target_link_directories(VolumetricVideoFFmpeg INTERFACE ${FFMPEG_LIBRARY_DIRS})
-target_link_libraries(VolumetricVideoFFmpeg INTERFACE ${FFMPEG_LIBRARIES})
+target_link_libraries(VolumetricVideoFFmpeg INTERFACE
+  ${FFMPEG_LIBRARIES}
+  ${VV_SWRESAMPLE_LIBRARY}
+)
 
 # Draco is pinned by the repository submodule and already has a CMake build.
 set(DRACO_TESTS OFF CACHE BOOL "" FORCE)

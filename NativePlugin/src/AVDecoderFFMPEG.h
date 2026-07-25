@@ -6,11 +6,14 @@ extern "C"
 {
 	#include <libavcodec/avcodec.h>
 	#include <libavformat/avformat.h>
+	#include <libswresample/swresample.h>
 }
 
+#include <atomic>
 #include <mutex>
 #include <queue>
 #include <thread>
+#include <vector>
 
 
 
@@ -28,48 +31,50 @@ public:
 	// --------------------------------------------------------------------------
 	//
 	// --------------------------------------------------------------------------
-	~AVDecoderFFMPEG();
+	~AVDecoderFFMPEG() override;
 
 
 	// --------------------------------------------------------------------------
 	//
 	// --------------------------------------------------------------------------
-	bool init(const char* filename);
+	bool init(const char* filename) override;
 
 
 	// --------------------------------------------------------------------------
 	// Start Decoding
 	//
-	bool start_decoding();
+	bool start_decoding() override;
 
 
 	// --------------------------------------------------------------------------
 	// Stop Decoding
 	// --------------------------------------------------------------------------
-	bool stop_decoding();
+	bool stop_decoding() override;
 
 
 	// --------------------------------------------------------------------------
 	//
 	// --------------------------------------------------------------------------
-	bool decode();
+	bool decode() override;
 
 
 	// --------------------------------------------------------------------------
 	//
 	// --------------------------------------------------------------------------
-	bool seek(double time);
+	bool seek(double time) override;
 
 
 	// --------------------------------------------------------------------------
 	//
 	// --------------------------------------------------------------------------
-	bool get_video_data(int frame_index, uint8_t** outputY, uint8_t** outputU, uint8_t** outputV);
+	bool get_video_data(int frame_index, uint8_t** outputY, uint8_t** outputU, uint8_t** outputV) override;
+
+	int read_audio(float* output, int sample_count) override;
 
 	// --------------------------------------------------------------------------
 	//
 	// --------------------------------------------------------------------------
-	void destroy();
+	void destroy() override;
 
 protected:
 
@@ -83,6 +88,8 @@ protected:
 	//
 	// --------------------------------------------------------------------------
 	bool init_video_context();
+
+	bool init_audio_context();
 
 
 	// --------------------------------------------------------------------------
@@ -102,11 +109,17 @@ protected:
 	// --------------------------------------------------------------------------
 	bool decode_video_frame();
 
+	bool decode_audio_frame();
+
+	void push_audio(const float* samples, size_t sample_count);
+
+	void flush_audio();
+
 
 	// --------------------------------------------------------------------------
 	//
 	// --------------------------------------------------------------------------
-	void clean_frame_data();
+	void clean_frame_data() override;
 
 
 	// --------------------------------------------------------------------------
@@ -158,12 +171,21 @@ private:
 	AVCodecContext*			m_video_codec_ctx;
 	const AVCodec*			m_video_codec;
 
+	int						m_audio_stream_index;
+	AVStream*				m_audio_stream;
+	AVCodecContext*			m_audio_codec_ctx;
+	const AVCodec*			m_audio_codec;
+	SwrContext*				m_audio_resampler;
+
 	// --------------------------------------------------------------------------
 	// Decoding and Buffers
 	// --------------------------------------------------------------------------
 	AVPacket				m_packet;
 	std::queue<FrameData>	m_video_frames;
 	unsigned int			m_video_buffer_max;
+	std::vector<float>		m_audio_samples;
+	std::atomic<uint64_t>	m_audio_read_position;
+	std::atomic<uint64_t>	m_audio_write_position;
 
 	// --------------------------------------------------------------------------
 	// Threading 
@@ -172,4 +194,3 @@ private:
 	std::mutex				m_video_mutex;
 
 };
-

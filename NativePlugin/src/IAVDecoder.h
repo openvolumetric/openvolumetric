@@ -26,6 +26,14 @@ public:
 		int frame_count;
 	};
 
+	struct AudioInfo : public StreamInfo
+	{
+		AudioInfo() : StreamInfo(), sample_rate(0), channels(0) {}
+
+		int sample_rate;
+		int channels;
+	};
+
 	// --------------------------------------------------------------------------
 	// 
 	// --------------------------------------------------------------------------
@@ -40,6 +48,8 @@ public:
 	// 
 	// --------------------------------------------------------------------------
 	VideoInfo get_video_info() { return m_video_info; };
+
+	AudioInfo get_audio_info() { return m_audio_info; };
 
 	// --------------------------------------------------------------------------
 	// 
@@ -61,6 +71,8 @@ public:
 	// --------------------------------------------------------------------------
 	virtual bool get_video_data(int frame_index, uint8_t** outputY, uint8_t** outputU, uint8_t** outputV) = 0;
 
+	virtual int read_audio(float* output, int sample_count) = 0;
+
 	// --------------------------------------------------------------------------
 	// 
 	// --------------------------------------------------------------------------
@@ -78,6 +90,7 @@ protected:
 	// 
 	// --------------------------------------------------------------------------
 	VideoInfo m_video_info;
+	AudioInfo m_audio_info;
 
 	
 };

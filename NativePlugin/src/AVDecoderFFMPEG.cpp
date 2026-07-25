@@ -2,6 +2,9 @@
 
 #include <Logger.h>
 
+#include <algorithm>
+#include <cstring>
+#include <vector>
 
 // --------------------------------------------------------------------------
 //
@@ -16,6 +19,15 @@ AVDecoderFFMPEG::AVDecoderFFMPEG() : IAVDecoder()
 	m_video_stream			= NULL;
 	m_video_codec_ctx		= NULL;
 	m_video_codec			= NULL;
+
+	// Audio
+	m_audio_stream_index	= -1;
+	m_audio_stream			= NULL;
+	m_audio_codec_ctx		= NULL;
+	m_audio_codec			= NULL;
+	m_audio_resampler		= NULL;
+	m_audio_read_position.store(0);
+	m_audio_write_position.store(0);
 
 	// Buffer Sizes
 	m_video_buffer_max		= 32;
@@ -63,6 +75,18 @@ void AVDecoderFFMPEG::destroy()
 	m_video_codec = NULL;
 	m_video_stream = NULL;
 
+	if (m_audio_resampler != NULL)
+	{
+		swr_free(&m_audio_resampler);
+	}
+	if (m_audio_codec_ctx != NULL)
+	{
+		avcodec_free_context(&m_audio_codec_ctx);
+	}
+	m_audio_codec = NULL;
+	m_audio_stream = NULL;
+	flush_audio();
+
 	//
 	av_packet_unref(&m_packet);
 
@@ -71,6 +95,82 @@ void AVDecoderFFMPEG::destroy()
 
 	//
 	LOG("AVDecoderFFMPEG::destroy - stop");
+}
+
+// --------------------------------------------------------------------------
+// Initialise the optional audio stream and convert it to interleaved stereo
+// float samples suitable for Unity's streaming AudioClip callback.
+// --------------------------------------------------------------------------
+bool AVDecoderFFMPEG::init_audio_context()
+{
+	int stream = av_find_best_stream(
+		m_avformat_ctx, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
+	if (stream < 0)
+	{
+		LOG("AVDecoderFFMPEG::init_audio_context - no audio stream");
+		return true;
+	}
+
+	m_audio_stream_index = stream;
+	m_audio_stream = m_avformat_ctx->streams[stream];
+	m_audio_codec = avcodec_find_decoder(m_audio_stream->codecpar->codec_id);
+	if (m_audio_codec == NULL)
+	{
+		LOG("AVDecoderFFMPEG::init_audio_context - audio codec not available");
+		return false;
+	}
+
+	m_audio_codec_ctx = avcodec_alloc_context3(m_audio_codec);
+	if (m_audio_codec_ctx == NULL ||
+		avcodec_parameters_to_context(
+			m_audio_codec_ctx, m_audio_stream->codecpar) < 0 ||
+		avcodec_open2(m_audio_codec_ctx, m_audio_codec, NULL) < 0)
+	{
+		LOG("AVDecoderFFMPEG::init_audio_context - could not open audio codec");
+		return false;
+	}
+
+	AVChannelLayout stereo = AV_CHANNEL_LAYOUT_STEREO;
+	const int sample_rate = m_audio_codec_ctx->sample_rate;
+	int ret = swr_alloc_set_opts2(
+		&m_audio_resampler,
+		&stereo,
+		AV_SAMPLE_FMT_FLT,
+		sample_rate,
+		&m_audio_codec_ctx->ch_layout,
+		m_audio_codec_ctx->sample_fmt,
+		sample_rate,
+		0,
+		NULL);
+	if (ret < 0 || m_audio_resampler == NULL ||
+		swr_init(m_audio_resampler) < 0)
+	{
+		LOG("AVDecoderFFMPEG::init_audio_context - resampler init failed");
+		return false;
+	}
+
+	m_audio_info.is_enabled = true;
+	m_audio_info.sample_rate = sample_rate;
+	m_audio_info.channels = stereo.nb_channels;
+	m_audio_info.total_time =
+		m_audio_stream->duration <= 0
+			? static_cast<double>(m_avformat_ctx->duration) / AV_TIME_BASE
+			: m_audio_stream->duration * av_q2d(m_audio_stream->time_base);
+
+	// Four seconds absorbs decoder and render-thread scheduling jitter.
+	m_audio_samples.resize(
+		static_cast<size_t>(sample_rate) *
+		static_cast<size_t>(m_audio_info.channels) * 4u);
+	m_audio_read_position.store(0, std::memory_order_relaxed);
+	m_audio_write_position.store(0, std::memory_order_relaxed);
+
+	LOG("AVDecoderFFMPEG::init_audio_context - Audio Stream: %d", stream);
+	LOG("AVDecoderFFMPEG::init_audio_context - Codec: %s",
+		m_audio_codec->name);
+	LOG("AVDecoderFFMPEG::init_audio_context - Sample Rate: %d", sample_rate);
+	LOG("AVDecoderFFMPEG::init_audio_context - Channels: %d",
+		m_audio_info.channels);
+	return true;
 }
 
 
@@ -222,6 +322,11 @@ bool AVDecoderFFMPEG::init(const char* filepath)
 		return false;
 	}
 
+	if (!init_audio_context())
+	{
+		return false;
+	}
+
 	// Set decoder init = true
 	this->m_initialised = true;
 	m_decoder_state = INITIALIZED;
@@ -342,6 +447,11 @@ bool AVDecoderFFMPEG::decode()
 //			LOG("DecoderFFMPEG::decode - calling - decode_video_frame");
 			decode_video_frame();
 		}
+		else if (m_audio_info.is_enabled &&
+			m_packet.stream_index == m_audio_stream_index)
+		{
+			decode_audio_frame();
+		}
 	
 		// Unref current packet 
 		av_packet_unref(&m_packet);
@@ -350,6 +460,108 @@ bool AVDecoderFFMPEG::decode()
 
 	//
 	return true;
+}
+
+// --------------------------------------------------------------------------
+// Decode and resample one audio packet into the lock-free PCM ring.
+// --------------------------------------------------------------------------
+bool AVDecoderFFMPEG::decode_audio_frame()
+{
+	int ret = avcodec_send_packet(m_audio_codec_ctx, &m_packet);
+	if (ret < 0 && ret != AVERROR(EAGAIN))
+		return false;
+
+	while (ret >= 0)
+	{
+		AVFrame* frame = av_frame_alloc();
+		if (frame == NULL)
+			return false;
+
+		ret = avcodec_receive_frame(m_audio_codec_ctx, frame);
+		if (ret == 0)
+		{
+			const int output_capacity = static_cast<int>(av_rescale_rnd(
+				swr_get_delay(
+					m_audio_resampler, m_audio_codec_ctx->sample_rate) +
+					frame->nb_samples,
+				m_audio_info.sample_rate,
+				m_audio_codec_ctx->sample_rate,
+				AV_ROUND_UP));
+			std::vector<float> converted(
+				static_cast<size_t>(output_capacity) *
+				static_cast<size_t>(m_audio_info.channels));
+			uint8_t* output =
+				reinterpret_cast<uint8_t*>(converted.data());
+			const int output_samples = swr_convert(
+				m_audio_resampler,
+				&output,
+				output_capacity,
+				const_cast<const uint8_t**>(frame->extended_data),
+				frame->nb_samples);
+			if (output_samples > 0)
+			{
+				push_audio(
+					converted.data(),
+					static_cast<size_t>(output_samples) *
+						static_cast<size_t>(m_audio_info.channels));
+			}
+			av_frame_free(&frame);
+		}
+		else
+		{
+			av_frame_free(&frame);
+			if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+				break;
+			return false;
+		}
+	}
+	return true;
+}
+
+void AVDecoderFFMPEG::push_audio(
+	const float* samples, size_t sample_count)
+{
+	if (samples == NULL || sample_count == 0 || m_audio_samples.empty())
+		return;
+
+	const uint64_t write =
+		m_audio_write_position.load(std::memory_order_relaxed);
+	const uint64_t read =
+		m_audio_read_position.load(std::memory_order_acquire);
+	const uint64_t available =
+		static_cast<uint64_t>(m_audio_samples.size()) - (write - read);
+	const size_t count = static_cast<size_t>(
+		std::min<uint64_t>(sample_count, available));
+	for (size_t i = 0; i < count; ++i)
+		m_audio_samples[(write + i) % m_audio_samples.size()] = samples[i];
+	m_audio_write_position.store(write + count, std::memory_order_release);
+}
+
+int AVDecoderFFMPEG::read_audio(float* output, int sample_count)
+{
+	if (output == NULL || sample_count <= 0)
+		return 0;
+
+	const uint64_t read =
+		m_audio_read_position.load(std::memory_order_relaxed);
+	const uint64_t write =
+		m_audio_write_position.load(std::memory_order_acquire);
+	const int count = static_cast<int>(
+		std::min<uint64_t>(
+			static_cast<uint64_t>(sample_count), write - read));
+	for (int i = 0; i < count; ++i)
+		output[i] = m_audio_samples[(read + i) % m_audio_samples.size()];
+	if (count < sample_count)
+		std::fill(output + count, output + sample_count, 0.0f);
+	m_audio_read_position.store(read + count, std::memory_order_release);
+	return count;
+}
+
+void AVDecoderFFMPEG::flush_audio()
+{
+	m_audio_read_position.store(0, std::memory_order_relaxed);
+	m_audio_write_position.store(0, std::memory_order_relaxed);
+	m_audio_samples.clear();
 }
 
 
