@@ -1,6 +1,7 @@
 #include "MeshBufferMetal.h"
 
 #include <Logger.h>
+#include <Unity/IUnityGraphicsMetal.h>
 
 #import <Metal/Metal.h>
 
@@ -8,7 +9,9 @@
 #include <cstring>
 
 MeshBufferMetal::MeshBufferMetal()
-	: m_index_buffer(nullptr),
+	: m_device(nullptr),
+	  m_unity_metal(nullptr),
+	  m_index_buffer(nullptr),
 	  m_vertex_buffer(nullptr),
 	  m_index_count(0),
 	  m_vertex_count(0),
@@ -35,12 +38,14 @@ bool MeshBufferMetal::init(
 
 	id<MTLBuffer> index_buffer = (__bridge id<MTLBuffer>)index_handle;
 	id<MTLBuffer> vertex_buffer = (__bridge id<MTLBuffer>)vertex_handle;
-	if (index_buffer.contents == nullptr || vertex_buffer.contents == nullptr)
-	{
-		LOG("MeshBufferMetal::init - Unity buffers are not CPU accessible");
+	IUnityGraphicsMetal* unity_metal =
+		static_cast<IUnityGraphicsMetal*>(handler);
+	id<MTLDevice> device = unity_metal->MetalDevice();
+	if (device == nil)
 		return false;
-	}
 
+	m_device = (__bridge void*)device;
+	m_unity_metal = unity_metal;
 	m_index_buffer = index_handle;
 	m_vertex_buffer = vertex_handle;
 	m_index_count = index_count;
@@ -66,13 +71,25 @@ bool MeshBufferMetal::update(Mesh* mesh)
 
 	id<MTLBuffer> index_buffer = (__bridge id<MTLBuffer>)m_index_buffer;
 	id<MTLBuffer> vertex_buffer = (__bridge id<MTLBuffer>)m_vertex_buffer;
-	char* index_data = static_cast<char*>(index_buffer.contents);
-	char* vertex_data = static_cast<char*>(vertex_buffer.contents);
-	if (index_data == nullptr || vertex_data == nullptr)
+	id<MTLDevice> device = (__bridge id<MTLDevice>)m_device;
+	IUnityGraphicsMetal* unity_metal =
+		static_cast<IUnityGraphicsMetal*>(m_unity_metal);
+	if (device == nil || unity_metal == nullptr)
 		return false;
 
-	std::memset(index_data, 0, index_buffer.length);
-	std::memset(vertex_data, 0, vertex_buffer.length);
+	id<MTLBuffer> index_staging =
+		[device newBufferWithLength:index_buffer.length
+		                   options:MTLResourceStorageModeShared];
+	id<MTLBuffer> vertex_staging =
+		[device newBufferWithLength:vertex_buffer.length
+		                   options:MTLResourceStorageModeShared];
+	if (index_staging == nil || vertex_staging == nil)
+		return false;
+
+	char* index_data = static_cast<char*>(index_staging.contents);
+	char* vertex_data = static_cast<char*>(vertex_staging.contents);
+	std::memset(index_data, 0, index_staging.length);
+	std::memset(vertex_data, 0, vertex_staging.length);
 
 	const size_t index_count = std::min(mesh->indexes.size(), static_cast<size_t>(m_index_count));
 	for (size_t i = 0; i < index_count; ++i)
@@ -82,15 +99,33 @@ bool MeshBufferMetal::update(Mesh* mesh)
 	for (size_t i = 0; i < vertex_count; ++i)
 		std::memcpy(vertex_data + i * m_vertex_stride, &mesh->verts[i], sizeof(Vertex));
 
-	if (index_buffer.storageMode == MTLStorageModeManaged)
-		[index_buffer didModifyRange:NSMakeRange(0, index_buffer.length)];
-	if (vertex_buffer.storageMode == MTLStorageModeManaged)
-		[vertex_buffer didModifyRange:NSMakeRange(0, vertex_buffer.length)];
+	unity_metal->EndCurrentCommandEncoder();
+	id<MTLCommandBuffer> command_buffer =
+		(id<MTLCommandBuffer>)unity_metal->CurrentCommandBuffer();
+	if (command_buffer == nil)
+		return false;
+
+	id<MTLBlitCommandEncoder> blit = [command_buffer blitCommandEncoder];
+	if (blit == nil)
+		return false;
+	[blit copyFromBuffer:index_staging
+	        sourceOffset:0
+	            toBuffer:index_buffer
+	   destinationOffset:0
+	                size:index_buffer.length];
+	[blit copyFromBuffer:vertex_staging
+	        sourceOffset:0
+	            toBuffer:vertex_buffer
+	   destinationOffset:0
+	                size:vertex_buffer.length];
+	[blit endEncoding];
 	return true;
 }
 
 void MeshBufferMetal::destroy()
 {
+	m_device = nullptr;
+	m_unity_metal = nullptr;
 	m_index_buffer = nullptr;
 	m_vertex_buffer = nullptr;
 	m_index_count = 0;

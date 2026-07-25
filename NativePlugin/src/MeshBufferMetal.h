@@ -13,6 +13,8 @@ public:
 	void destroy() override;
 
 private:
+	void* m_device;
+	void* m_unity_metal;
 	void* m_index_buffer;
 	void* m_vertex_buffer;
 	int m_index_count;

@@ -1,6 +1,7 @@
 #include "TextureMetal.h"
 
 #include <Logger.h>
+#include <Unity/IUnityGraphicsMetal.h>
 
 #import <Metal/Metal.h>
 
@@ -8,6 +9,7 @@
 
 TextureMetal::TextureMetal()
 	: m_device(nullptr),
+	  m_unity_metal(nullptr),
 	  m_width_y(0),
 	  m_height_y(0),
 	  m_row_bytes_y(0),
@@ -38,7 +40,14 @@ int TextureMetal::init(void* handler, unsigned int width, unsigned int height)
 	m_height_uv = height / 2;
 	m_row_bytes_uv = m_row_bytes_y / 2;
 
-	id<MTLDevice> device = (__bridge id<MTLDevice>)handler;
+	IUnityGraphicsMetal* unity_metal =
+		static_cast<IUnityGraphicsMetal*>(handler);
+	id<MTLDevice> device = unity_metal->MetalDevice();
+	if (device == nil)
+		return -1;
+	m_unity_metal = unity_metal;
+	m_device = (__bridge void*)device;
+
 	const unsigned int widths[TEXTURE_NUM] = {m_width_y, m_width_uv, m_width_uv};
 	const unsigned int heights[TEXTURE_NUM] = {m_height_y, m_height_uv, m_height_uv};
 
@@ -50,7 +59,10 @@ int TextureMetal::init(void* handler, unsigned int width, unsigned int height)
 			                                                height:heights[i]
 			                                             mipmapped:NO];
 		descriptor.usage = MTLTextureUsageShaderRead;
-		descriptor.storageMode = MTLStorageModeShared;
+		// Unity samples these textures on the GPU. Keep them private and upload
+		// through Unity's command buffer so an in-flight frame is never
+		// overwritten from the CPU.
+		descriptor.storageMode = MTLStorageModePrivate;
 
 		id<MTLTexture> texture = [device newTextureWithDescriptor:descriptor];
 		if (texture == nil)
@@ -82,15 +94,58 @@ void TextureMetal::upload(unsigned char* ych, unsigned char* uch, unsigned char*
 	const unsigned int heights[TEXTURE_NUM] = {m_height_y, m_height_uv, m_height_uv};
 	const unsigned int row_bytes[TEXTURE_NUM] = {m_row_bytes_y, m_row_bytes_uv, m_row_bytes_uv};
 
+	IUnityGraphicsMetal* unity_metal =
+		static_cast<IUnityGraphicsMetal*>(m_unity_metal);
+	id<MTLDevice> device = (__bridge id<MTLDevice>)m_device;
+	if (unity_metal == nullptr || device == nil)
+		return;
+
+	// A blit encoder cannot coexist with Unity's current render encoder.
+	unity_metal->EndCurrentCommandEncoder();
+	id<MTLCommandBuffer> command_buffer =
+		(id<MTLCommandBuffer>)unity_metal->CurrentCommandBuffer();
+	if (command_buffer == nil)
+		return;
+
+	id<MTLBlitCommandEncoder> blit = [command_buffer blitCommandEncoder];
+	if (blit == nil)
+		return;
+
 	for (unsigned int i = 0; i < TEXTURE_NUM; ++i)
 	{
 		id<MTLTexture> texture = (__bridge id<MTLTexture>)m_textures[i];
-		MTLRegion region = MTLRegionMake2D(0, 0, widths[i], heights[i]);
-		[texture replaceRegion:region
-		          mipmapLevel:0
-		            withBytes:data[i]
-		          bytesPerRow:row_bytes[i]];
+		// Metal texture blits require a 256-byte-aligned source row pitch.
+		const unsigned int staging_row_bytes =
+			((widths[i] + 255u) / 256u) * 256u;
+		const NSUInteger staging_length =
+			static_cast<NSUInteger>(staging_row_bytes) * heights[i];
+		id<MTLBuffer> staging =
+			[device newBufferWithLength:staging_length
+			                   options:MTLResourceStorageModeShared];
+		if (staging == nil)
+			continue;
+
+		unsigned char* destination =
+			static_cast<unsigned char*>(staging.contents);
+		for (unsigned int row = 0; row < heights[i]; ++row)
+		{
+			std::memcpy(
+				destination + row * staging_row_bytes,
+				data[i] + row * row_bytes[i],
+				widths[i]);
+		}
+
+		[blit copyFromBuffer:staging
+		       sourceOffset:0
+		  sourceBytesPerRow:staging_row_bytes
+		sourceBytesPerImage:staging_length
+		         sourceSize:MTLSizeMake(widths[i], heights[i], 1)
+		          toTexture:texture
+		   destinationSlice:0
+		   destinationLevel:0
+		  destinationOrigin:MTLOriginMake(0, 0, 0)];
 	}
+	[blit endEncoding];
 }
 
 void TextureMetal::destroy()
@@ -104,4 +159,5 @@ void TextureMetal::destroy()
 		}
 	}
 	m_device = nullptr;
+	m_unity_metal = nullptr;
 }

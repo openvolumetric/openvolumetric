@@ -128,7 +128,7 @@ static void DoEventGraphicsDeviceMetal(UnityGfxDeviceEventType eventType)
 	if (eventType == kUnityGfxDeviceEventInitialize)
 	{
 		IUnityGraphicsMetal* metal = s_UnityInterfaces->Get<IUnityGraphicsMetal>();
-		g_GraphicsDevice = metal == nullptr ? nullptr : (__bridge void*)metal->MetalDevice();
+		g_GraphicsDevice = metal;
 	}
 }
 #endif

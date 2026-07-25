@@ -15,6 +15,7 @@ public:
 
 private:
 	void* m_device;
+	void* m_unity_metal;
 	void* m_textures[TEXTURE_NUM];
 	unsigned int m_width_y;
 	unsigned int m_height_y;
