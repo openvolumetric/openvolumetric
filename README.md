@@ -38,8 +38,8 @@ streams. Media without audio continues to play normally.
 
 ### Building the native plugin
 
-The native build uses CMake and vcpkg manifest mode. Draco remains pinned as a
-Git submodule; FFmpeg is downloaded and built by vcpkg.
+The native build uses CMake and vcpkg manifest mode. FFmpeg and Draco are
+downloaded and built by vcpkg.
 
 #### VS Code development container
 
@@ -49,7 +49,7 @@ Docker-compatible runtime, VS Code, and the **Dev Containers** extension.
 
 1. Open the repository in VS Code.
 2. Run **Dev Containers: Reopen in Container** from the command palette.
-3. Wait for the image and repository submodules to finish initializing.
+3. Wait for the development container image to finish building.
 4. Run **CMake: Configure**, select the `vcpkg` preset, then run
    **CMake: Build**.
 
@@ -82,7 +82,6 @@ Prerequisites:
 Configure and build:
 
 ```sh
-git submodule update --init --recursive
 cd NativePlugin
 cmake --preset vcpkg
 cmake --build --preset vcpkg

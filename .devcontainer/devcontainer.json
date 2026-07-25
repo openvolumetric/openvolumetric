@@ -24,5 +24,5 @@
       }
     }
   },
-  "postCreateCommand": "mkdir -p NativePlugin/build/vcpkg-binary-cache && git submodule update --init --recursive"
+  "postCreateCommand": "mkdir -p NativePlugin/build/vcpkg-binary-cache"
 }

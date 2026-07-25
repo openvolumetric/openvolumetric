@@ -10,13 +10,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Draco 1.3 relies on an indirect <cstdint> include that newer GCC versions
-# no longer provide. Keep the pinned submodule untouched while supplying it.
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-  add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-include>" "$<$<COMPILE_LANGUAGE:CXX>:cstdint>")
-endif()
-
 find_package(FFMPEG REQUIRED)
+find_package(draco CONFIG REQUIRED)
 find_library(VV_SWRESAMPLE_LIBRARY
   NAMES swresample
   PATHS ${FFMPEG_LIBRARY_DIRS}
@@ -30,22 +25,6 @@ target_link_libraries(VolumetricVideoFFmpeg INTERFACE
   ${FFMPEG_LIBRARIES}
   ${VV_SWRESAMPLE_LIBRARY}
 )
-
-# Draco is pinned by the repository submodule and already has a CMake build.
-set(DRACO_TESTS OFF CACHE BOOL "" FORCE)
-set(DRACO_UNITY_PLUGIN OFF CACHE BOOL "" FORCE)
-set(DRACO_MAYA_PLUGIN OFF CACHE BOOL "" FORCE)
-set(DRACO_JS_GLUE OFF CACHE BOOL "" FORCE)
-set(DRACO_TRANSCODER_SUPPORTED OFF CACHE BOOL "" FORCE)
-add_subdirectory(draco EXCLUDE_FROM_ALL)
-
-if(TARGET draco)
-  set(VV_DRACO_TARGET draco)
-elseif(TARGET draco_static)
-  set(VV_DRACO_TARGET draco_static)
-else()
-  message(FATAL_ERROR "The pinned Draco source did not create a supported library target")
-endif()
 
 set(VV_CORE_SOURCES
   src/AVDecoderFFMPEG.cpp
@@ -68,14 +47,11 @@ set_target_properties(VolumetricVideoCore PROPERTIES
 target_include_directories(VolumetricVideoCore
   PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
-  PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/draco/src"
-    "${CMAKE_CURRENT_BINARY_DIR}"
 )
 target_link_libraries(VolumetricVideoCore
   PUBLIC
     VolumetricVideoFFmpeg
-    ${VV_DRACO_TARGET}
+    draco::draco
 )
 
 # Build the Unity rendering bridge for the native graphics API on each

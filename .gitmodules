@@ -1,3 +1,0 @@
-[submodule "NativePlugin/draco"]
-	path = NativePlugin/draco
-	url = https://github.com/google/draco

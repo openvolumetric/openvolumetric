@@ -6,6 +6,10 @@
   "builtin-baseline": "40f3c709db80acf154ac4b17a1f83c564ebd022e",
   "dependencies": [
     {
+      "name": "draco",
+      "version>=": "1.5.7#1"
+    },
+    {
       "name": "ffmpeg",
       "version>=": "8.1.2#3",
       "default-features": false,
