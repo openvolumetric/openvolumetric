@@ -72,6 +72,7 @@ Unity/*.svd
 Unity/*.pdb
 Unity/*.mdb
 Unity/sysinfo.txt
+Unity/Assets/StreamingAssets/*
 
 # Unity crash reports
 Unity/crashlytics-build.properties

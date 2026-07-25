@@ -9,7 +9,7 @@ public:
 
 	//----------------------------------
 	//
-	~ITexture() {};
+	virtual ~ITexture() {};
 
 	//----------------------------------
 	//	
@@ -36,4 +36,3 @@ public:
 	static const unsigned int TEXTURE_NUM = 3;
 	
 };
-

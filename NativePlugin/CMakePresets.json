@@ -16,12 +16,31 @@
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
         "VCPKG_MANIFEST_DIR": "${sourceDir}"
       }
+    },
+    {
+      "name": "vcpkg-macos-x64",
+      "displayName": "macOS Intel plugin with vcpkg",
+      "inherits": "vcpkg",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "cacheVariables": {
+        "CMAKE_OSX_ARCHITECTURES": "x86_64",
+        "VCPKG_TARGET_TRIPLET": "x64-osx"
+      }
     }
   ],
   "buildPresets": [
     {
       "name": "vcpkg",
       "configurePreset": "vcpkg"
+    },
+    {
+      "name": "vcpkg-macos-x64",
+      "configurePreset": "vcpkg-macos-x64"
     }
   ]
 }

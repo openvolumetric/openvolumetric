@@ -1,5 +1,9 @@
 #pragma once
 
+#include <Unity/IUnityInterface.h>
+
+#define VOLUMETRIC_VIDEO_API UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
+
 extern "C" 
 {
 	//-----------------------------------------------
@@ -7,22 +11,22 @@ extern "C"
 	//-----------------------------------------------
 
 	// Open external console to see c++ debug  info
-	__declspec(dllexport) void	volumetricvideo_open_external_console();
+	VOLUMETRIC_VIDEO_API void	volumetricvideo_open_external_console();
 
 	// Close external console to see c++ debug  info
-	__declspec(dllexport) void	volumetricvideo_close_external_console();
+	VOLUMETRIC_VIDEO_API void	volumetricvideo_close_external_console();
 
 	// Init plugin
-	__declspec(dllexport) int	volumetricvideo_init(int& ID);
+	VOLUMETRIC_VIDEO_API int	volumetricvideo_init(int& ID);
 	
 	// Quit application
-	__declspec(dllexport) void	volumetricvideo_quit(int ID);
+	VOLUMETRIC_VIDEO_API void	volumetricvideo_quit(int ID);
 
 	// Set unity time
-	__declspec(dllexport) void	volumetricvideo_set_unity_time(int ID, double unity_time);
+	VOLUMETRIC_VIDEO_API void	volumetricvideo_set_unity_time(int ID, double unity_time);
 
 	// Set frame index
-	__declspec(dllexport) void	volumetricvideo_set_frame(int ID, int frame_index);
+	VOLUMETRIC_VIDEO_API void	volumetricvideo_set_frame(int ID, int frame_index);
 
 
 	//-----------------------------------------------
@@ -30,16 +34,16 @@ extern "C"
 	//-----------------------------------------------
 
 	// Start decoding
-	__declspec(dllexport) int	volumetricvideo_start_decoding(int ID);
+	VOLUMETRIC_VIDEO_API int	volumetricvideo_start_decoding(int ID);
 
 	// Stop Decoding
-	__declspec(dllexport) int	volumetricvideo_stop_decoding(int ID);
+	VOLUMETRIC_VIDEO_API int	volumetricvideo_stop_decoding(int ID);
 
 	// Frame Index to display
-	__declspec(dllexport) int	volumetricvideo_update(int ID);
+	VOLUMETRIC_VIDEO_API int	volumetricvideo_update(int ID);
 
 	// Frame Index to display
-	__declspec(dllexport) int	volumetricvideo_seek(int ID, double time);
+	VOLUMETRIC_VIDEO_API int	volumetricvideo_seek(int ID, double time);
 
 
 	//-----------------------------------------------
@@ -47,13 +51,13 @@ extern "C"
 	//-----------------------------------------------
 
 	// Load video function
-	__declspec(dllexport) int	volumetricvideo_load_video(int ID, const char* filepath);
+	VOLUMETRIC_VIDEO_API int	volumetricvideo_load_video(int ID, const char* filepath);
 
 	// Get Video Details
-	__declspec(dllexport) int	volumetricvideo_get_video_details(int ID, int& width, int& height, double& fps, double& duration);
+	VOLUMETRIC_VIDEO_API int	volumetricvideo_get_video_details(int ID, int& width, int& height, double& fps, double& duration);
 
 	// Set texture Pointer
-	__declspec(dllexport) int	volumetricvideo_get_texture_pointers(int ID, void*& yPointer, void*& uPointer, void*& vPointer);
+	VOLUMETRIC_VIDEO_API int	volumetricvideo_get_texture_pointers(int ID, void*& yPointer, void*& uPointer, void*& vPointer);
 
 
 	//-----------------------------------------------
@@ -61,9 +65,9 @@ extern "C"
 	//-----------------------------------------------
 
 	// Load mesh data Function
-	__declspec(dllexport) int	volumetricvideo_load_mesh_data(int ID, char* filepattern, int start_frame, int end_frame);
+	VOLUMETRIC_VIDEO_API int	volumetricvideo_load_mesh_data(int ID, char* filepattern, int start_frame, int end_frame);
 
 	// Set mesh pointers
-	__declspec(dllexport) int	volumetricvideo_set_mesh_pointer(int ID, void* indexBufferHandle, int index_size, void* vertexBufferHandle, int vertex_size);
+	VOLUMETRIC_VIDEO_API int	volumetricvideo_set_mesh_pointer(int ID, void* indexBufferHandle, int index_size, void* vertexBufferHandle, int vertex_size);
 
 }

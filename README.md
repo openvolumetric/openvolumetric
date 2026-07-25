@@ -61,8 +61,8 @@ vcpkg binary cache across container rebuilds. The first FFmpeg build can still
 take several minutes.
 
 This container builds the portable Linux decoder core. Windows D3D11 plugin
-artifacts still require a Windows/MSVC build, and future macOS plugin artifacts
-will require Apple's native SDK.
+artifacts still require a Windows/MSVC build, and macOS Metal plugin artifacts
+require macOS and Apple's native SDK.
 
 #### Native host build
 
@@ -84,9 +84,23 @@ cmake --build --preset vcpkg
 ```
 
 On Windows this builds and stages `VolumetricVideoNativePlugin.dll` in the
-Unity plugin directory. On macOS and Linux the current milestone builds the
-portable decoder core only, because the Unity rendering bridge still depends
-on D3D11.
+Unity plugin directory. On macOS it builds the Metal implementation and stages
+`VolumetricVideoNativePlugin.dylib` in
+`Unity/Assets/Plugins/VolumetricVideo/macOS`. Linux builds the portable decoder
+core only.
+
+The normal macOS preset builds for the host architecture. This repository
+currently targets Unity 2019.4, whose macOS editor requires an Intel plugin.
+On an Apple Silicon Mac, build that version explicitly with:
+
+```sh
+cmake --preset vcpkg-macos-x64
+cmake --build --preset vcpkg-macos-x64
+```
+
+Use Metal as the Unity player's graphics API. The plugin has no separately
+installed FFmpeg runtime dependency; vcpkg links its FFmpeg libraries into the
+native plugin.
 
 The first FFmpeg build can take a significant amount of time. Subsequent builds
 reuse vcpkg's installed tree; CI should additionally configure a vcpkg binary

@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.20)
 
 project(VolumetricVideoNativePlugin LANGUAGES C CXX)
 
+if(APPLE)
+  enable_language(OBJCXX)
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -12,12 +16,12 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-include>" "$<$<COMPILE_LANGUAGE:CXX>:cstdint>")
 endif()
 
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
-  libavcodec
-  libavformat
-  libavutil
-)
+find_package(FFMPEG REQUIRED)
+
+add_library(VolumetricVideoFFmpeg INTERFACE)
+target_include_directories(VolumetricVideoFFmpeg INTERFACE ${FFMPEG_INCLUDE_DIRS})
+target_link_directories(VolumetricVideoFFmpeg INTERFACE ${FFMPEG_LIBRARY_DIRS})
+target_link_libraries(VolumetricVideoFFmpeg INTERFACE ${FFMPEG_LIBRARIES})
 
 # Draco is pinned by the repository submodule and already has a CMake build.
 set(DRACO_TESTS OFF CACHE BOOL "" FORCE)
@@ -62,12 +66,12 @@ target_include_directories(VolumetricVideoCore
 )
 target_link_libraries(VolumetricVideoCore
   PUBLIC
-    PkgConfig::FFMPEG
+    VolumetricVideoFFmpeg
     ${VV_DRACO_TARGET}
 )
 
-# The current Unity rendering bridge is D3D11-only. Keeping it conditional
-# allows the portable decoder core and its dependencies to build elsewhere.
+# Build the Unity rendering bridge for the native graphics API on each
+# supported desktop platform. Other platforms can still build the decoder core.
 if(WIN32)
   add_library(VolumetricVideoNativePlugin SHARED
     src/MeshBufferD3D11.cpp
@@ -92,7 +96,40 @@ if(WIN32)
     RUNTIME_OUTPUT_DIRECTORY
       "${CMAKE_CURRENT_SOURCE_DIR}/../Unity/Assets/Plugins/VolumetricVideo/x64"
   )
+elseif(APPLE)
+  find_library(METAL_FRAMEWORK Metal REQUIRED)
+  find_library(FOUNDATION_FRAMEWORK Foundation REQUIRED)
+
+  add_library(VolumetricVideoNativePlugin SHARED
+    src/MeshBufferMetal.mm
+    src/TextureMetal.mm
+    src/VolumetricVideoMetal.cpp
+    src/unity-volumetric-video-api.cpp
+  )
+  set_source_files_properties(
+    src/unity-volumetric-video-api.cpp
+    PROPERTIES LANGUAGE OBJCXX
+  )
+  target_include_directories(VolumetricVideoNativePlugin
+    PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  )
+  target_link_libraries(VolumetricVideoNativePlugin
+    PRIVATE
+      VolumetricVideoCore
+      ${METAL_FRAMEWORK}
+      ${FOUNDATION_FRAMEWORK}
+  )
+  target_compile_options(VolumetricVideoNativePlugin
+    PRIVATE
+      "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>"
+  )
+  set_target_properties(VolumetricVideoNativePlugin PROPERTIES
+    PREFIX ""
+    LIBRARY_OUTPUT_DIRECTORY
+      "${CMAKE_CURRENT_SOURCE_DIR}/../Unity/Assets/Plugins/VolumetricVideo/macOS"
+  )
 else()
   message(STATUS
-    "Building VolumetricVideoCore only; the Unity rendering bridge currently requires Windows/D3D11")
+    "Building VolumetricVideoCore only; no Unity rendering bridge is available for this platform")
 endif()

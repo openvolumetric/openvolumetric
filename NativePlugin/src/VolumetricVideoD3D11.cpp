@@ -147,13 +147,19 @@ int VolumetricVideoD3D11::render()
 		return -1;
 	}
 
-	// Upload video data to texture 
-	this->m_texture->upload(outputY, outputU, outputV);
-
-	// Get Mesh Data and update buffer
+	// Wait until both streams have the requested frame.
 	Mesh mesh;
-	this->m_geometrydecoder->get_mesh_data(m_frame_index, mesh);
-	this->m_meshbuffer->update(&mesh);
+	if (!this->m_geometrydecoder->get_mesh_data(m_frame_index, mesh))
+	{
+		return -1;
+	}
+
+	// Present matching texture and geometry in the same render event.
+	this->m_texture->upload(outputY, outputU, outputV);
+	if (!this->m_meshbuffer->update(&mesh))
+	{
+		return -1;
+	}
 
 	// Clean frame data from the most recently rendered frame
 	this->m_avdecoder->clean_frame_data();

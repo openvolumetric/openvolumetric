@@ -9,6 +9,8 @@
 #include "draco/io/parser_utils.h"
 
 #include <cstdio>
+#include <fstream>
+#include <iterator>
 
 // --------------------------------------------------------------------------
 // Constructor
@@ -60,15 +62,20 @@ bool GeometryDecoderDraco::init(char* filepattern, int start_index, int stop_ind
 		char filepath[1024]; 
 		std::snprintf(filepath, sizeof(filepath), filepattern, i);
 
-		// Get data from file
-		std::vector<char> data;
-		if (!draco::ReadFileToBuffer(filepath, &data))
+		// Read the encoded bytes directly. Draco's FileReaderFactory relies on
+		// static registration, whose stdio reader can be discarded when Draco
+		// is linked as a static library.
+		std::ifstream input(filepath, std::ios::binary);
+		if (!input)
 		{
 			LOG("GeometryDecoderDraco::init - Failed opening the input file - %s.", filepath);
 			return false;
 		}
 
-		// Check data is present
+		std::vector<char> data(
+			(std::istreambuf_iterator<char>(input)),
+			std::istreambuf_iterator<char>());
+
 		if (data.empty()) 
 		{
 			LOG("GeometryDecoderDraco::init - Empty input file - %s.", filepath);
@@ -189,13 +196,8 @@ bool GeometryDecoderDraco::decode()
 // --------------------------------------------------------------------------
 bool GeometryDecoderDraco::is_buffer_blocked()
 {
-	//
-	if (m_decoded_meshes.size() >= m_max_buffer_size)
-	{
-		return true;
-	}
-
-	return false;
+	std::lock_guard<std::mutex> lock(m_geometry_mutex);
+	return m_decoded_meshes.size() >= m_max_buffer_size;
 }
 
 
@@ -222,32 +224,22 @@ bool GeometryDecoderDraco::get_mesh_data(int frame_index, Mesh& mesh)
 {
 	LOG("GeometryDecoderDraco::get_mesh_data - getting mesh at index  %d.", frame_index);
 
-	//
-	for (int i = 0; i < m_decoded_meshes.size(); i++)
+	std::lock_guard<std::mutex> lock(m_geometry_mutex);
+	while (!m_decoded_meshes.empty())
 	{
-		//
 		if (m_decoded_meshes.front().frame_index == frame_index)
 		{
-			// Get decoded mesh at front of buffer
 			mesh = m_decoded_meshes.front().mesh;
 			return true;
 		}
-		// requested frame index is greater than the frame at front of buffer - so drop the frame
 		else if (frame_index > m_decoded_meshes.front().frame_index)
 		{
-			// Clear frame at front of the buffer
 			LOG("GeometryDecoderDraco::get_mesh_data - clearing front frame  %d.", m_decoded_meshes.front().frame_index);
-			clear_frame_data();
+			m_decoded_meshes.pop();
 		}
-		// frame index is lagging frame at front of buffer therefore wait
-		else if (frame_index < m_decoded_meshes.front().frame_index)
-		{
-			// do nothing
-		}
-		// Should not happen
 		else
 		{
-
+			break;
 		}
 	}
 
@@ -377,9 +369,9 @@ bool GeometryDecoderDraco::stop_decoding()
 // --------------------------------------------------------------------------
 void GeometryDecoderDraco::clear_frame_data()
 {
-	//
 	std::lock_guard<std::mutex> lock(m_geometry_mutex);
-	m_decoded_meshes.pop();
+	if (!m_decoded_meshes.empty())
+		m_decoded_meshes.pop();
 }
 
 // --------------------------------------------------------------------------
@@ -389,10 +381,9 @@ void GeometryDecoderDraco::flush_buffer()
 {
 	LOG("GeometryDecoderDraco::flush_buffer - start");
 
+	std::lock_guard<std::mutex> lock(m_geometry_mutex);
 	while (!m_decoded_meshes.empty())
-	{
-		clear_frame_data();
-	}
+		m_decoded_meshes.pop();
 
 	//
 	LOG("GeometryDecoderDraco::flush_buffer - stop");

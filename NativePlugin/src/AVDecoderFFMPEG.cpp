@@ -401,8 +401,11 @@ bool AVDecoderFFMPEG::decode_video_frame()
 		}
 	}
 
-	// Update buffer state
-	update_buffer_state();
+	// Update buffer state while the consumer cannot mutate the queue.
+	{
+		std::lock_guard<std::mutex> lock(m_video_mutex);
+		update_buffer_state();
+	}
 
 	//
 	return true;
@@ -494,15 +497,10 @@ bool AVDecoderFFMPEG::seek(double time)
 bool AVDecoderFFMPEG::get_video_data(int frame_index, uint8_t** outputY, uint8_t** outputU, uint8_t** outputV)
 {
 //	LOG("DecoderFFMPEG::get_video_data - start");
-	if (this->m_video_frames.empty())
-	{
-		LOG("DecoderFFMPEG::get_video_data - buffer empty");
-		return false;
-	}
-
-	//
+	std::lock_guard<std::mutex> lock(m_video_mutex);
 	if (!m_initialised || m_video_frames.empty())
 	{
+		LOG("DecoderFFMPEG::get_video_data - buffer empty");
 		*outputY = NULL;
 		*outputU = NULL;
 		*outputV = NULL;
@@ -511,13 +509,11 @@ bool AVDecoderFFMPEG::get_video_data(int frame_index, uint8_t** outputY, uint8_t
 
 	// TODO - Need to undersatand how best to handle these cases - particularly when the frame requested is too far infront/behind
 	AVFrame* frame = NULL;
-	for (int i = 0; i < m_video_frames.size(); i++)
+	while (!m_video_frames.empty())
 	{
 		// Case 1: Front of buffer is the requested frame
 		if (m_video_frames.front().frame_index == frame_index)
 		{
-			// Lock and assign frame data 
-			std::lock_guard<std::mutex> lock(m_video_mutex);
 			frame = m_video_frames.front().data;
 			break;
 		}
@@ -525,8 +521,10 @@ bool AVDecoderFFMPEG::get_video_data(int frame_index, uint8_t** outputY, uint8_t
 		// Case 2: requested frame is greater than front frame index 
 		else if(frame_index > m_video_frames.front().frame_index )
 		{
-			// Clear front frame
-			free_front_frame(&m_video_frames, &m_video_mutex);
+			FrameData* old_frame = &m_video_frames.front();
+			av_frame_free(&old_frame->data);
+			m_video_frames.pop();
+			update_buffer_state();
 		}
 
 		// Case 3: requested frame is less than the buffer 
@@ -575,17 +573,8 @@ bool AVDecoderFFMPEG::is_buffer_blocked()
 {
 //	LOG("DecoderFFMPEG::is_buffer_blocked - start");
 
-	//
-	bool ret = false;
-
-	// Check that video is enabled and buffer is not more than max
-	if (m_video_info.is_enabled && m_video_frames.size() >= m_video_buffer_max)
-	{
-		ret = true;
-	}
-
-	//
-	return ret;
+	std::lock_guard<std::mutex> lock(m_video_mutex);
+	return m_video_info.is_enabled && m_video_frames.size() >= m_video_buffer_max;
 }
 
 
@@ -613,5 +602,3 @@ void AVDecoderFFMPEG::update_buffer_state()
 		}
 	}
 }
-
-

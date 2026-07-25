@@ -1,12 +1,18 @@
 #include "unity-volumetric-video-api.h"
 
-// DirectX11
+#if defined(_WIN32)
 #include <d3d11.h>
+#endif
 
 // Unity Interface
 #include <Unity/IUnityInterface.h>
 #include <Unity/IUnityGraphics.h>
+#if defined(_WIN32)
 #include <Unity/IUnityGraphicsD3D11.h>
+#elif defined(__APPLE__)
+#include <Unity/IUnityGraphicsMetal.h>
+#import <Metal/Metal.h>
+#endif
 
 // STL + C
 #include <assert.h>
@@ -14,7 +20,11 @@
 #include <iostream>
 
 //
+#if defined(_WIN32)
 #include <VolumetricVideoD3D11.h>
+#elif defined(__APPLE__)
+#include <VolumetricVideoMetal.h>
+#endif
 #include <IVolumetricVideo.h>
 #include <Logger.h>
 
@@ -97,20 +107,31 @@ static UnityGfxRenderer s_DeviceType = kUnityGfxRendererNull;
 // --------------------------------------------------------------------------
 //
 //
-static ID3D11Device* g_D3D11Device = NULL;
+static void* g_GraphicsDevice = NULL;
 
 
 // --------------------------------------------------------------------------
 //
 //
+#if defined(_WIN32)
 static void DoEventGraphicsDeviceD3D11(UnityGfxDeviceEventType eventType)
 {
 	if (eventType == kUnityGfxDeviceEventInitialize)
 	{
 		IUnityGraphicsD3D11* d3d11 = s_UnityInterfaces->Get<IUnityGraphicsD3D11>();
-		g_D3D11Device = d3d11->GetDevice();
+		g_GraphicsDevice = d3d11->GetDevice();
 	}
 }
+#elif defined(__APPLE__)
+static void DoEventGraphicsDeviceMetal(UnityGfxDeviceEventType eventType)
+{
+	if (eventType == kUnityGfxDeviceEventInitialize)
+	{
+		IUnityGraphicsMetal* metal = s_UnityInterfaces->Get<IUnityGraphicsMetal>();
+		g_GraphicsDevice = metal == nullptr ? nullptr : (__bridge void*)metal->MetalDevice();
+	}
+}
+#endif
 
 // --------------------------------------------------------------------------
 //
@@ -145,9 +166,19 @@ static void UNITY_INTERFACE_API OnGraphicsDeviceEvent(UnityGfxDeviceEventType ev
 	//#if SUPPORT_D3D11
 	if (currentDeviceType == kUnityGfxRendererD3D11)
 	{
+#if defined(_WIN32)
 		DoEventGraphicsDeviceD3D11(eventType);
+#endif
 	}
-	//#endif
+	else if (currentDeviceType == kUnityGfxRendererMetal)
+	{
+#if defined(__APPLE__)
+		DoEventGraphicsDeviceMetal(eventType);
+#endif
+	}
+
+	if (eventType == kUnityGfxDeviceEventShutdown)
+		g_GraphicsDevice = NULL;
 }
 
 
@@ -196,7 +227,7 @@ extern "C" UnityRenderingEvent UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API GetRen
 // --------------------------------------------------------------------------
 // Open external console to see c++ debug  info
 //
-__declspec(dllexport) void	volumetricvideo_open_external_console()
+VOLUMETRIC_VIDEO_API void	volumetricvideo_open_external_console()
 {
 	Logger::instance()->open_external_console();
 }
@@ -204,7 +235,7 @@ __declspec(dllexport) void	volumetricvideo_open_external_console()
 // --------------------------------------------------------------------------
 // Close external console to see c++ debug  info
 //
-__declspec(dllexport) void	volumetricvideo_close_external_console()
+VOLUMETRIC_VIDEO_API void	volumetricvideo_close_external_console()
 {
 	Logger::instance()->close_external_console();
 }
@@ -213,7 +244,7 @@ __declspec(dllexport) void	volumetricvideo_close_external_console()
 // --------------------------------------------------------------------------
 // volumetricvideo_init - init plugin - returns instance id to access other functions
 //
-__declspec(dllexport) int volumetricvideo_init(int& ID)
+VOLUMETRIC_VIDEO_API int volumetricvideo_init(int& ID)
 {
 	LOG("volumetricvideo_init - start");
 
@@ -228,8 +259,20 @@ __declspec(dllexport) int volumetricvideo_init(int& ID)
 	// Report Instance ID
 	LOG("volumetricvideo_init - id: %d", ID);
 
-	//Create Volumetric Video Decoder
-	IVolumetricVideo* vv = new VolumetricVideoD3D11(ID);
+	IVolumetricVideo* vv = NULL;
+#if defined(_WIN32)
+	if (s_DeviceType == kUnityGfxRendererD3D11)
+		vv = new VolumetricVideoD3D11(ID);
+#elif defined(__APPLE__)
+	if (s_DeviceType == kUnityGfxRendererMetal)
+		vv = new VolumetricVideoMetal(ID);
+#endif
+	if (vv == NULL || g_GraphicsDevice == NULL)
+	{
+		delete vv;
+		LOG("volumetricvideo_init - unsupported or unavailable graphics device: %d", s_DeviceType);
+		return -1;
+	}
 
 	// Add to instance list
 	vv_instances.push_back(vv);
@@ -244,7 +287,7 @@ __declspec(dllexport) int volumetricvideo_init(int& ID)
 // --------------------------------------------------------------------------
 // Quit application
 //
-__declspec(dllexport) void	volumetricvideo_quit(int ID)
+VOLUMETRIC_VIDEO_API void	volumetricvideo_quit(int ID)
 {
 	LOG("volumetricvideo_quit - id: %d",ID);
 
@@ -268,7 +311,7 @@ __declspec(dllexport) void	volumetricvideo_quit(int ID)
 // --------------------------------------------------------------------------
 // Set Unity time in decoder
 // --------------------------------------------------------------------------
-__declspec(dllexport) void	volumetricvideo_set_unity_time(int ID, double unity_time)
+VOLUMETRIC_VIDEO_API void	volumetricvideo_set_unity_time(int ID, double unity_time)
 {
 	LOG("volumetricvideo_set_global_time - id: %d", ID);
 
@@ -288,7 +331,7 @@ __declspec(dllexport) void	volumetricvideo_set_unity_time(int ID, double unity_t
 // --------------------------------------------------------------------------
 // Set frame index
 // --------------------------------------------------------------------------
-__declspec(dllexport) void	volumetricvideo_set_frame(int ID, int frame_index)
+VOLUMETRIC_VIDEO_API void	volumetricvideo_set_frame(int ID, int frame_index)
 {
 	//
 	LOG("volumetricvideo_set_frame - id: %d frame_index: %d", ID, frame_index);
@@ -316,7 +359,7 @@ __declspec(dllexport) void	volumetricvideo_set_frame(int ID, int frame_index)
 // Start decoder 
 // --------------------------------------------------------------------------
 
-__declspec(dllexport) int	volumetricvideo_start_decoding(int ID)
+VOLUMETRIC_VIDEO_API int	volumetricvideo_start_decoding(int ID)
 {
 	LOG("volumetricvideo_start_decoding - id: %d", ID);
 
@@ -335,7 +378,7 @@ __declspec(dllexport) int	volumetricvideo_start_decoding(int ID)
 // --------------------------------------------------------------------------
 // Stop decoder 
 //
-__declspec(dllexport) int	volumetricvideo_stop_decoding(int ID)
+VOLUMETRIC_VIDEO_API int	volumetricvideo_stop_decoding(int ID)
 {
 	LOG("volumetricvideo_stop_decoding - id: %d", ID);
 
@@ -356,7 +399,7 @@ __declspec(dllexport) int	volumetricvideo_stop_decoding(int ID)
 // --------------------------------------------------------------------------
 // Set Frame to display
 //
-__declspec(dllexport) int	volumetricvideo_update(int ID)
+VOLUMETRIC_VIDEO_API int	volumetricvideo_update(int ID)
 {
 	LOG("volumetricvideo_update - id: %d ", ID);
 
@@ -376,7 +419,7 @@ __declspec(dllexport) int	volumetricvideo_update(int ID)
 // --------------------------------------------------------------------------
 // Set Frame to display
 //
-__declspec(dllexport) int	volumetricvideo_seek(int ID, double time)
+VOLUMETRIC_VIDEO_API int	volumetricvideo_seek(int ID, double time)
 {
 	LOG("volumetricvideo_seek - id: %d - time: %d", ID, time);
 
@@ -402,7 +445,7 @@ __declspec(dllexport) int	volumetricvideo_seek(int ID, double time)
 // --------------------------------------------------------------------------
 // Load Video Resources
 //
-__declspec(dllexport) int	volumetricvideo_load_video(int ID, const char* filepath)
+VOLUMETRIC_VIDEO_API int	volumetricvideo_load_video(int ID, const char* filepath)
 {
 	LOG("volumetricvideo_load_video - id: %d", ID);
 
@@ -415,7 +458,7 @@ __declspec(dllexport) int	volumetricvideo_load_video(int ID, const char* filepat
 	}
 
 	// Set Video
-	if (!(*iter)->get_avdecoder_ptr()->init(filepath) == -1)
+	if (!(*iter)->get_avdecoder_ptr()->init(filepath))
 	{
 		// Error loading video
 		return -1;
@@ -429,7 +472,7 @@ __declspec(dllexport) int	volumetricvideo_load_video(int ID, const char* filepat
 // --------------------------------------------------------------------------
 // Load Video Resources
 //
-__declspec(dllexport) int	volumetricvideo_get_video_details(int ID, int& width, int& height, double& fps, double& duration)
+VOLUMETRIC_VIDEO_API int	volumetricvideo_get_video_details(int ID, int& width, int& height, double& fps, double& duration)
 {
 	LOG("volumetricvideo_get_video_details - id: %d", ID);
 
@@ -454,7 +497,7 @@ __declspec(dllexport) int	volumetricvideo_get_video_details(int ID, int& width, 
 // --------------------------------------------------------------------------
 // Set unity DX11 Textures
 //
-__declspec(dllexport) int	volumetricvideo_get_texture_pointers(int ID, void*& yPointer, void*& uPointer, void*& vPointer)
+VOLUMETRIC_VIDEO_API int	volumetricvideo_get_texture_pointers(int ID, void*& yPointer, void*& uPointer, void*& vPointer)
 {
 	LOG("volumetricvideo_set_texture_pointer - id: %d", ID);
 
@@ -472,7 +515,7 @@ __declspec(dllexport) int	volumetricvideo_get_texture_pointers(int ID, void*& yP
 	LOG("volumetricvideo_set_texture_pointer - %d x %d", width, height);
 
 	// Create texture for instance 
-	int ret = (*iter)->get_texture_ptr()->init(g_D3D11Device, width, height);
+	int ret = (*iter)->get_texture_ptr()->init(g_GraphicsDevice, width, height);
 	if (ret == -1)
 	{
 		//
@@ -498,7 +541,7 @@ __declspec(dllexport) int	volumetricvideo_get_texture_pointers(int ID, void*& yP
 // --------------------------------------------------------------------------
 // Load mesh data
 //
-__declspec(dllexport) int	volumetricvideo_load_mesh_data(int ID, char* filepattern, int start_frame, int end_frame)
+VOLUMETRIC_VIDEO_API int	volumetricvideo_load_mesh_data(int ID, char* filepattern, int start_frame, int end_frame)
 {
 	LOG("volumetricvideo_load_mesh - id: %d", ID);
 
@@ -524,7 +567,7 @@ __declspec(dllexport) int	volumetricvideo_load_mesh_data(int ID, char* filepatte
 // --------------------------------------------------------------------------
 // Set native mesh pointers
 //
-__declspec(dllexport) int	volumetricvideo_set_mesh_pointer(int ID, void* index_buffer_handle, int index_count, void* vertex_buffer_handle, int vertex_count)
+VOLUMETRIC_VIDEO_API int	volumetricvideo_set_mesh_pointer(int ID, void* index_buffer_handle, int index_count, void* vertex_buffer_handle, int vertex_count)
 {
 	LOG("volumetricvideo_set_mesh_pointer - id: %d", ID);
 
@@ -537,7 +580,7 @@ __declspec(dllexport) int	volumetricvideo_set_mesh_pointer(int ID, void* index_b
 	}
 	
 	//
-	if (!(*iter)->get_meshbuffer()->init(g_D3D11Device, index_buffer_handle, index_count, vertex_buffer_handle, vertex_count))
+	if (!(*iter)->get_meshbuffer()->init(g_GraphicsDevice, index_buffer_handle, index_count, vertex_buffer_handle, vertex_count))
 	{
 		return -1;
 	}
@@ -547,5 +590,3 @@ __declspec(dllexport) int	volumetricvideo_set_mesh_pointer(int ID, void* index_b
 	return 1;
 }
  
-
-
