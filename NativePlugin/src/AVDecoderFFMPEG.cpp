@@ -20,8 +20,8 @@ AVDecoderFFMPEG::AVDecoderFFMPEG() : IAVDecoder()
 	// Buffer Sizes
 	m_video_buffer_max		= 32;
 
-	// init Packet
-	av_init_packet(&m_packet);
+	// Initialise the packet without the removed av_init_packet API.
+	m_packet = {};
 }
 
 
@@ -57,8 +57,7 @@ void AVDecoderFFMPEG::destroy()
 	//Video Variables
 	if (m_video_codec_ctx != NULL)
 	{
-		avcodec_close(m_video_codec_ctx);
-		m_video_codec_ctx = NULL;
+		avcodec_free_context(&m_video_codec_ctx);
 	}
 	//
 	m_video_codec = NULL;
@@ -614,6 +613,5 @@ void AVDecoderFFMPEG::update_buffer_state()
 		}
 	}
 }
-
 
 

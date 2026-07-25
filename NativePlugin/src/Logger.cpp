@@ -1,7 +1,11 @@
 #include "Logger.h"
+#if defined(_WIN32)
 #include <Windows.h>
+#endif
 
+#if defined(_MSC_VER)
 #pragma warning(disable:4996)
+#endif
 
 //
 // Instance of logger
@@ -12,14 +16,14 @@ Logger* Logger::_instance;
 //
 //
 //
-Logger::Logger()
+Logger::Logger() : console_active(false)
 {
 }
 
 //
 //
 //
-Logger::Logger(std::string filename)
+Logger::Logger(std::string filename) : console_active(false)
 {
 	fclose(stdout);
 	freopen(filename.c_str(), "a", stdout);
@@ -45,9 +49,11 @@ void Logger::open_external_console()
 {
 	if (!Logger::instance()->console_active)
 	{
+#if defined(_WIN32)
 		FILE* console;
 		AllocConsole();
 		freopen_s(&console, "CONOUT$", "wb", stdout);
+#endif
 		Logger::instance()->console_active = true;
 
 		LOG("Logger::open_external_console");
@@ -62,7 +68,9 @@ void Logger::close_external_console()
 	if (Logger::instance()->console_active)
 	{
 		LOG("Logger::close_external_console");
+#if defined(_WIN32)
 		FreeConsole();
+#endif
 		Logger::instance()->console_active = false;
 	}
 }

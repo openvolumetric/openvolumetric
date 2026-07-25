@@ -1,0 +1,28 @@
+{
+  "name": "Volumetric Video Native Build",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      "VCPKG_COMMIT": "40f3c709db80acf154ac4b17a1f83c564ebd022e"
+    }
+  },
+  "remoteUser": "ubuntu",
+  "containerEnv": {
+    "VCPKG_ROOT": "/opt/vcpkg",
+    "VCPKG_DISABLE_METRICS": "1",
+    "VCPKG_DEFAULT_BINARY_CACHE": "${containerWorkspaceFolder}/NativePlugin/build/vcpkg-binary-cache"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cmake-tools",
+        "ms-vscode.cpptools"
+      ],
+      "settings": {
+        "cmake.useCMakePresets": "always",
+        "cmake.sourceDirectory": "${containerWorkspaceFolder}/NativePlugin"
+      }
+    }
+  },
+  "postCreateCommand": "mkdir -p NativePlugin/build/vcpkg-binary-cache && git submodule update --init --recursive"
+}

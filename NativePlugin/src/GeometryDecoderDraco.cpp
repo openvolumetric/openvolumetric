@@ -8,6 +8,8 @@
 #include "draco/io/file_utils.h"
 #include "draco/io/parser_utils.h"
 
+#include <cstdio>
+
 // --------------------------------------------------------------------------
 // Constructor
 // --------------------------------------------------------------------------
@@ -56,7 +58,7 @@ bool GeometryDecoderDraco::init(char* filepattern, int start_index, int stop_ind
 	for (int i = start_index; i <= stop_index; i++)
 	{
 		char filepath[1024]; 
-		sprintf_s(filepath, filepattern, i);
+		std::snprintf(filepath, sizeof(filepath), filepattern, i);
 
 		// Get data from file
 		std::vector<char> data;
@@ -395,4 +397,3 @@ void GeometryDecoderDraco::flush_buffer()
 	//
 	LOG("GeometryDecoderDraco::flush_buffer - stop");
 }
-

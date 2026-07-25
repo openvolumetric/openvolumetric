@@ -6,7 +6,6 @@ extern "C"
 {
 	#include <libavcodec/avcodec.h>
 	#include <libavformat/avformat.h>
-	#include <libswresample/swresample.h>
 }
 
 #include <mutex>
@@ -157,7 +156,7 @@ private:
 	int						m_video_stream_index;
 	AVStream*				m_video_stream;
 	AVCodecContext*			m_video_codec_ctx;
-	AVCodec*				m_video_codec;
+	const AVCodec*			m_video_codec;
 
 	// --------------------------------------------------------------------------
 	// Decoding and Buffers
@@ -173,6 +172,4 @@ private:
 	std::mutex				m_video_mutex;
 
 };
-
-
 

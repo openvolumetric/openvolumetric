@@ -1,2 +1,78 @@
-# Visual Studio 2015/2017 cache/options directory
+# -----------------------------------------------------------------------------
+# Operating-system files
+# -----------------------------------------------------------------------------
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+# -----------------------------------------------------------------------------
+# Editors and IDEs
+# -----------------------------------------------------------------------------
+.vscode/
+.idea/
 .vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.VC.db
+*.VC.VC.opendb
+
+# -----------------------------------------------------------------------------
+# Native CMake and vcpkg output
+# -----------------------------------------------------------------------------
+NativePlugin/build/
+NativePlugin/vcpkg_installed/
+NativePlugin/CMakeUserPresets.json
+NativePlugin/CMakeFiles/
+NativePlugin/CMakeCache.txt
+NativePlugin/cmake_install.cmake
+NativePlugin/compile_commands.json
+NativePlugin/.ninja_deps
+NativePlugin/.ninja_log
+NativePlugin/build.ninja
+
+# Visual Studio native build output (scoped to the native project so Unity
+# plugin directories such as Assets/Plugins/VolumetricVideo/x64 stay tracked).
+NativePlugin/Debug/
+NativePlugin/Release/
+NativePlugin/x64/
+NativePlugin/x86/
+NativePlugin/ARM/
+NativePlugin/ARM64/
+NativePlugin/*.dir/
+NativePlugin/*.log
+NativePlugin/*.tlog/
+NativePlugin/*.lastbuildstate
+
+# -----------------------------------------------------------------------------
+# Unity-generated directories
+# -----------------------------------------------------------------------------
+Unity/[Ll]ibrary/
+Unity/[Tt]emp/
+Unity/[Oo]bj/
+Unity/[Ll]ogs/
+Unity/[Uu]ser[Ss]ettings/
+Unity/[Mm]emoryCaptures/
+Unity/[Rr]ecordings/
+Unity/[Bb]uild/
+Unity/[Bb]uilds/
+
+# Unity-generated IDE/project files
+Unity/*.csproj
+Unity/*.sln
+Unity/*.suo
+Unity/*.tmp
+Unity/*.user
+Unity/*.userprefs
+Unity/*.pidb
+Unity/*.booproj
+Unity/*.svd
+Unity/*.pdb
+Unity/*.mdb
+Unity/sysinfo.txt
+
+# Unity crash reports
+Unity/crashlytics-build.properties
+Unity/[Cc]rash*/
