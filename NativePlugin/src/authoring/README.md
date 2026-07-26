@@ -28,10 +28,15 @@ payload identity, and performs a middle-sample seek.
 
 ## Current boundary
 
-The library accepts an already encoded video/audio MP4 and a directory of
-numbered Draco frames. The Unity Editor currently performs image/audio and
-OBJ/Draco encoding first, then passes those temporary artifacts directly to
-the authoring library.
+The packer accepts an already encoded video/audio MP4 and a directory of
+numbered Draco frames. The Unity Editor uses the same authoring library's
+linked Draco API to convert each OBJ to a temporary `.drc` frame, invokes
+FFmpeg separately for HEVC/AAC encoding, then passes those artifacts to the
+packer.
+
+Draco encoding is intentionally part of the Editor-only
+`VolumetricVideoAuthoring` target. Runtime players do not expose authoring
+entry points.
 
 Future work can move those encoding stages behind this authoring API without
 changing the playback core or the volumetric MP4 format.

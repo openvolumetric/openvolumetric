@@ -13,6 +13,15 @@
 extern "C"
 {
 
+/// Encodes one OBJ mesh using the Draco library linked into this authoring
+/// module. Returns 1 on success and -1 on failure.
+VV_AUTHORING_API int volumetricvideo_authoring_encode_obj(
+	const char* input_path,
+	const char* output_path,
+	int position_quantization,
+	int normal_quantization,
+	int texture_quantization);
+
 /// Packages an existing video/audio MP4 and numbered Draco directory.
 /// Returns 1 on success and -1 on failure.
 VV_AUTHORING_API int volumetricvideo_authoring_pack(

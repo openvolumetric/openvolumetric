@@ -35,6 +35,17 @@ public sealed class VolumetricVideoEncoderWindow : EditorWindow
 
     [DllImport(
         AuthoringLibrary,
+        EntryPoint = "volumetricvideo_authoring_encode_obj",
+        CallingConvention = CallingConvention.Cdecl)]
+    private static extern int EncodeObjToDraco(
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string inputPath,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string outputPath,
+        int positionQuantization,
+        int normalQuantization,
+        int textureQuantization);
+
+    [DllImport(
+        AuthoringLibrary,
         EntryPoint = "volumetricvideo_authoring_last_error",
         CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr GetAuthoringError();
@@ -54,7 +65,6 @@ public sealed class VolumetricVideoEncoderWindow : EditorWindow
     [SerializeField] private bool overwriteOutput;
     [SerializeField] private bool showAdvanced;
     [SerializeField] private string ffmpegPath = "";
-    [SerializeField] private string dracoEncoderPath = "";
 
     private CancellationTokenSource cancellation;
     private Vector2 scroll;
@@ -78,9 +88,6 @@ public sealed class VolumetricVideoEncoderWindow : EditorWindow
         audioFile = Load("Audio", audioFile);
         outputFile = Load("Output", DefaultOutputPath());
         ffmpegPath = Load("FFmpeg", FindExecutable("ffmpeg"));
-        dracoEncoderPath = Load(
-            "Draco",
-            FindBuiltTool("draco_encoder", "tools/draco"));
     }
 
     private void OnDisable()
@@ -94,7 +101,8 @@ public sealed class VolumetricVideoEncoderWindow : EditorWindow
         EditorGUILayout.LabelField("Volumetric Video Encoder", EditorStyles.boldLabel);
         EditorGUILayout.HelpBox(
             "Creates one MP4 from matching numbered images and OBJ meshes. " +
-            "OBJ files are Draco-encoded automatically; temporary files are removed.",
+            "OBJ files are Draco-encoded by the native authoring library; " +
+            "no separate Draco tool is required.",
             MessageType.Info);
 
         using (new EditorGUI.DisabledScope(running))
@@ -131,8 +139,6 @@ public sealed class VolumetricVideoEncoderWindow : EditorWindow
                 textureQuantization = EditorGUILayout.IntSlider(
                     "UV Quantization", textureQuantization, 1, 30);
                 ffmpegPath = FileField("FFmpeg", ffmpegPath, "Select FFmpeg", "");
-                dracoEncoderPath = FileField(
-                    "Draco Encoder", dracoEncoderPath, "Select draco_encoder", "");
             }
 
             overwriteOutput = EditorGUILayout.Toggle(
@@ -260,17 +266,19 @@ public sealed class VolumetricVideoEncoderWindow : EditorWindow
                 string destination = Path.Combine(
                     dracoDirectory,
                     source.FrameText + ".drc");
-                RunProcess(
-                    dracoEncoderPath,
-                    new[]
-                    {
-                        "-i", source.Path,
-                        "-o", destination,
-                        "-qp", positionQuantization.ToString(CultureInfo.InvariantCulture),
-                        "-qn", normalQuantization.ToString(CultureInfo.InvariantCulture),
-                        "-qt", textureQuantization.ToString(CultureInfo.InvariantCulture)
-                    },
-                    token);
+                if (EncodeObjToDraco(
+                    source.Path,
+                    destination,
+                    positionQuantization,
+                    normalQuantization,
+                    textureQuantization) != 1)
+                {
+                    string error = Marshal.PtrToStringAnsi(GetAuthoringError());
+                    throw new InvalidOperationException(
+                        String.IsNullOrEmpty(error)
+                            ? "Native Draco encoding failed for " + source.Path
+                            : error);
+                }
                 progress = 0.45f * (index + 1) / inputs.Geometry.Count;
                 status = "Encoding geometry " + (index + 1) + "/" + inputs.Geometry.Count;
             }
@@ -401,7 +409,6 @@ public sealed class VolumetricVideoEncoderWindow : EditorWindow
         RequireDirectory(imageDirectory, "Image sequence");
         RequireDirectory(geometryDirectory, "OBJ sequence");
         RequireExecutable(ffmpegPath, "FFmpeg");
-        RequireExecutable(dracoEncoderPath, "Draco encoder");
 
         if (frameRate <= 0.0f)
         {
@@ -674,34 +681,6 @@ public sealed class VolumetricVideoEncoderWindow : EditorWindow
             "volumetric_video.mp4");
     }
 
-    private static string FindBuiltTool(string name, string installedSubdirectory)
-    {
-        string executable = Application.platform == RuntimePlatform.WindowsEditor
-            ? name + ".exe"
-            : name;
-        string nativeRoot = Path.GetFullPath(
-            Path.Combine(Application.dataPath, "..", "..", "NativePlugin"));
-        string platformBuild = Application.platform == RuntimePlatform.OSXEditor
-            ? "vcpkg-Darwin"
-            : Application.platform == RuntimePlatform.WindowsEditor
-                ? "vcpkg-Windows"
-                : "vcpkg-Linux";
-
-        string direct = Path.Combine(
-            nativeRoot, "build", platformBuild, "tools", name, executable);
-        if (File.Exists(direct)) return direct;
-
-        string installed = Path.Combine(
-            nativeRoot,
-            "build",
-            platformBuild,
-            "vcpkg_installed",
-            GetTripletDirectory(),
-            installedSubdirectory,
-            executable);
-        return File.Exists(installed) ? installed : "";
-    }
-
     private static string FindExecutable(string name)
     {
         string path = Environment.GetEnvironmentVariable("PATH") ?? "";
@@ -716,20 +695,6 @@ public sealed class VolumetricVideoEncoderWindow : EditorWindow
         return "";
     }
 
-    private static string GetTripletDirectory()
-    {
-        string architecture =
-            SystemInfo.processorType.IndexOf("arm", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            SystemInfo.processorType.IndexOf("apple", StringComparison.OrdinalIgnoreCase) >= 0
-                ? "arm64"
-                : "x64";
-        if (Application.platform == RuntimePlatform.OSXEditor)
-            return architecture + "-osx";
-        if (Application.platform == RuntimePlatform.WindowsEditor)
-            return architecture + "-windows";
-        return architecture + "-linux";
-    }
-
     private static string Load(string key, string fallback)
     {
         return EditorPrefs.GetString(PreferencePrefix + key, fallback ?? "");
@@ -742,7 +707,6 @@ public sealed class VolumetricVideoEncoderWindow : EditorWindow
         EditorPrefs.SetString(PreferencePrefix + "Audio", audioFile);
         EditorPrefs.SetString(PreferencePrefix + "Output", outputFile);
         EditorPrefs.SetString(PreferencePrefix + "FFmpeg", ffmpegPath);
-        EditorPrefs.SetString(PreferencePrefix + "Draco", dracoEncoderPath);
     }
 
     private sealed class EncodingInputs

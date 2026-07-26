@@ -1,4 +1,5 @@
 add_library(VolumetricVideoAuthoringCore STATIC
+  DracoMeshEncoder.cpp
   VolumetricVideoPacker.cpp
 )
 

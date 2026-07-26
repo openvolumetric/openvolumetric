@@ -45,14 +45,14 @@ stage, verification finishes but its output is discarded.
 
 ## Authoring tools
 
-The Advanced section shows the two command-line encoders used by the window:
+The Advanced section shows the external media encoder used by the window:
 
-- `ffmpeg`, with `libx265` and AAC encoding support;
-- `draco_encoder`, supplied by the project's vcpkg Draco dependency;
+- `ffmpeg`, with `libx265` and AAC encoding support.
 
-The window automatically discovers `draco_encoder` in the current platform's
-`NativePlugin/build` tree. It discovers FFmpeg through `PATH`, or a standalone
-executable can be selected without installing it system-wide.
+OBJ meshes are encoded by the Draco library linked directly into the
+Editor-only `VolumetricVideoAuthoring` plugin; no `draco_encoder` executable
+or path setting is required. The window discovers FFmpeg through `PATH`, or a
+standalone executable can be selected without installing it system-wide.
 
 MP4 packaging is called directly through the Editor-only
 `VolumetricVideoAuthoring` native library. It is built and staged alongside
