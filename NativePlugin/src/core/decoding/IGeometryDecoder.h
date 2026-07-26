@@ -3,6 +3,7 @@
 #include <IDecoder.h>
 
 #include <Mesh.h>
+#include <TimedFrame.h>
 
 #include <cstdint>
 #include <vector>
@@ -35,13 +36,21 @@ public:
 	virtual bool submit_encoded_frame(
 		std::uint64_t generation,
 		int frame_index,
+		double presentation_time,
 		std::vector<std::uint8_t> payload) = 0;
 
 	/// Discards work belonging to an earlier seek or loop pass.
 	virtual void reset(std::uint64_t generation) = 0;
 
-	/// Retrieves an already-decoded mesh for exactly frame_index.
-	virtual bool get_mesh_data(int frame_index, Mesh& mesh) = 0;
+	/// Signals that no more compressed samples belong to this generation.
+	virtual void mark_end_of_stream(std::uint64_t generation) = 0;
+
+	/// Selects a mesh by PTS relative to the chosen video sample.
+	virtual volumetric_video::FrameMatchResult get_mesh_data(
+		double presentation_time,
+		double tolerance,
+		double& actual_presentation_time,
+		Mesh& mesh) = 0;
 
 	/// Discards the most recently consumed decoded mesh.
 	virtual void clear_frame_data() = 0;

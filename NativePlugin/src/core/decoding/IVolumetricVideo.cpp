@@ -2,7 +2,7 @@
 
 #include <utility>
 
-bool IVolumetricVideo::submit_embedded_geometry(int frame_index)
+bool IVolumetricVideo::submit_embedded_geometry(double presentation_time)
 {
 	if (m_avdecoder == nullptr || m_geometrydecoder == nullptr ||
 		!m_avdecoder->has_embedded_geometry())
@@ -21,8 +21,9 @@ bool IVolumetricVideo::submit_embedded_geometry(int frame_index)
 	// Unity is currently requesting so a decoded mesh is ready when its video
 	// frame is presented. This also drains any late packets instead of silently
 	// dropping them when Unity advances to the next frame.
-	constexpr int geometry_lookahead_frames = 120;
-	const int submission_limit = frame_index + geometry_lookahead_frames;
+	constexpr double geometry_lookahead_seconds = 4.0;
+	const double submission_limit =
+		presentation_time + geometry_lookahead_seconds;
 
 	IAVDecoder::EncodedGeometryFrame encoded;
 	while (m_avdecoder->get_geometry_data(submission_limit, encoded))
@@ -30,11 +31,14 @@ bool IVolumetricVideo::submit_embedded_geometry(int frame_index)
 		if (!m_geometrydecoder->submit_encoded_frame(
 			encoded.generation,
 			encoded.frame_index,
+			encoded.presentation_time,
 			std::move(encoded.payload)))
 		{
 			return false;
 		}
 	}
+	if (m_avdecoder->geometry_end_of_stream())
+		m_geometrydecoder->mark_end_of_stream(generation);
 
 	return true;
 }

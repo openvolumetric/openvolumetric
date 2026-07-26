@@ -6,6 +6,8 @@
 #include <MeshBufferMetal.h>
 #include <TextureMetal.h>
 
+#include <cmath>
+
 VolumetricVideoMetal::VolumetricVideoMetal(int ID) : IVolumetricVideo(ID)
 {
 	LOG("VolumetricVideoMetal::VolumetricVideoMetal - Constructor - %d", ID);
@@ -65,16 +67,35 @@ int VolumetricVideoMetal::stop()
 
 int VolumetricVideoMetal::render()
 {
+	if (!submit_embedded_geometry(m_presentation_time))
+		return -1;
+
+	const double fps = m_avdecoder->get_video_info().fps;
+	const double tolerance = fps > 0.0 ? (0.5 / fps) + 0.0001 : 0.017;
+	double video_time = 0.0;
 	uint8_t* output_y = nullptr;
 	uint8_t* output_u = nullptr;
 	uint8_t* output_v = nullptr;
-	if (!m_avdecoder->get_video_data(m_frame_index, &output_y, &output_u, &output_v))
-		return -1;
-	if (!submit_embedded_geometry(m_frame_index))
+	if (m_avdecoder->get_video_data(
+		m_presentation_time,
+		tolerance,
+		video_time,
+		&output_y,
+		&output_u,
+		&output_v) != volumetric_video::FrameMatchResult::Ready)
 		return -1;
 
 	Mesh mesh;
-	if (!m_geometrydecoder->get_mesh_data(m_frame_index, mesh))
+	double geometry_time = 0.0;
+	const auto geometry_result = m_geometrydecoder->get_mesh_data(
+		video_time, tolerance, geometry_time, mesh);
+	if (geometry_result == volumetric_video::FrameMatchResult::Missing)
+	{
+		LOG("SYNC dropping unmatched video pts=%f", video_time);
+		m_avdecoder->clean_frame_data();
+		return -1;
+	}
+	if (geometry_result != volumetric_video::FrameMatchResult::Ready)
 		return -1;
 
 	// Present texture and geometry from the same frame as one render event.
@@ -85,7 +106,7 @@ int VolumetricVideoMetal::render()
 
 	m_avdecoder->clean_frame_data();
 	m_geometrydecoder->clear_frame_data();
-	return m_frame_index;
+	return static_cast<int>(std::llround(video_time * fps));
 }
 
 int VolumetricVideoMetal::seek(double time)

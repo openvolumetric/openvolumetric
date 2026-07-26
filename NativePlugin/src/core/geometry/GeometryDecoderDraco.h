@@ -42,9 +42,12 @@ public:
 	bool submit_encoded_frame(
 		std::uint64_t generation,
 		int frame_index,
+		double presentation_time,
 		std::vector<std::uint8_t> payload) override;
 
 	void reset(std::uint64_t generation) override;
+
+	void mark_end_of_stream(std::uint64_t generation) override;
 
 
   	// --------------------------------------------------------------------------
@@ -62,7 +65,11 @@ public:
 	// --------------------------------------------------------------------------
 	// Get mesh data for index
 	// --------------------------------------------------------------------------
-	bool get_mesh_data(int frame_index, Mesh& mesh) override;
+	volumetric_video::FrameMatchResult get_mesh_data(
+		double presentation_time,
+		double tolerance,
+		double& actual_presentation_time,
+		Mesh& mesh) override;
 	
 
 	// --------------------------------------------------------------------------
@@ -109,6 +116,7 @@ private:
 		DracoData data;
 		// Presentation index inherited from the MP4 sample timestamp.
 		int frame_index;
+		double presentation_time = 0.0;
 	};
 
 	volumetric_video::BoundedQueue<EncodedMeshData> m_streamed_meshes;
@@ -124,6 +132,7 @@ private:
 
 		// Frame index
 		int frame_index;
+		double presentation_time = 0.0;
 	};
 
 	// --------------------------------------------------------------------------
@@ -131,6 +140,8 @@ private:
 	// --------------------------------------------------------------------------
 	volumetric_video::BoundedQueue<MeshData> m_decoded_meshes;
 	std::atomic<std::uint64_t> m_generation;
+	std::atomic<std::uint64_t> m_end_of_stream_generation;
+	std::atomic<bool> m_decode_active;
 
 
 	// --------------------------------------------------------------------------

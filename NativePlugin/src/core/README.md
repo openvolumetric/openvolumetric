@@ -24,10 +24,30 @@ AVDecoderFFMPEG (one demux thread)
 ```
 
 The engine integration requests a presentation frame from
-`IVolumetricVideo`. A frame is uploaded only when both its video planes and
-decoded mesh are available. Unity owns the destination texture and mesh
+`IVolumetricVideo` using Unity's DSP-clock time. The media decoder selects a
+video sample by PTS, then the geometry decoder matches its mesh against that
+video PTS. A presentation is uploaded only when both are available. Unity owns
+the destination texture and mesh
 resources; the Metal or D3D11 integration copies decoded data into those
 resources during Unity's render callback.
+
+## Timestamp synchronization
+
+- Video and geometry retain their MP4 presentation timestamps through
+  decoding. Frame numbers remain diagnostic metadata only.
+- Matching uses half of the source video frame interval plus 0.1 ms as its
+  tolerance.
+- If either sample is still being decoded, the previously complete
+  presentation remains visible.
+- Samples older than the matching window are dropped. If the next geometry
+  sample is already later than the selected video window, that video sample is
+  dropped because it can no longer form a complete presentation. End-of-stream
+  is propagated through the Draco worker so a missing final mesh is handled
+  the same way instead of waiting forever.
+- `SYNC` log messages report dropped video or geometry, duplicate timestamps,
+  and unmatchable video/geometry pairs.
+- Unity schedules audio and requests visual presentation from the same DSP
+  clock. The same clock boundary submits the native loop seek.
 
 ## Directory responsibilities
 

@@ -28,8 +28,8 @@ extern "C"
 	// Quit application
 	VOLUMETRIC_VIDEO_API void	volumetricvideo_quit(int ID);
 
-	// Set frame index
-	VOLUMETRIC_VIDEO_API void	volumetricvideo_set_frame(int ID, int frame_index);
+	// Set presentation target from the engine playback clock.
+	VOLUMETRIC_VIDEO_API void volumetricvideo_set_time(int ID, double time);
 
 
 	//-----------------------------------------------

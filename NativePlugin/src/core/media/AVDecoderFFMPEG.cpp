@@ -636,6 +636,14 @@ bool AVDecoderFFMPEG::queue_geometry_packet()
 	frame.presentation_time =
 		static_cast<double>(m_packet.pts) *
 		av_q2d(m_geometry_stream->time_base);
+	if (std::abs(frame.presentation_time - m_last_geometry_packet_time) <
+		1e-9)
+	{
+		LOG(
+			"SYNC duplicate geometry timestamp pts=%f",
+			frame.presentation_time);
+	}
+	m_last_geometry_packet_time = frame.presentation_time;
 	frame.frame_index = static_cast<int>(std::llround(
 		frame.presentation_time * m_video_info.fps));
 	frame.source_frame_number = packet.frame_number;
@@ -657,17 +665,25 @@ bool AVDecoderFFMPEG::has_embedded_geometry() const
 }
 
 bool AVDecoderFFMPEG::get_geometry_data(
-	int frame_index,
+	double presentation_time,
 	EncodedGeometryFrame& output)
 {
 	return m_geometry_frames.access([&](auto& frames)
 	{
-		if (frames.empty() || frames.front().frame_index > frame_index)
+		if (frames.empty() ||
+			frames.front().presentation_time > presentation_time)
 			return false;
 		output = std::move(frames.front());
 		frames.pop_front();
 		return true;
 	});
+}
+
+bool AVDecoderFFMPEG::geometry_end_of_stream() const
+{
+	return m_geometry_frames.state() ==
+			volumetric_video::QueueState::EndOfStream &&
+		m_geometry_frames.size() == 0;
 }
 
 std::string AVDecoderFFMPEG::get_last_error() const
@@ -845,6 +861,17 @@ bool AVDecoderFFMPEG::decode_video_frame()
 			FrameData framedata;
 			framedata.data			= frame;
 			framedata.frame_index	= frame_index;
+			framedata.frame_time		=
+				av_q2d(m_video_stream->time_base) *
+				static_cast<double>(frame->best_effort_timestamp);
+			if (std::abs(
+				framedata.frame_time - m_last_video_packet_time) < 1e-9)
+			{
+				LOG(
+					"SYNC duplicate video timestamp pts=%f",
+					framedata.frame_time);
+			}
+			m_last_video_packet_time = framedata.frame_time;
 
 			if (!m_video_frames.try_push(std::move(framedata)))
 			{
@@ -999,6 +1026,8 @@ bool AVDecoderFFMPEG::perform_seek(double time)
 	m_deferred_packet.reset();
 	flush_audio();
 	m_playback_generation.fetch_add(1, std::memory_order_acq_rel);
+	m_last_video_packet_time = -1.0;
+	m_last_geometry_packet_time = -1.0;
 	m_decoder_state = DECODING;
 
 	//
@@ -1014,7 +1043,13 @@ std::uint64_t AVDecoderFFMPEG::playback_generation() const
 // --------------------------------------------------------------------------
 // 
 // --------------------------------------------------------------------------
-bool AVDecoderFFMPEG::get_video_data(int frame_index, uint8_t** outputY, uint8_t** outputU, uint8_t** outputV)
+volumetric_video::FrameMatchResult AVDecoderFFMPEG::get_video_data(
+	double presentation_time,
+	double tolerance,
+	double& actual_presentation_time,
+	uint8_t** outputY,
+	uint8_t** outputU,
+	uint8_t** outputV)
 {
 //	LOG("DecoderFFMPEG::get_video_data - start");
 	*outputY = NULL;
@@ -1023,22 +1058,21 @@ bool AVDecoderFFMPEG::get_video_data(int frame_index, uint8_t** outputY, uint8_t
 	if (!m_initialised)
 	{
 		LOG("DecoderFFMPEG::get_video_data - decoder not initialized");
-		return false;
+		return volumetric_video::FrameMatchResult::NotReady;
 	}
 
 	AVFrame* frame = m_video_frames.access([&](auto& frames) -> AVFrame*
 	{
 		while (!frames.empty())
 		{
-			if (frames.front().frame_index == frame_index)
+			if (frames.front().frame_time >= presentation_time - tolerance)
 				return frames.front().data;
-			if (frame_index > frames.front().frame_index)
-			{
-				av_frame_free(&frames.front().data);
-				frames.pop_front();
-				continue;
-			}
-			break;
+			LOG(
+				"SYNC dropped video sample pts=%f target=%f",
+				frames.front().frame_time,
+				presentation_time);
+			av_frame_free(&frames.front().data);
+			frames.pop_front();
 		}
 		return nullptr;
 	});
@@ -1050,8 +1084,15 @@ bool AVDecoderFFMPEG::get_video_data(int frame_index, uint8_t** outputY, uint8_t
 		if (m_video_frames.state() == volumetric_video::QueueState::Error)
 			LOG("DecoderFFMPEG::get_video_data - %s",
 				m_video_frames.error().c_str());
-		return false;
+		return volumetric_video::FrameMatchResult::NotReady;
 	}
+
+	const double frame_time = m_video_frames.access([&](auto& frames)
+	{
+		return frames.empty() ? -1.0 : frames.front().frame_time;
+	});
+	if (frame_time > presentation_time + tolerance)
+		return volumetric_video::FrameMatchResult::Missing;
 
 	// get decoded frame
 	*outputY = frame->data[0];
@@ -1062,6 +1103,7 @@ bool AVDecoderFFMPEG::get_video_data(int frame_index, uint8_t** outputY, uint8_t
 	int64_t timeStamp				= frame->best_effort_timestamp;
 	double timeInSec				= av_q2d(m_video_stream->time_base) * timeStamp;
 	this->m_video_info.last_time	= timeInSec;
+	actual_presentation_time = frame_time;
 
 	// Convert time to frameindex
 //	LOG("DecoderFFMPEG::get_video_data - requested frame_index: %d", frame_index);
@@ -1069,7 +1111,7 @@ bool AVDecoderFFMPEG::get_video_data(int frame_index, uint8_t** outputY, uint8_t
 //	LOG("DecoderFFMPEG::get_video_data - time in sec(s): %f", timeInSec);
 
 	//
-	return true;
+	return volumetric_video::FrameMatchResult::Ready;
 }
 
 

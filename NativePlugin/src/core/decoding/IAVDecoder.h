@@ -75,9 +75,14 @@ public:
 	/// Seeks all streams to a presentation time measured in seconds.
 	virtual bool seek(double time) = 0;
 
-	/// Returns planar YUV420 data for exactly frame_index when available.
-	/// Pointers remain owned by the decoder.
-	virtual bool get_video_data(int frame_index, uint8_t** outputY, uint8_t** outputU, uint8_t** outputV) = 0;
+	/// Selects the decoded video sample nearest presentation_time.
+	virtual volumetric_video::FrameMatchResult get_video_data(
+		double presentation_time,
+		double tolerance,
+		double& actual_presentation_time,
+		uint8_t** outputY,
+		uint8_t** outputU,
+		uint8_t** outputV) = 0;
 
 	/// Copies interleaved floating-point PCM into output. Missing samples are
 	/// represented as silence by the implementation.
@@ -86,11 +91,12 @@ public:
 	/// True when the required project-specific geometry track was discovered.
 	virtual bool has_embedded_geometry() const = 0;
 
-	/// Removes and returns the oldest queued geometry frame whose presentation
-	/// index is no later than frame_index.
+	/// Removes the oldest queued geometry sample up to presentation_time.
 	virtual bool get_geometry_data(
-		int frame_index,
+		double presentation_time,
 		EncodedGeometryFrame& output) = 0;
+
+	virtual bool geometry_end_of_stream() const = 0;
 
 	/// Increments whenever playback is reset or loops to a new timeline pass.
 	virtual std::uint64_t playback_generation() const = 0;

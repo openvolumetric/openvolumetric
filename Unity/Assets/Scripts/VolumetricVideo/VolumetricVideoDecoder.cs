@@ -39,8 +39,8 @@ public class VolumetricVideoDecoder
     [DllImport(DLLNAME, EntryPoint = "volumetricvideo_quit")]
     private static extern void volumetricvideo_quit(int ID);
 
-    [DllImport(DLLNAME, EntryPoint = "volumetricvideo_set_frame")]
-    private static extern void volumetricvideo_set_frame(int ID, int frame_index);
+    [DllImport(DLLNAME, EntryPoint = "volumetricvideo_set_time")]
+    private static extern void volumetricvideo_set_time(int ID, double time);
 
     [DllImport(DLLNAME, EntryPoint = "volumetricvideo_start_decoding")]
     private static extern int volumetricvideo_start_decoding(int ID);
@@ -511,8 +511,10 @@ public class VolumetricVideoDecoder
     //----------------------------------------------------------
     public void update(double time)
     {
+        double presentation_time = time % video_duration;
+
         // Compute frame within the sequence
-        int current_frame = (int)( (time * video_fps) % (video_fps*video_duration) );
+        int current_frame = (int)(presentation_time * video_fps);
 
         //Check if there is a requirement to update the frame
         if (m_previous_frame != current_frame)
@@ -530,8 +532,8 @@ public class VolumetricVideoDecoder
                 }
             }
 
-            // Set frame index to display within native plugin
-            volumetricvideo_set_frame(m_instance_id, current_frame);
+            // Video, geometry, and audio all use the same DSP-clock time.
+            volumetricvideo_set_time(m_instance_id, presentation_time);
 
             // Issue render event
             GL.IssuePluginEvent(GetRenderEventFunc(), m_instance_id);

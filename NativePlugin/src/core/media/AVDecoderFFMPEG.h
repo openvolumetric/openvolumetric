@@ -76,15 +76,23 @@ public:
 	// --------------------------------------------------------------------------
 	//
 	// --------------------------------------------------------------------------
-	bool get_video_data(int frame_index, uint8_t** outputY, uint8_t** outputU, uint8_t** outputV) override;
+	volumetric_video::FrameMatchResult get_video_data(
+		double presentation_time,
+		double tolerance,
+		double& actual_presentation_time,
+		uint8_t** outputY,
+		uint8_t** outputU,
+		uint8_t** outputV) override;
 
 	int read_audio(float* output, int sample_count) override;
 
 	bool has_embedded_geometry() const override;
 
 	bool get_geometry_data(
-		int frame_index,
+		double presentation_time,
 		EncodedGeometryFrame& output) override;
+
+	bool geometry_end_of_stream() const override;
 
 	std::uint64_t playback_generation() const override;
 
@@ -221,6 +229,8 @@ private:
 	std::deque<volumetric_video::ContainerPacket> m_pending_geometry_packets;
 	std::optional<volumetric_video::ContainerPacket> m_deferred_packet;
 	std::atomic<std::uint64_t> m_playback_generation;
+	double m_last_video_packet_time = -1.0;
+	double m_last_geometry_packet_time = -1.0;
 
 	// Runtime seeks are submitted by an engine thread and executed only by the
 	// demux thread, which exclusively owns FFmpeg container/codec mutation.

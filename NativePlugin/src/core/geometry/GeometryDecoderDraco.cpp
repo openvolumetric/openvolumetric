@@ -7,13 +7,17 @@
 #include "draco/core/cycle_timer.h"
 
 #include <chrono>
+#include <limits>
 
 // --------------------------------------------------------------------------
 // Constructor
 // --------------------------------------------------------------------------
 GeometryDecoderDraco::GeometryDecoderDraco():
 	IGeometryDecoder(), m_streamed_meshes(256), m_decoded_meshes(64),
-	m_generation(0)
+	m_generation(0),
+	m_end_of_stream_generation(
+		std::numeric_limits<std::uint64_t>::max()),
+	m_decode_active(false)
 {
 
 }
@@ -55,6 +59,7 @@ bool GeometryDecoderDraco::init()
 bool GeometryDecoderDraco::submit_encoded_frame(
 	std::uint64_t generation,
 	int frame_index,
+	double presentation_time,
 	std::vector<std::uint8_t> payload)
 {
 	if (!m_initialised || payload.empty())
@@ -63,6 +68,7 @@ bool GeometryDecoderDraco::submit_encoded_frame(
 	EncodedMeshData encoded;
 	encoded.generation = generation;
 	encoded.frame_index = frame_index;
+	encoded.presentation_time = presentation_time;
 	encoded.data.assign(payload.begin(), payload.end());
 	if (!m_streamed_meshes.try_push(std::move(encoded)))
 	{
@@ -75,8 +81,16 @@ bool GeometryDecoderDraco::submit_encoded_frame(
 void GeometryDecoderDraco::reset(std::uint64_t generation)
 {
 	m_generation.store(generation, std::memory_order_release);
+	m_end_of_stream_generation.store(
+		std::numeric_limits<std::uint64_t>::max(),
+		std::memory_order_release);
 	m_streamed_meshes.clear();
 	m_decoded_meshes.clear();
+}
+
+void GeometryDecoderDraco::mark_end_of_stream(std::uint64_t generation)
+{
+	m_end_of_stream_generation.store(generation, std::memory_order_release);
 }
  
 // --------------------------------------------------------------------------
@@ -163,9 +177,11 @@ bool GeometryDecoderDraco::decode()
 			return true;
 		}
 
+		m_decode_active.store(true, std::memory_order_release);
 		Mesh mesh;
 		if (!convert_draco_to_mesh(encoded.data, mesh))
 		{
+			m_decode_active.store(false, std::memory_order_release);
 			m_decoded_meshes.set_error(
 				"Draco geometry frame could not be decoded.");
 			return false;
@@ -175,16 +191,20 @@ bool GeometryDecoderDraco::decode()
 		mesh_data.mesh = std::move(mesh);
 		mesh_data.generation = encoded.generation;
 		mesh_data.frame_index = encoded.frame_index;
+		mesh_data.presentation_time = encoded.presentation_time;
 		if (encoded.generation !=
 			m_generation.load(std::memory_order_acquire))
 		{
+			m_decode_active.store(false, std::memory_order_release);
 			return true;
 		}
 		if (!m_decoded_meshes.try_push(std::move(mesh_data)))
 		{
+			m_decode_active.store(false, std::memory_order_release);
 			m_decoded_meshes.set_error("Decoded geometry queue is full.");
 			return false;
 		}
+		m_decode_active.store(false, std::memory_order_release);
 	}
 
 	return true;
@@ -203,28 +223,56 @@ bool GeometryDecoderDraco::is_buffer_blocked()
 // --------------------------------------------------------------------------
 // get_mesh_data
 // --------------------------------------------------------------------------
-bool GeometryDecoderDraco::get_mesh_data(int frame_index, Mesh& mesh)
+volumetric_video::FrameMatchResult GeometryDecoderDraco::get_mesh_data(
+	double presentation_time,
+	double tolerance,
+	double& actual_presentation_time,
+	Mesh& mesh)
 {
-	LOG("GeometryDecoderDraco::get_mesh_data - getting mesh at index  %d.", frame_index);
-
 	return m_decoded_meshes.access([&](auto& meshes)
 	{
 		while (!meshes.empty())
 		{
-			if (meshes.front().frame_index == frame_index)
+			if (meshes.front().presentation_time <
+				presentation_time - tolerance)
 			{
-				mesh = meshes.front().mesh;
-				return true;
-			}
-			if (frame_index > meshes.front().frame_index)
-			{
-				LOG("GeometryDecoderDraco::get_mesh_data - clearing front frame  %d.", meshes.front().frame_index);
+				LOG(
+					"SYNC dropped geometry sample pts=%f target=%f",
+					meshes.front().presentation_time,
+					presentation_time);
 				meshes.pop_front();
 				continue;
 			}
 			break;
 		}
-		return false;
+		if (meshes.empty())
+		{
+			const std::uint64_t generation =
+				m_generation.load(std::memory_order_acquire);
+			if (m_end_of_stream_generation.load(
+					std::memory_order_acquire) == generation &&
+				m_streamed_meshes.size() == 0 &&
+				!m_decode_active.load(std::memory_order_acquire))
+			{
+				LOG(
+					"SYNC missing final geometry for video pts=%f",
+					presentation_time);
+				return volumetric_video::FrameMatchResult::Missing;
+			}
+			return volumetric_video::FrameMatchResult::NotReady;
+		}
+		if (meshes.front().presentation_time >
+			presentation_time + tolerance)
+		{
+			LOG(
+				"SYNC missing geometry for video pts=%f next_geometry=%f",
+				presentation_time,
+				meshes.front().presentation_time);
+			return volumetric_video::FrameMatchResult::Missing;
+		}
+		mesh = meshes.front().mesh;
+		actual_presentation_time = meshes.front().presentation_time;
+		return volumetric_video::FrameMatchResult::Ready;
 	});
 }
 

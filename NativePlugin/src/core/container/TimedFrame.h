@@ -6,6 +6,13 @@
 namespace volumetric_video
 {
 
+enum class FrameMatchResult
+{
+	Ready,
+	NotReady,
+	Missing
+};
+
 /// Compressed geometry sample with container-derived presentation timing.
 struct CompressedGeometryFrame
 {

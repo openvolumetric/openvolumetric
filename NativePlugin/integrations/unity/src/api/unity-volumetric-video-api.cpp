@@ -310,23 +310,18 @@ VOLUMETRIC_VIDEO_API void	volumetricvideo_quit(int ID)
 
 
 // --------------------------------------------------------------------------
-// Set frame index
+// Set presentation target from the engine playback clock.
 // --------------------------------------------------------------------------
-VOLUMETRIC_VIDEO_API void	volumetricvideo_set_frame(int ID, int frame_index)
+VOLUMETRIC_VIDEO_API void volumetricvideo_set_time(int ID, double time)
 {
-	//
-	LOG("volumetricvideo_set_frame - id: %d frame_index: %d", ID, frame_index);
-
-	//
 	VolumetricVideo_iter iter;
 	if (!get_vv_instance(ID, &iter))
 	{
-		LOG("volumetricvideo_set_frame - cant find instance id: %d", ID);
+		LOG("volumetricvideo_set_time - cant find instance id: %d", ID);
 		return;
 	}
 
-	// Set frame index in VV Decoder
-	(*iter)->set_frame_index(frame_index);
+	(*iter)->set_presentation_time(time);
 }
 
 

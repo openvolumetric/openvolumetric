@@ -8,6 +8,7 @@
 #include <Mesh.h>
 
 #include <iostream>
+#include <cmath>
 
 //----------------------------------------------
 // 
@@ -135,25 +136,41 @@ int VolumetricVideoD3D11::render()
 {
 //	LOG("VolumetricVideoD3D11::render - id: %d", this->m_id);
 
+	if (!submit_embedded_geometry(m_presentation_time))
+		return -1;
+
+	const double fps = m_avdecoder->get_video_info().fps;
+	const double tolerance = fps > 0.0 ? (0.5 / fps) + 0.0001 : 0.017;
+	double video_time = 0.0;
+
 	// Pointers to texture data
 	uint8_t * outputY = NULL;
 	uint8_t * outputU = NULL;
 	uint8_t * outputV = NULL;
 
 	// Get Frame Data 
-	if (!this->m_avdecoder->get_video_data(m_frame_index, &outputY, &outputU, &outputV))
-	{
-		LOG("VolumetricVideoD3D11::render - id: %d - no buffer data - frame: %d", this->m_id, m_frame_index);
-		return -1;
-	}
-	if (!submit_embedded_geometry(m_frame_index))
+	if (this->m_avdecoder->get_video_data(
+		m_presentation_time,
+		tolerance,
+		video_time,
+		&outputY,
+		&outputU,
+		&outputV) != volumetric_video::FrameMatchResult::Ready)
 	{
 		return -1;
 	}
 
-	// Wait until both streams have the requested frame.
 	Mesh mesh;
-	if (!this->m_geometrydecoder->get_mesh_data(m_frame_index, mesh))
+	double geometry_time = 0.0;
+	const auto geometry_result = this->m_geometrydecoder->get_mesh_data(
+		video_time, tolerance, geometry_time, mesh);
+	if (geometry_result == volumetric_video::FrameMatchResult::Missing)
+	{
+		LOG("SYNC dropping unmatched video pts=%f", video_time);
+		this->m_avdecoder->clean_frame_data();
+		return -1;
+	}
+	if (geometry_result != volumetric_video::FrameMatchResult::Ready)
 	{
 		return -1;
 	}
@@ -170,7 +187,7 @@ int VolumetricVideoD3D11::render()
 	this->m_geometrydecoder->clear_frame_data();
 
 	// Return rendered frame index
-	return m_frame_index;
+	return static_cast<int>(std::llround(video_time * fps));
 }
 
 

@@ -23,13 +23,13 @@ public:
 	//--------------------------------------------------------
 	// default constructor
 	//--------------------------------------------------------
-	IVolumetricVideo() : m_id(-1), m_avdecoder(NULL), m_texture(NULL), m_geometrydecoder(NULL), m_meshbuffer(NULL), m_frame_index(-1), m_geometry_generation(0) {};
+	IVolumetricVideo() : m_id(-1), m_avdecoder(NULL), m_texture(NULL), m_geometrydecoder(NULL), m_meshbuffer(NULL), m_geometry_generation(0) {};
 
 
 	//--------------------------------------------------------
 	// constructor with instance id
 	//--------------------------------------------------------
-	IVolumetricVideo(int id) :m_id(id), m_avdecoder(NULL), m_texture(NULL), m_geometrydecoder(NULL), m_meshbuffer(NULL), m_frame_index(-1), m_geometry_generation(0) {};
+	IVolumetricVideo(int id) :m_id(id), m_avdecoder(NULL), m_texture(NULL), m_geometrydecoder(NULL), m_meshbuffer(NULL), m_geometry_generation(0) {};
 	
 	
 	//--------------------------------------------------------
@@ -69,9 +69,9 @@ public:
 
 
 	//--------------------------------------------------------
-	// set frame index
+	// Set the engine-clock presentation target in seconds.
 	//--------------------------------------------------------
-	void set_frame_index(int frame_index) { m_frame_index = frame_index; }
+	void set_presentation_time(double time) { m_presentation_time = time; }
 
 
 	//--------------------------------------------------------
@@ -107,7 +107,7 @@ protected:
 
 	/// Moves queued vvge payloads from the media decoder into the Draco worker.
 	/// A look-ahead window keeps geometry ready for upcoming render frames.
-	bool submit_embedded_geometry(int frame_index);
+	bool submit_embedded_geometry(double presentation_time);
 
 
 	//--------------------------------------------------------
@@ -141,9 +141,7 @@ protected:
 
 
 	//--------------------------------------------------------
-	// Frame Index
-	//--------------------------------------------------------
-	int m_frame_index;
+	double m_presentation_time = 0.0;
 
 	// Identifies which seek/loop pass currently owns queued Draco work.
 	std::uint64_t m_geometry_generation;
