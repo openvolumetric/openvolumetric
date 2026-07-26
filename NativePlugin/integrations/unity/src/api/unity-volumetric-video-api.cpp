@@ -18,6 +18,7 @@
 #include <assert.h>
 #include <list>
 #include <iostream>
+#include <string>
 
 //
 #if defined(_WIN32)
@@ -436,6 +437,19 @@ VOLUMETRIC_VIDEO_API int	volumetricvideo_load_video(int ID, const char* filepath
 
 	//
 	return 1;
+}
+
+VOLUMETRIC_VIDEO_API const char* volumetricvideo_get_last_error(int ID)
+{
+	static thread_local std::string error;
+	VolumetricVideo_iter iter;
+	if (!get_vv_instance(ID, &iter))
+	{
+		error = "Volumetric video instance was not found.";
+		return error.c_str();
+	}
+	error = (*iter)->get_avdecoder_ptr()->get_last_error();
+	return error.c_str();
 }
 
 

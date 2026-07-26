@@ -16,6 +16,7 @@ target_link_libraries(VolumetricVideoFFmpeg INTERFACE
 )
 
 add_library(VolumetricVideoCore STATIC
+  container/FFmpegMp4VolumetricContainer.cpp
   container/GeometryPacket.cpp
   decoding/IAVDecoder.cpp
   decoding/IDecoder.cpp

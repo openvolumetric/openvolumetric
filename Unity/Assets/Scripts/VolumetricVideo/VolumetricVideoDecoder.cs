@@ -54,6 +54,9 @@ public class VolumetricVideoDecoder
     [DllImport(DLLNAME, EntryPoint = "volumetricvideo_load_video")]
     private static extern int volumetricvideo_load_video(int ID, string filename);
 
+    [DllImport(DLLNAME, EntryPoint = "volumetricvideo_get_last_error")]
+    private static extern IntPtr volumetricvideo_get_last_error(int ID);
+
     [DllImport(DLLNAME, EntryPoint = "volumetricvideo_get_video_details")]
     private static extern int volumetricvideo_get_video_details(int ID, ref int width, ref int height, ref double fps, ref double duration);
 
@@ -328,7 +331,12 @@ public class VolumetricVideoDecoder
         // Load Video
         if (volumetricvideo_load_video(m_instance_id, filepath) == -1)
         {
-            Debug.LogError("VolumetricVideoDecoder::init - failed to load video");
+            IntPtr errorPointer = volumetricvideo_get_last_error(m_instance_id);
+            string detail = errorPointer == IntPtr.Zero
+                ? String.Empty
+                : Marshal.PtrToStringAnsi(errorPointer);
+            Debug.LogError("VolumetricVideoDecoder::init - failed to load video"
+                + (String.IsNullOrEmpty(detail) ? String.Empty : ": " + detail));
             m_decoder_state = DecoderState.INIT_FAIL;
             return false;
         }

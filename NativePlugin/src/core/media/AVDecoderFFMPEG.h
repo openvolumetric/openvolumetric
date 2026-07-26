@@ -1,6 +1,8 @@
 #pragma once
 
 #include <IAVDecoder.h>
+#include <BoundedQueue.h>
+#include <FFmpegMp4VolumetricContainer.h>
 #include <GeometryPacket.h>
 
 extern "C"
@@ -11,8 +13,7 @@ extern "C"
 }
 
 #include <atomic>
-#include <mutex>
-#include <queue>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -80,6 +81,8 @@ public:
 	bool get_geometry_data(
 		int frame_index,
 		EncodedGeometryFrame& output) override;
+
+	std::string get_last_error() const override;
 
 	// --------------------------------------------------------------------------
 	//
@@ -164,7 +167,7 @@ private:
 	// --------------------------------------------------------------------------
 	//
 	// --------------------------------------------------------------------------
-	void free_front_frame(std::queue<FrameData>* buffer, std::mutex* mutex);
+	void free_front_frame();
 
 
 private:
@@ -172,9 +175,9 @@ private:
 
 
 	// --------------------------------------------------------------------------
-	// AVFormat Context
+	// Container owns AVFormatContext and all demux/seek operations.
 	// --------------------------------------------------------------------------
-	AVFormatContext*		m_avformat_ctx;
+	std::unique_ptr<volumetric_video::FFmpegMp4VolumetricContainer> m_container;
 
 	// --------------------------------------------------------------------------
 	// Video Information
@@ -195,17 +198,14 @@ private:
 
 	// Queues bridge the decoder worker and engine/audio consumer threads.
 	AVPacket				m_packet;
-	std::queue<FrameData>	m_video_frames;
-	unsigned int			m_video_buffer_max;
+	volumetric_video::BoundedQueue<FrameData> m_video_frames;
 	std::vector<float>		m_audio_samples;
 	std::atomic<uint64_t>	m_audio_read_position;
 	std::atomic<uint64_t>	m_audio_write_position;
-	std::queue<EncodedGeometryFrame> m_geometry_frames;
+	volumetric_video::BoundedQueue<EncodedGeometryFrame> m_geometry_frames;
 
-	// m_video_mutex and m_geometry_mutex protect their corresponding queues.
-	// Audio uses atomic monotonic read/write positions instead of a mutex.
+	// BoundedQueue protects video/geometry access and carries terminal state.
+	// Audio uses atomic monotonic read/write positions.
 	std::thread				m_decode_thread;
-	std::mutex				m_video_mutex;
-	std::mutex				m_geometry_mutex;
 
 };

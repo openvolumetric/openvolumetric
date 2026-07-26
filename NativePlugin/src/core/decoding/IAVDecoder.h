@@ -2,8 +2,10 @@
 
 #include <IDecoder.h>
 #include <Stream.h>
+#include <TimedFrame.h>
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 /// Engine-independent view of the combined MP4 decoder.
@@ -40,18 +42,7 @@ public:
 		int channels;
 	};
 
-	struct EncodedGeometryFrame
-	{
-		// Presentation index derived from the geometry sample PTS.
-		int frame_index = -1;
-		// Presentation timestamp in seconds.
-		double presentation_time = 0.0;
-		// Original authoring frame number stored in the VVGF header. This is
-		// diagnostic metadata; synchronization uses presentation_time.
-		std::uint32_t source_frame_number = 0;
-		// Complete Draco bitstream, with the VVGF header removed.
-		std::vector<std::uint8_t> payload;
-	};
+	using EncodedGeometryFrame = volumetric_video::CompressedGeometryFrame;
 
 	// --------------------------------------------------------------------------
 	// 
@@ -100,6 +91,8 @@ public:
 	virtual bool get_geometry_data(
 		int frame_index,
 		EncodedGeometryFrame& output) = 0;
+
+	virtual std::string get_last_error() const = 0;
 
 	// --------------------------------------------------------------------------
 	// 

@@ -12,7 +12,7 @@
 // Constructor
 // --------------------------------------------------------------------------
 GeometryDecoderDraco::GeometryDecoderDraco():
-	IGeometryDecoder(), m_max_buffer_size(64)
+	IGeometryDecoder(), m_streamed_meshes(256), m_decoded_meshes(64)
 {
 
 }
@@ -34,8 +34,7 @@ void GeometryDecoderDraco::destroy()
 	//
 	flush_buffer();
 
-	while (!m_streamed_meshes.empty())
-		m_streamed_meshes.pop();
+	m_streamed_meshes.clear();
 
 	//
 	LOG("GeometryDecoderDraco::destroy - stop");
@@ -45,11 +44,7 @@ void GeometryDecoderDraco::destroy()
 bool GeometryDecoderDraco::init()
 {
 	flush_buffer();
-	{
-		std::lock_guard<std::mutex> lock(m_geometry_mutex);
-		while (!m_streamed_meshes.empty())
-			m_streamed_meshes.pop();
-	}
+	m_streamed_meshes.clear();
 	m_initialised = true;
 	m_decoder_state = INITIALIZED;
 	LOG("GeometryDecoderDraco::init - embedded geometry enabled");
@@ -66,8 +61,11 @@ bool GeometryDecoderDraco::submit_encoded_frame(
 	EncodedMeshData encoded;
 	encoded.frame_index = frame_index;
 	encoded.data.assign(payload.begin(), payload.end());
-	std::lock_guard<std::mutex> lock(m_geometry_mutex);
-	m_streamed_meshes.push(std::move(encoded));
+	if (!m_streamed_meshes.try_push(std::move(encoded)))
+	{
+		m_streamed_meshes.set_error("Compressed geometry queue is full.");
+		return false;
+	}
 	return true;
 }
  
@@ -141,15 +139,14 @@ bool GeometryDecoderDraco::decode()
 	{
 		EncodedMeshData encoded;
 		bool has_encoded_mesh = false;
+		has_encoded_mesh = m_streamed_meshes.access([&](auto& frames)
 		{
-			std::lock_guard<std::mutex> lock(m_geometry_mutex);
-			if (!m_streamed_meshes.empty())
-			{
-				encoded = std::move(m_streamed_meshes.front());
-				m_streamed_meshes.pop();
-				has_encoded_mesh = true;
-			}
-		}
+			if (frames.empty())
+				return false;
+			encoded = std::move(frames.front());
+			frames.pop_front();
+			return true;
+		});
 		if (!has_encoded_mesh)
 		{
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -158,13 +155,20 @@ bool GeometryDecoderDraco::decode()
 
 		Mesh mesh;
 		if (!convert_draco_to_mesh(encoded.data, mesh))
+		{
+			m_decoded_meshes.set_error(
+				"Draco geometry frame could not be decoded.");
 			return false;
+		}
 
 		MeshData mesh_data;
 		mesh_data.mesh = std::move(mesh);
 		mesh_data.frame_index = encoded.frame_index;
-		std::lock_guard<std::mutex> lock(m_geometry_mutex);
-		m_decoded_meshes.push(std::move(mesh_data));
+		if (!m_decoded_meshes.try_push(std::move(mesh_data)))
+		{
+			m_decoded_meshes.set_error("Decoded geometry queue is full.");
+			return false;
+		}
 	}
 
 	return true;
@@ -176,8 +180,7 @@ bool GeometryDecoderDraco::decode()
 // --------------------------------------------------------------------------
 bool GeometryDecoderDraco::is_buffer_blocked()
 {
-	std::lock_guard<std::mutex> lock(m_geometry_mutex);
-	return m_decoded_meshes.size() >= m_max_buffer_size;
+	return m_decoded_meshes.full();
 }
 
 
@@ -188,27 +191,25 @@ bool GeometryDecoderDraco::get_mesh_data(int frame_index, Mesh& mesh)
 {
 	LOG("GeometryDecoderDraco::get_mesh_data - getting mesh at index  %d.", frame_index);
 
-	std::lock_guard<std::mutex> lock(m_geometry_mutex);
-	while (!m_decoded_meshes.empty())
+	return m_decoded_meshes.access([&](auto& meshes)
 	{
-		if (m_decoded_meshes.front().frame_index == frame_index)
+		while (!meshes.empty())
 		{
-			mesh = m_decoded_meshes.front().mesh;
-			return true;
-		}
-		else if (frame_index > m_decoded_meshes.front().frame_index)
-		{
-			LOG("GeometryDecoderDraco::get_mesh_data - clearing front frame  %d.", m_decoded_meshes.front().frame_index);
-			m_decoded_meshes.pop();
-		}
-		else
-		{
+			if (meshes.front().frame_index == frame_index)
+			{
+				mesh = meshes.front().mesh;
+				return true;
+			}
+			if (frame_index > meshes.front().frame_index)
+			{
+				LOG("GeometryDecoderDraco::get_mesh_data - clearing front frame  %d.", meshes.front().frame_index);
+				meshes.pop_front();
+				continue;
+			}
 			break;
 		}
-	}
-
-	//
-	return false;
+		return false;
+	});
 }
 
 
@@ -276,6 +277,8 @@ bool GeometryDecoderDraco::convert_draco_to_mesh(DracoData& draco_data, Mesh& me
 	const auto pos_att		= mesh->GetNamedAttribute(draco::GeometryAttribute::POSITION);
 	const auto normal_att	= mesh->GetNamedAttribute(draco::GeometryAttribute::NORMAL);
 	const auto uv_att		= mesh->GetNamedAttribute(draco::GeometryAttribute::TEX_COORD);
+	if (pos_att == nullptr || normal_att == nullptr || uv_att == nullptr)
+		return false;
 
 	// Populate for each point
 	for (draco::PointIndex i(0); i < mesh->num_points(); ++i)
@@ -333,9 +336,11 @@ bool GeometryDecoderDraco::stop_decoding()
 // --------------------------------------------------------------------------
 void GeometryDecoderDraco::clear_frame_data()
 {
-	std::lock_guard<std::mutex> lock(m_geometry_mutex);
-	if (!m_decoded_meshes.empty())
-		m_decoded_meshes.pop();
+	m_decoded_meshes.access([](auto& meshes)
+	{
+		if (!meshes.empty())
+			meshes.pop_front();
+	});
 }
 
 // --------------------------------------------------------------------------
@@ -345,11 +350,8 @@ void GeometryDecoderDraco::flush_buffer()
 {
 	LOG("GeometryDecoderDraco::flush_buffer - start");
 
-	std::lock_guard<std::mutex> lock(m_geometry_mutex);
-	while (!m_decoded_meshes.empty())
-		m_decoded_meshes.pop();
-	while (!m_streamed_meshes.empty())
-		m_streamed_meshes.pop();
+	m_decoded_meshes.clear();
+	m_streamed_meshes.clear();
 
 	//
 	LOG("GeometryDecoderDraco::flush_buffer - stop");

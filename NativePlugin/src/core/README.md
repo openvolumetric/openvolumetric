@@ -31,10 +31,12 @@ resources during Unity's render callback.
 
 ## Directory responsibilities
 
-- `container/` defines the binary payload stored in each `vvge` MP4 sample.
-  It validates framing but does not decode Draco.
-- `media/` owns FFmpeg, stream discovery, demuxing, video/audio decoding, and
-  compressed geometry extraction.
+- `container/` defines the engine-independent container and packet interfaces,
+  the `vvge` sample format, and the bounded cross-thread queue. Its FFmpeg MP4
+  implementation owns `AVFormatContext`, discovers and validates tracks, and
+  is the only component that reads or seeks the container.
+- `media/` consumes owned container packets and performs video/audio decoding
+  plus compressed geometry extraction.
 - `geometry/` converts compressed Draco payloads into the engine-neutral
   `Mesh` representation.
 - `decoding/` contains interfaces and coordinates media, geometry, and
@@ -43,16 +45,30 @@ resources during Unity's render callback.
 
 ## Threading and ownership
 
-- `AVDecoderFFMPEG` owns its FFmpeg contexts, packet, decoded video frames,
-  geometry packets, and audio ring buffer.
-- Its demux thread is the only thread that calls `av_read_frame()`.
+- `FFmpegMp4VolumetricContainer` owns `AVFormatContext`; callers interact through
+  `IVolumetricContainer` and receive packets whose payload bytes are owned.
+- `AVDecoderFFMPEG` owns codec contexts, its decoder packet, decoded video
+  frames, compressed geometry frames, and the audio ring buffer.
+- The demux thread is the only thread that reads from the container.
 - `GeometryDecoderDraco` owns a separate worker that consumes compressed
   geometry and produces meshes.
-- Queue access is protected by the mutex belonging to its owner.
+- Video and geometry queues have fixed capacities and thread-safe
+  open/end-of-stream/error states. Queue access is protected by the queue's
+  mutex.
 - The Unity render thread consumes matching video and mesh frames and performs
   graphics uploads.
 - `destroy()` must stop worker threads before releasing their queues or codec
   state.
+
+## Container validation
+
+Opening a runtime MP4 requires exactly one video track and exactly one data
+track tagged `vvge`. Audio is optional, but only one audio track is supported.
+Missing or duplicated tracks fail before decoder initialization. During
+demuxing, malformed `VVGF` samples, missing geometry timestamps, read failures,
+and queue overflow move the affected queue into its error state. The Unity API
+exposes the most recent message so load failures include the specific reason in
+the Unity Console.
 
 ## File-format boundary
 

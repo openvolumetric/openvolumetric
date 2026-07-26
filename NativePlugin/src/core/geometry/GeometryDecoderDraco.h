@@ -1,11 +1,10 @@
 #pragma once
 
+#include <BoundedQueue.h>
 #include <IGeometryDecoder.h>
 
 #include<Mesh.h>
 
-#include <mutex>
-#include<queue>
 #include<thread>
 
 /// Draco worker for geometry samples extracted from the MP4 vvge track.
@@ -107,7 +106,7 @@ private:
 		int frame_index;
 	};
 
-	std::queue<EncodedMeshData> m_streamed_meshes;
+	volumetric_video::BoundedQueue<EncodedMeshData> m_streamed_meshes;
 
 	// --------------------------------------------------------------------------
 	// Mesh data struct encapsulating the decoded meshs and frame index
@@ -124,23 +123,12 @@ private:
 	// --------------------------------------------------------------------------
 	// 
 	// --------------------------------------------------------------------------
-	std::queue<MeshData> m_decoded_meshes;
-
-
-	// --------------------------------------------------------------------------
-	// 
-	// --------------------------------------------------------------------------
-	unsigned int m_max_buffer_size;
+	volumetric_video::BoundedQueue<MeshData> m_decoded_meshes;
 
 
 	// --------------------------------------------------------------------------
 	// 
 	// --------------------------------------------------------------------------
 	std::thread m_decode_thread;
-
-	// --------------------------------------------------------------------------
-	// 
-	// --------------------------------------------------------------------------
-	std::mutex m_geometry_mutex;
 
 };

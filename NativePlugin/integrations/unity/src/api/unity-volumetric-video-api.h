@@ -53,6 +53,9 @@ extern "C"
 	// Open a combined MP4. The call fails if video or vvge geometry is absent.
 	VOLUMETRIC_VIDEO_API int	volumetricvideo_load_video(int ID, const char* filepath);
 
+	// Human-readable error from the instance's most recent media operation.
+	VOLUMETRIC_VIDEO_API const char* volumetricvideo_get_last_error(int ID);
+
 	// Get Video Details
 	VOLUMETRIC_VIDEO_API int	volumetricvideo_get_video_details(int ID, int& width, int& height, double& fps, double& duration);
 

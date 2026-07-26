@@ -7,23 +7,15 @@
 #include <cstring>
 #include <vector>
 
-namespace
-{
-constexpr std::uint32_t kVolumetricGeometryTag =
-	static_cast<std::uint32_t>('v') |
-	(static_cast<std::uint32_t>('v') << 8) |
-	(static_cast<std::uint32_t>('g') << 16) |
-	(static_cast<std::uint32_t>('e') << 24);
-}
-
 // --------------------------------------------------------------------------
 //
 // --------------------------------------------------------------------------
-AVDecoderFFMPEG::AVDecoderFFMPEG() : IAVDecoder()
+AVDecoderFFMPEG::AVDecoderFFMPEG()
+	: IAVDecoder(),
+	  m_container(new volumetric_video::FFmpegMp4VolumetricContainer()),
+	  m_video_frames(32),
+	  m_geometry_frames(128)
 {
-	// AVContext
-	m_avformat_ctx			= NULL;
-
 	// Video
 	m_video_stream_index	= -1;
 	m_video_stream			= NULL;
@@ -42,9 +34,6 @@ AVDecoderFFMPEG::AVDecoderFFMPEG() : IAVDecoder()
 	// Embedded geometry
 	m_geometry_stream_index = -1;
 	m_geometry_stream = NULL;
-
-	// Buffer Sizes
-	m_video_buffer_max		= 32;
 
 	// Initialise the packet without the removed av_init_packet API.
 	m_packet = {};
@@ -72,13 +61,7 @@ void AVDecoderFFMPEG::destroy()
 	// Delete Buffer Data
 	flush_buffers();
 
-	//Free all Context variables
-	if (m_avformat_ctx != NULL)
-	{
-		avformat_close_input(&m_avformat_ctx);
-		avformat_free_context(m_avformat_ctx);
-		m_avformat_ctx = NULL;
-	}
+	m_container->close();
 
 	//Video Variables
 	if (m_video_codec_ctx != NULL)
@@ -100,11 +83,7 @@ void AVDecoderFFMPEG::destroy()
 	m_audio_codec = NULL;
 	m_audio_stream = NULL;
 	flush_audio();
-	{
-		std::lock_guard<std::mutex> lock(m_geometry_mutex);
-		while (!m_geometry_frames.empty())
-			m_geometry_frames.pop();
-	}
+	m_geometry_frames.clear();
 	m_geometry_stream = NULL;
 	m_geometry_stream_index = -1;
 
@@ -124,8 +103,8 @@ void AVDecoderFFMPEG::destroy()
 // --------------------------------------------------------------------------
 bool AVDecoderFFMPEG::init_audio_context()
 {
-	int stream = av_find_best_stream(
-		m_avformat_ctx, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
+	int stream = m_container->stream_index(
+		volumetric_video::StreamKind::Audio);
 	if (stream < 0)
 	{
 		LOG("AVDecoderFFMPEG::init_audio_context - no audio stream");
@@ -133,7 +112,8 @@ bool AVDecoderFFMPEG::init_audio_context()
 	}
 
 	m_audio_stream_index = stream;
-	m_audio_stream = m_avformat_ctx->streams[stream];
+	m_audio_stream = m_container->native_stream(
+		volumetric_video::StreamKind::Audio);
 	m_audio_codec = avcodec_find_decoder(m_audio_stream->codecpar->codec_id);
 	if (m_audio_codec == NULL)
 	{
@@ -175,7 +155,7 @@ bool AVDecoderFFMPEG::init_audio_context()
 	m_audio_info.channels = stereo.nb_channels;
 	m_audio_info.total_time =
 		m_audio_stream->duration <= 0
-			? static_cast<double>(m_avformat_ctx->duration) / AV_TIME_BASE
+			? m_container->duration_seconds()
 			: m_audio_stream->duration * av_q2d(m_audio_stream->time_base);
 
 	// Four seconds absorbs decoder and render-thread scheduling jitter.
@@ -196,22 +176,18 @@ bool AVDecoderFFMPEG::init_audio_context()
 
 bool AVDecoderFFMPEG::init_geometry_context()
 {
-	for (unsigned int i = 0; i < m_avformat_ctx->nb_streams; ++i)
+	m_geometry_stream_index = m_container->stream_index(
+		volumetric_video::StreamKind::Geometry);
+	m_geometry_stream = m_container->native_stream(
+		volumetric_video::StreamKind::Geometry);
+	if (m_geometry_stream == nullptr)
 	{
-		AVStream* stream = m_avformat_ctx->streams[i];
-		if (stream->codecpar->codec_type == AVMEDIA_TYPE_DATA &&
-			stream->codecpar->codec_tag == kVolumetricGeometryTag)
-		{
-			m_geometry_stream_index = static_cast<int>(i);
-			m_geometry_stream = stream;
-			LOG(
-				"AVDecoderFFMPEG::init_geometry_context - Geometry Stream: %d",
-				m_geometry_stream_index);
-			return true;
-		}
+		LOG("AVDecoderFFMPEG::init_geometry_context - no embedded geometry stream");
+		return false;
 	}
-
-	LOG("AVDecoderFFMPEG::init_geometry_context - no embedded geometry stream");
+	LOG(
+		"AVDecoderFFMPEG::init_geometry_context - Geometry Stream: %d",
+		m_geometry_stream_index);
 	return true;
 }
 
@@ -223,29 +199,12 @@ bool AVDecoderFFMPEG::init_ffmpeg_context(const char* filepath)
 {
 	LOG("AVDecoderFFMPEG::init_ffmpeg_context - file: %s", filepath);
 
-	// Create AV Format Context
-	if (m_avformat_ctx == NULL)
+	if (!m_container->open(filepath))
 	{
-		m_avformat_ctx = avformat_alloc_context();
-	}
-
-	// Open Filename
-	int ret = avformat_open_input(&m_avformat_ctx, filepath, NULL, NULL);
-	if (ret < 0)
-	{
-		LOG("AVDecoderFFMPEG::init - avformat_open_input error(%x)", ret);
+		LOG("AVDecoderFFMPEG::init_ffmpeg_context - %s",
+			m_container->error().c_str());
 		return false;
 	}
-
-	// Get Stream information
-	ret = avformat_find_stream_info(m_avformat_ctx, NULL);
-	if (ret < 0)
-	{
-		LOG("DecoderFFMPEG::init_ffmpeg_context - avformat_find_stream_info error(%x)", ret);
-		return false;
-	}
-
-	// FFMPEG init
 	return true;
 }
 
@@ -257,7 +216,8 @@ bool AVDecoderFFMPEG::init_ffmpeg_context(const char* filepath)
 bool AVDecoderFFMPEG::init_video_context()
 {
 	// Find Video Stream
-	int stream = av_find_best_stream(m_avformat_ctx, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
+	int stream = m_container->stream_index(
+		volumetric_video::StreamKind::Video);
 	if (stream < 0)
 	{
 		LOG("AVDecoderFFMPEG::init_video_context - video stream not found");
@@ -269,7 +229,8 @@ bool AVDecoderFFMPEG::init_video_context()
 		m_video_stream_index = stream;
 
 		// Get Video Stream
-		m_video_stream = m_avformat_ctx->streams[m_video_stream_index];
+		m_video_stream = m_container->native_stream(
+			volumetric_video::StreamKind::Video);
 
 		//Get Video Codec
 		m_video_codec = avcodec_find_decoder(m_video_stream->codecpar->codec_id);
@@ -309,11 +270,11 @@ bool AVDecoderFFMPEG::init_video_context()
 		m_video_info.is_enabled			= true;
 		m_video_info.width				= m_video_stream->codecpar->width;
 		m_video_info.height				= m_video_stream->codecpar->height;
-		m_video_info.fps				= av_q2d(m_avformat_ctx->streams[m_video_stream_index]->r_frame_rate);
+		m_video_info.fps				= av_q2d(m_video_stream->r_frame_rate);
 		m_video_info.frame_count		= m_video_stream->nb_frames;
 
 		// Calculate video duration
-		double duration				= (double)(m_avformat_ctx->duration) / AV_TIME_BASE;
+		double duration				= m_container->duration_seconds();
 		m_video_info.total_time		= m_video_stream->duration <= 0 ? duration : m_video_stream->duration * av_q2d(m_video_stream->time_base);
 
 		// Report video properties to log
@@ -481,32 +442,55 @@ bool AVDecoderFFMPEG::decode()
 	//
 	if (!is_buffer_blocked())
 	{
-		// Read Packet
-		if (av_read_frame(m_avformat_ctx, &m_packet) < 0)
+		volumetric_video::ContainerPacket packet;
+		if (!m_container->read(packet))
 		{
-			LOG("DecoderFFMPEG::decode - Failed to read packet");
+			if (m_container->end_of_stream())
+			{
+				m_video_frames.mark_end_of_stream();
+				m_geometry_frames.mark_end_of_stream();
+			}
+			else
+			{
+				m_video_frames.set_error(m_container->error());
+				m_geometry_frames.set_error(m_container->error());
+				LOG("AVDecoderFFMPEG::decode - %s",
+					m_container->error().c_str());
+			}
 			return false;
 		}
 
-		//Decode Video Frame
-		if (m_video_info.is_enabled && m_packet.stream_index == m_video_stream->index)
+		av_packet_unref(&m_packet);
+		if (av_new_packet(
+			&m_packet, static_cast<int>(packet.payload.size())) < 0)
 		{
-//			LOG("DecoderFFMPEG::decode - calling - decode_video_frame");
-			decode_video_frame();
+			m_video_frames.set_error("Could not allocate a decoder packet.");
+			m_geometry_frames.set_error("Could not allocate a decoder packet.");
+			return false;
 		}
-		else if (m_audio_info.is_enabled &&
-			m_packet.stream_index == m_audio_stream_index)
+		std::copy(packet.payload.begin(), packet.payload.end(), m_packet.data);
+		m_packet.stream_index = packet.stream_index;
+		m_packet.pts = packet.has_pts ? packet.pts : AV_NOPTS_VALUE;
+		m_packet.dts = packet.has_dts ? packet.dts : AV_NOPTS_VALUE;
+		m_packet.duration = packet.duration;
+
+		bool success = true;
+		if (packet.kind == volumetric_video::StreamKind::Video)
 		{
-			decode_audio_frame();
+			success = decode_video_frame();
 		}
-		else if (m_geometry_stream != NULL &&
-			m_packet.stream_index == m_geometry_stream_index)
+		else if (packet.kind == volumetric_video::StreamKind::Audio)
 		{
-			queue_geometry_packet();
+			success = decode_audio_frame();
+		}
+		else if (packet.kind == volumetric_video::StreamKind::Geometry)
+		{
+			success = queue_geometry_packet();
 		}
 	
-		// Unref current packet 
 		av_packet_unref(&m_packet);
+		if (!success)
+			return false;
 	}
 
 
@@ -522,13 +506,17 @@ bool AVDecoderFFMPEG::queue_geometry_packet()
 		static_cast<std::size_t>(m_packet.size),
 		packet))
 	{
-		LOG("AVDecoderFFMPEG::queue_geometry_packet - invalid VVGF packet");
+		const std::string error = "Malformed VVGF geometry packet.";
+		m_geometry_frames.set_error(error);
+		LOG("AVDecoderFFMPEG::queue_geometry_packet - %s", error.c_str());
 		return false;
 	}
 
 	if (m_packet.pts == AV_NOPTS_VALUE)
 	{
-		LOG("AVDecoderFFMPEG::queue_geometry_packet - packet has no PTS");
+		const std::string error = "Geometry packet has no presentation timestamp.";
+		m_geometry_frames.set_error(error);
+		LOG("AVDecoderFFMPEG::queue_geometry_packet - %s", error.c_str());
 		return false;
 	}
 
@@ -541,8 +529,13 @@ bool AVDecoderFFMPEG::queue_geometry_packet()
 	frame.source_frame_number = packet.frame_number;
 	frame.payload = std::move(packet.payload);
 
-	std::lock_guard<std::mutex> lock(m_geometry_mutex);
-	m_geometry_frames.push(std::move(frame));
+	if (!m_geometry_frames.try_push(std::move(frame)))
+	{
+		const std::string error = "Geometry packet queue is full.";
+		m_geometry_frames.set_error(error);
+		LOG("AVDecoderFFMPEG::queue_geometry_packet - %s", error.c_str());
+		return false;
+	}
 	return true;
 }
 
@@ -555,15 +548,25 @@ bool AVDecoderFFMPEG::get_geometry_data(
 	int frame_index,
 	EncodedGeometryFrame& output)
 {
-	std::lock_guard<std::mutex> lock(m_geometry_mutex);
-	if (!m_geometry_frames.empty() &&
-		m_geometry_frames.front().frame_index <= frame_index)
+	return m_geometry_frames.access([&](auto& frames)
 	{
-		output = std::move(m_geometry_frames.front());
-		m_geometry_frames.pop();
+		if (frames.empty() || frames.front().frame_index > frame_index)
+			return false;
+		output = std::move(frames.front());
+		frames.pop_front();
 		return true;
-	}
-	return false;
+	});
+}
+
+std::string AVDecoderFFMPEG::get_last_error() const
+{
+	if (!m_container->error().empty())
+		return m_container->error();
+	if (m_video_frames.state() == volumetric_video::QueueState::Error)
+		return m_video_frames.error();
+	if (m_geometry_frames.state() == volumetric_video::QueueState::Error)
+		return m_geometry_frames.error();
+	return {};
 }
 
 // --------------------------------------------------------------------------
@@ -699,9 +702,12 @@ bool AVDecoderFFMPEG::decode_video_frame()
 			framedata.data			= frame;
 			framedata.frame_index	= frame_index;
 
-			// Lock and Push
-			std::lock_guard<std::mutex> lock(m_video_mutex);
-			m_video_frames.push(framedata);
+			if (!m_video_frames.try_push(std::move(framedata)))
+			{
+				av_frame_free(&frame);
+				m_video_frames.set_error("Decoded video queue is full.");
+				return false;
+			}
 						
 			//LOG("DecoderFFMPEG::decode_video_frame - m_video_frames: %d", m_video_frames.size());
 			//LOG("DecoderFFMPEG::decode_video_frame - decoded frame: %d", frame_index);
@@ -710,18 +716,20 @@ bool AVDecoderFFMPEG::decode_video_frame()
 		// Error or End of File 
 		else if (ret == AVERROR(EAGAIN))
 		{
+			av_frame_free(&frame);
 			//char error_str[64];
 			//av_make_error_string(error_str, 64, ret);
 			//LOG("DecoderFFMPEG::decode_video_frame - ERROR: %s", error_str);
 			break;
 		}
+		else
+		{
+			av_frame_free(&frame);
+			return false;
+		}
 	}
 
-	// Update buffer state while the consumer cannot mutate the queue.
-	{
-		std::lock_guard<std::mutex> lock(m_video_mutex);
-		update_buffer_state();
-	}
+	update_buffer_state();
 
 	//
 	return true;
@@ -733,25 +741,23 @@ bool AVDecoderFFMPEG::decode_video_frame()
 // --------------------------------------------------------------------------
 void AVDecoderFFMPEG::clean_frame_data()
 {
-	free_front_frame(&m_video_frames, &m_video_mutex);
+	free_front_frame();
 }
 
 
 // --------------------------------------------------------------------------
 //
 // --------------------------------------------------------------------------
-void AVDecoderFFMPEG::free_front_frame(std::queue<FrameData>* buffer, std::mutex* mutex)
+void AVDecoderFFMPEG::free_front_frame()
 {
-	std::lock_guard<std::mutex> lock(*mutex);
-	if (!m_initialised || buffer->size() == 0)
+	m_video_frames.access([&](auto& frames)
 	{
-		return;
-	}
-
-	//
-	FrameData* frame = &buffer->front();
-	av_frame_free(&frame->data);
-	buffer->pop();
+		if (m_initialised && !frames.empty())
+		{
+			av_frame_free(&frames.front().data);
+			frames.pop_front();
+		}
+	});
 	update_buffer_state();
 }
 
@@ -768,10 +774,10 @@ void AVDecoderFFMPEG::flush_buffers()
 	//std::lock_guard<std::mutex> lock(m_video_mutex);
 
 	//
-	while(!m_video_frames.empty())
+	m_video_frames.clear([](FrameData& frame)
 	{
-		clean_frame_data();
-	}
+		av_frame_free(&frame.data);
+	});
 
 	//
 	LOG(" AVDecoderFFMPEG::flush_buffers - end");
@@ -792,14 +798,9 @@ bool AVDecoderFFMPEG::seek(double time)
 		return false;
 	}
 
-	// compute timestamp
-	const int64_t timeStamp = static_cast<int64_t>(
-		std::llround(time * static_cast<double>(AV_TIME_BASE)));
-
-	//seek to frame
-	if (av_seek_frame(m_avformat_ctx, -1, timeStamp, AVSEEK_FLAG_BACKWARD) < 0)
+	if (!m_container->seek(time))
 	{
-		LOG("AVDecoderFFMPEG::seek - seek time fail");
+		LOG("AVDecoderFFMPEG::seek - %s", m_container->error().c_str());
 		return false;
 	}
 
@@ -807,11 +808,7 @@ bool AVDecoderFFMPEG::seek(double time)
 	if (m_audio_codec_ctx != NULL)
 		avcodec_flush_buffers(m_audio_codec_ctx);
 	flush_buffers();
-	{
-		std::lock_guard<std::mutex> lock(m_geometry_mutex);
-		while (!m_geometry_frames.empty())
-			m_geometry_frames.pop();
-	}
+	m_geometry_frames.clear();
 
 	//
 	return true;
@@ -824,52 +821,39 @@ bool AVDecoderFFMPEG::seek(double time)
 bool AVDecoderFFMPEG::get_video_data(int frame_index, uint8_t** outputY, uint8_t** outputU, uint8_t** outputV)
 {
 //	LOG("DecoderFFMPEG::get_video_data - start");
-	std::lock_guard<std::mutex> lock(m_video_mutex);
-	if (!m_initialised || m_video_frames.empty())
+	*outputY = NULL;
+	*outputU = NULL;
+	*outputV = NULL;
+	if (!m_initialised)
 	{
-		LOG("DecoderFFMPEG::get_video_data - buffer empty");
-		*outputY = NULL;
-		*outputU = NULL;
-		*outputV = NULL;
+		LOG("DecoderFFMPEG::get_video_data - decoder not initialized");
 		return false;
 	}
 
-	// TODO - Need to undersatand how best to handle these cases - particularly when the frame requested is too far infront/behind
-	AVFrame* frame = NULL;
-	while (!m_video_frames.empty())
+	AVFrame* frame = m_video_frames.access([&](auto& frames) -> AVFrame*
 	{
-		// Case 1: Front of buffer is the requested frame
-		if (m_video_frames.front().frame_index == frame_index)
+		while (!frames.empty())
 		{
-			frame = m_video_frames.front().data;
+			if (frames.front().frame_index == frame_index)
+				return frames.front().data;
+			if (frame_index > frames.front().frame_index)
+			{
+				av_frame_free(&frames.front().data);
+				frames.pop_front();
+				continue;
+			}
 			break;
 		}
-
-		// Case 2: requested frame is greater than front frame index 
-		else if(frame_index > m_video_frames.front().frame_index )
-		{
-			FrameData* old_frame = &m_video_frames.front();
-			av_frame_free(&old_frame->data);
-			m_video_frames.pop();
-			update_buffer_state();
-		}
-
-		// Case 3: requested frame is less than the buffer 
-		else if (frame_index < m_video_frames.front().frame_index)
-		{
-			// Do nothing as requested frame will catch up
-			break;
-		}
-		// Should not occur
-		else
-		{
-
-		}
-	}
+		return nullptr;
+	});
+	update_buffer_state();
 
 	// Check that frame has managed to be assigned 
 	if (frame == NULL)
 	{
+		if (m_video_frames.state() == volumetric_video::QueueState::Error)
+			LOG("DecoderFFMPEG::get_video_data - %s",
+				m_video_frames.error().c_str());
 		return false;
 	}
 
@@ -900,8 +884,8 @@ bool AVDecoderFFMPEG::is_buffer_blocked()
 {
 //	LOG("DecoderFFMPEG::is_buffer_blocked - start");
 
-	std::lock_guard<std::mutex> lock(m_video_mutex);
-	return m_video_info.is_enabled && m_video_frames.size() >= m_video_buffer_max;
+	return (m_video_info.is_enabled && m_video_frames.full()) ||
+		m_geometry_frames.full();
 }
 
 
@@ -915,11 +899,12 @@ void AVDecoderFFMPEG::update_buffer_state()
 	// Update Video Buffer State
 	if (m_video_info.is_enabled)
 	{
-		if (m_video_frames.size() == 0)
+		const std::size_t size = m_video_frames.size();
+		if (size == 0)
 		{
 			m_video_info.buffer_state = BufferState::EMPTY;
 		}
-		else if (m_video_frames.size() >= m_video_buffer_max)
+		else if (m_video_frames.full())
 		{
 			m_video_info.buffer_state = BufferState::FULL;
 		}
