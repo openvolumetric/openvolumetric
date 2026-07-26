@@ -35,7 +35,6 @@ bool IVolumetricVideo::submit_embedded_geometry(double presentation_time)
 	{
 		if (!m_geometrydecoder->submit_encoded_frame(
 			encoded.generation,
-			encoded.frame_index,
 			encoded.presentation_time,
 			std::move(encoded.payload)))
 		{

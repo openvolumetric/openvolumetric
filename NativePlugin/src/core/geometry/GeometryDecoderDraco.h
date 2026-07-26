@@ -12,7 +12,7 @@
 ///
 /// submit_encoded_frame() is called from the render-side coordinator.
 /// m_decode_thread consumes compressed frames and publishes engine-neutral
-/// Mesh objects for matching by presentation index.
+/// Mesh objects for matching by presentation timestamp.
 class GeometryDecoderDraco : public IGeometryDecoder
 {
 
@@ -41,7 +41,6 @@ public:
 
 	bool submit_encoded_frame(
 		std::uint64_t generation,
-		int frame_index,
 		double presentation_time,
 		std::vector<std::uint8_t> payload) override;
 
@@ -114,15 +113,13 @@ private:
 		std::uint64_t generation = 0;
 		// Complete independently decodable Draco bitstream.
 		DracoData data;
-		// Presentation index inherited from the MP4 sample timestamp.
-		int frame_index;
 		double presentation_time = 0.0;
 	};
 
 	volumetric_video::BoundedQueue<EncodedMeshData> m_streamed_meshes;
 
 	// --------------------------------------------------------------------------
-	// Mesh data struct encapsulating the decoded meshs and frame index
+	// Mesh data and its MP4 presentation timestamp.
 	// --------------------------------------------------------------------------
 	struct MeshData
 	{
@@ -130,8 +127,6 @@ private:
 		// Decoded Mesh Data
 		Mesh mesh;
 
-		// Frame index
-		int frame_index;
 		double presentation_time = 0.0;
 	};
 

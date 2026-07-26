@@ -4,6 +4,9 @@
 knows how to demux and decode the combined volumetric MP4, but it does not
 include Unity or platform graphics headers.
 
+The source-level contract for Unity and future engine adapters is documented
+in [ENGINE_INTEGRATION.md](../../docs/ENGINE_INTEGRATION.md).
+
 ## Runtime data flow
 
 ```text

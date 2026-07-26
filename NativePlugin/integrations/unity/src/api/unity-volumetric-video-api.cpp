@@ -163,8 +163,6 @@ static void UNITY_INTERFACE_API OnGraphicsDeviceEvent(UnityGfxDeviceEventType ev
 			break;
 	};
 
-	// TODO adapt to platform
-	//#if SUPPORT_D3D11
 	if (currentDeviceType == kUnityGfxRendererD3D11)
 	{
 #if defined(_WIN32)

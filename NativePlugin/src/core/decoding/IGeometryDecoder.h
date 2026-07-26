@@ -10,9 +10,9 @@
 
 /// Asynchronous decoder for compressed geometry samples.
 ///
-/// The media decoder submits Draco payloads with their presentation index.
+/// The media decoder submits Draco payloads with their presentation timestamp.
 /// A worker converts them to Mesh objects, which the render integration later
-/// retrieves using the same index as the corresponding video frame.
+/// retrieves using the timestamp of the corresponding video frame.
 class IGeometryDecoder : public IDecoder
 {
 
@@ -35,7 +35,6 @@ public:
 	/// Transfers one compressed frame into the decoder's input queue.
 	virtual bool submit_encoded_frame(
 		std::uint64_t generation,
-		int frame_index,
 		double presentation_time,
 		std::vector<std::uint8_t> payload) = 0;
 

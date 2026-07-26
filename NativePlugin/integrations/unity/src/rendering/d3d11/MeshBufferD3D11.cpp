@@ -39,7 +39,7 @@ MeshBufferD3D11::~MeshBufferD3D11()
 //----------------------------------
 void MeshBufferD3D11::destroy()
 {
-	// TODO
+	// Unity owns the D3D11 buffers; this wrapper has no resources to release.
 }
 
 
@@ -222,7 +222,6 @@ bool MeshBufferD3D11::update(Mesh* mesh)
 	return true;
 
 }
-
 
 
 

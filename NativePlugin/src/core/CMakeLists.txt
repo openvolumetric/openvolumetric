@@ -18,14 +18,8 @@ target_link_libraries(VolumetricVideoFFmpeg INTERFACE
 add_library(VolumetricVideoCore STATIC
   container/FFmpegMp4VolumetricContainer.cpp
   container/GeometryPacket.cpp
-  decoding/IAVDecoder.cpp
-  decoding/IDecoder.cpp
-  decoding/IGeometryDecoder.cpp
-  decoding/IMeshBuffer.cpp
-  decoding/ITexture.cpp
   decoding/IVolumetricVideo.cpp
   geometry/GeometryDecoderDraco.cpp
-  geometry/Mesh.cpp
   media/AVDecoderFFMPEG.cpp
   support/Logger.cpp
 )

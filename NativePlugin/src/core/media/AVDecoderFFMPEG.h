@@ -124,18 +124,6 @@ protected:
 	// --------------------------------------------------------------------------
 	//
 	// --------------------------------------------------------------------------
-	bool is_buffer_blocked();
-
-
-	// --------------------------------------------------------------------------
-	//
-	// --------------------------------------------------------------------------
-	void update_buffer_state();
-
-
-	// --------------------------------------------------------------------------
-	//
-	// --------------------------------------------------------------------------
 	bool decode_video_frame();
 
 	bool decode_audio_frame();
@@ -172,13 +160,10 @@ private:
 	// --------------------------------------------------------------------------
 	struct FrameData
 	{
-		FrameData() : data(NULL), frame_index(0), frame_time(0.0){};
+		FrameData() : data(NULL), frame_time(0.0){};
 
 		// Owned FFmpeg frame; released when removed from m_video_frames.
 		AVFrame* data;
-
-		// Presentation index derived from best_effort_timestamp.
-		int frame_index;
 
 		// Presentation time in seconds.
 		double frame_time;

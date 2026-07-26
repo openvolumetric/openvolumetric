@@ -58,7 +58,6 @@ bool GeometryDecoderDraco::init()
 
 bool GeometryDecoderDraco::submit_encoded_frame(
 	std::uint64_t generation,
-	int frame_index,
 	double presentation_time,
 	std::vector<std::uint8_t> payload)
 {
@@ -67,7 +66,6 @@ bool GeometryDecoderDraco::submit_encoded_frame(
 
 	EncodedMeshData encoded;
 	encoded.generation = generation;
-	encoded.frame_index = frame_index;
 	encoded.presentation_time = presentation_time;
 	encoded.data.assign(payload.begin(), payload.end());
 	if (!m_streamed_meshes.try_push(std::move(encoded)))
@@ -128,18 +126,15 @@ bool GeometryDecoderDraco::start_decoding()
 					}
 					break;
 				}
-				case SEEK:
-				{
-					LOG("GeometryDecoderDraco::start_decoding - seek");
-
-					break;
-				}
 				case DECODE_EOF:
 				{
 					LOG("GeometryDecoderDraco::start_decoding - eof");
 					m_decoder_state = DECODING;
 					break;
 				}
+				default:
+					std::this_thread::yield();
+					break;
 			}
 		}
 
@@ -190,7 +185,6 @@ bool GeometryDecoderDraco::decode()
 		MeshData mesh_data;
 		mesh_data.mesh = std::move(mesh);
 		mesh_data.generation = encoded.generation;
-		mesh_data.frame_index = encoded.frame_index;
 		mesh_data.presentation_time = encoded.presentation_time;
 		if (encoded.generation !=
 			m_generation.load(std::memory_order_acquire))

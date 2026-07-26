@@ -300,7 +300,6 @@ bool AVDecoderFFMPEG::init_video_context()
 
 // --------------------------------------------------------------------------
 //
-// TODO: ADD AUDIO CONTEXT
 // --------------------------------------------------------------------------
 bool AVDecoderFFMPEG::init(const char* filepath)
 {
@@ -395,12 +394,6 @@ bool AVDecoderFFMPEG::start_decoding()
 						m_stop_requested.store(
 							true, std::memory_order_release);
 				}
-				break;
-			}
-			case SEEK:
-			{
-				LOG("AVDecoderFFMPEG::start_decoding - seek");
-				// TODO Implement seek controls 
 				break;
 			}
 			case DECODE_EOF:
@@ -644,8 +637,6 @@ bool AVDecoderFFMPEG::queue_geometry_packet()
 			frame.presentation_time);
 	}
 	m_last_geometry_packet_time = frame.presentation_time;
-	frame.frame_index = static_cast<int>(std::llround(
-		frame.presentation_time * m_video_info.fps));
 	frame.source_frame_number = packet.frame_number;
 	frame.payload = std::move(packet.payload);
 
@@ -894,13 +885,9 @@ bool AVDecoderFFMPEG::decode_video_frame()
 		// Frame Decoded 
 		if (ret == 0)
 		{
-			//Get frame index of the decoded frame
-			int frame_index = (int)round(av_q2d(m_video_stream->time_base) * frame->best_effort_timestamp * m_video_info.fps);
-
 			// Construct frame data
 			FrameData framedata;
 			framedata.data			= frame;
-			framedata.frame_index	= frame_index;
 			framedata.frame_time		=
 				av_q2d(m_video_stream->time_base) *
 				static_cast<double>(frame->best_effort_timestamp);
@@ -921,7 +908,6 @@ bool AVDecoderFFMPEG::decode_video_frame()
 			}
 						
 			//LOG("DecoderFFMPEG::decode_video_frame - m_video_frames: %d", m_video_frames.size());
-			//LOG("DecoderFFMPEG::decode_video_frame - decoded frame: %d", frame_index);
 		}
 
 		// Error or End of File 
@@ -940,7 +926,6 @@ bool AVDecoderFFMPEG::decode_video_frame()
 		}
 	}
 
-	update_buffer_state();
 
 	//
 	return true;
@@ -969,7 +954,6 @@ void AVDecoderFFMPEG::free_front_frame()
 			frames.pop_front();
 		}
 	});
-	update_buffer_state();
 }
 
 
@@ -1122,7 +1106,6 @@ volumetric_video::FrameMatchResult AVDecoderFFMPEG::get_video_data(
 		}
 		return frames.empty() ? nullptr : frames.front().data;
 	});
-	update_buffer_state();
 
 	// Check that frame has managed to be assigned 
 	if (frame == NULL)
@@ -1151,50 +1134,8 @@ volumetric_video::FrameMatchResult AVDecoderFFMPEG::get_video_data(
 	this->m_video_info.last_time	= timeInSec;
 	actual_presentation_time = frame_time;
 
-	// Convert time to frameindex
-//	LOG("DecoderFFMPEG::get_video_data - requested frame_index: %d", frame_index);
-//	LOG("DecoderFFMPEG::get_video_data - decoded frame_index:   %d", m_video_frames.front().frame_index);
 //	LOG("DecoderFFMPEG::get_video_data - time in sec(s): %f", timeInSec);
 
 	//
 	return volumetric_video::FrameMatchResult::Ready;
-}
-
-
-// --------------------------------------------------------------------------
-// 
-// --------------------------------------------------------------------------
-bool AVDecoderFFMPEG::is_buffer_blocked()
-{
-//	LOG("DecoderFFMPEG::is_buffer_blocked - start");
-
-	return (m_video_info.is_enabled && m_video_frames.full()) ||
-		m_geometry_frames.full();
-}
-
-
-// --------------------------------------------------------------------------
-// 
-// --------------------------------------------------------------------------
-void AVDecoderFFMPEG::update_buffer_state()
-{
-//	LOG("DecoderFFMPEG::update_buffer_state - start");
-
-	// Update Video Buffer State
-	if (m_video_info.is_enabled)
-	{
-		const std::size_t size = m_video_frames.size();
-		if (size == 0)
-		{
-			m_video_info.buffer_state = BufferState::EMPTY;
-		}
-		else if (m_video_frames.full())
-		{
-			m_video_info.buffer_state = BufferState::FULL;
-		}
-		else
-		{
-			m_video_info.buffer_state = BufferState::NORMAL;
-		}
-	}
 }
