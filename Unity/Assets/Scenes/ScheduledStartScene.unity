@@ -164,9 +164,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0f19b987d80146544bbfbba8a5206081, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  meshFilepattern: D:\TMP\polymersive\model\ava1_bin_cl7\%06d.00.bin
-  meshStartIndex: 240
-  meshStopIndex: 2799
   videoFilename: D:\TMP\polymersive\model\s1t3.ava1.00.mp4
   luminaceCorrection: 0
   blueProjectionCorrection: 0
@@ -217,9 +214,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0f19b987d80146544bbfbba8a5206081, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  meshFilepattern: D:\TMP\polymersive\model\ava1_bin_cl7\%06d.01.bin
-  meshStartIndex: 240
-  meshStopIndex: 2799
   videoFilename: D:\TMP\polymersive\model\s1t3.ava1.01.mp4
   luminaceCorrection: 0
   blueProjectionCorrection: 0

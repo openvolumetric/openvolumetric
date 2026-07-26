@@ -11,6 +11,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_subdirectory(src/core)
+add_subdirectory(src/authoring)
 
 # Engine integrations link to the portable decoder core. More integrations,
 # such as Unreal, can be added alongside Unity without changing the core.

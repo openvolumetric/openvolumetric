@@ -3,27 +3,26 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-
+/// <summary>
+/// Unity component that opens and plays a combined volumetric MP4.
+///
+/// Unity's DSP clock provides the playback timeline. Each update selects a
+/// presentation frame; the native render callback publishes its matching
+/// texture and geometry while the AudioClip pulls decoded PCM.
+/// </summary>
 public class VolumetricVideo : MonoBehaviour
 {
     //----------------------------------------------------------
     // Public Member variables 
     //----------------------------------------------------------
 
-    // Geometry Settings
-    [Header("Geometry Settings")]
-    [Tooltip("Pattern to mesh file e.g. /path/to/mesh/%03d.bin.\n" +
-             "Geometry should be encoded using google draco.")]
-    public string meshFilepattern;
-    [Tooltip("Index of first frame")]
-    public int meshStartIndex;
-    [Tooltip("Index of last frame")]
-    public int meshStopIndex;
+    // Volumetric Video Input
+    [Header("Volumetric Video Input")]
+    [Tooltip("Volumetric video file containing geometry, texture, and audio")]
+    public string videoFilename;
 
     // Texture Settings
     [Header("Texture Settings")]
-    [Tooltip("Path to video file containing texture")]
-    public string videoFilename;
     [Tooltip("Luminance Correction - Y")]
     [Range(-0.2F, 0.2F)]
     public float luminaceCorrection=0.0F;
@@ -85,21 +84,24 @@ public class VolumetricVideo : MonoBehaviour
         // create new volumetric video decoder
         m_decoder = new VolumetricVideoDecoder(debug);
              
-        // Init/Load mesh
-        if(!m_decoder.init_mesh_data(meshFilepattern, meshStartIndex, meshStopIndex))
-        {
-            Debug.LogError("VolumetricVideo::Start - Failed to init VolumetricVideoDecoder");        
-        }
-
-        // Assigned Mesh to mesh filter Object
-        mesh_filter.mesh = m_decoder.Mesh;
-        
-        // Load Texture data
+        // The MP4 contains texture, geometry, and optional audio.
         string filepath = Path.Combine(Application.streamingAssetsPath, videoFilename);
         if(!m_decoder.init_texture(ref mesh_renderer, filepath))
         {
             Debug.LogError("VolumetricVideo::Start - Failed to init VolumetricVideoDecoder");
+            m_playback_state = PlaybackState.INIT_FAIL;
+            return;
         }
+
+        if(!m_decoder.init_mesh())
+        {
+            Debug.LogError("VolumetricVideo::Start - Failed to init geometry");
+            m_playback_state = PlaybackState.INIT_FAIL;
+            return;
+        }
+
+        // Assign the native-backed mesh to the mesh filter.
+        mesh_filter.mesh = m_decoder.Mesh;
 
         if(!m_decoder.init_audio())
         {

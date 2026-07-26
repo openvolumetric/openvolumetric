@@ -16,6 +16,7 @@ target_link_libraries(VolumetricVideoFFmpeg INTERFACE
 )
 
 add_library(VolumetricVideoCore STATIC
+  container/GeometryPacket.cpp
   decoding/IAVDecoder.cpp
   decoding/IDecoder.cpp
   decoding/IGeometryDecoder.cpp
@@ -25,7 +26,6 @@ add_library(VolumetricVideoCore STATIC
   geometry/GeometryDecoderDraco.cpp
   geometry/Mesh.cpp
   media/AVDecoderFFMPEG.cpp
-  media/Stream.cpp
   support/Logger.cpp
 )
 
@@ -36,6 +36,7 @@ set_target_properties(VolumetricVideoCore PROPERTIES
 target_include_directories(VolumetricVideoCore
   PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/decoding"
+    "${CMAKE_CURRENT_SOURCE_DIR}/container"
     "${CMAKE_CURRENT_SOURCE_DIR}/geometry"
     "${CMAKE_CURRENT_SOURCE_DIR}/media"
     "${CMAKE_CURRENT_SOURCE_DIR}/support"

@@ -146,6 +146,10 @@ int VolumetricVideoD3D11::render()
 		LOG("VolumetricVideoD3D11::render - id: %d - no buffer data - frame: %d", this->m_id, m_frame_index);
 		return -1;
 	}
+	if (!submit_embedded_geometry(m_frame_index))
+	{
+		return -1;
+	}
 
 	// Wait until both streams have the requested frame.
 	Mesh mesh;

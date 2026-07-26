@@ -8,10 +8,14 @@ using Unity.Collections;
 using System.Runtime.InteropServices;
 using System;
 
-//---------------------------------------------
-// 
-//---------------------------------------------
-
+/// <summary>
+/// Managed bridge to one native volumetric-video decoder instance.
+///
+/// Unity owns the Mesh, Material, Texture2D objects, and AudioClip. The native
+/// plugin decodes the combined MP4 and writes into registered graphics buffers
+/// during GL.IssuePluginEvent. Audio is pulled through the streaming AudioClip
+/// callback.
+/// </summary>
 public class VolumetricVideoDecoder
 {
     //---------------------------------------------
@@ -35,9 +39,6 @@ public class VolumetricVideoDecoder
     [DllImport(DLLNAME, EntryPoint = "volumetricvideo_quit")]
     private static extern void volumetricvideo_quit(int ID);
 
-    [DllImport(DLLNAME, EntryPoint = "volumetricvideo_set_unity_time")]
-    private static extern void volumetricvideo_set_unity_time(int ID, double unity_time);
-
     [DllImport(DLLNAME, EntryPoint = "volumetricvideo_set_frame")]
     private static extern void volumetricvideo_set_frame(int ID, int frame_index);
 
@@ -46,9 +47,6 @@ public class VolumetricVideoDecoder
 
     [DllImport(DLLNAME, EntryPoint = "volumetricvideo_stop_decoding")]
     private static extern int volumetricvideo_stop_decoding(int ID);
-
-    [DllImport(DLLNAME, EntryPoint = "volumetricvideo_update")]
-    private static extern int volumetricvideo_update(int ID);
 
     [DllImport(DLLNAME, EntryPoint = "volumetricvideo_seek")]
     private static extern int volumetricvideo_seek(int ID, double time);
@@ -70,9 +68,6 @@ public class VolumetricVideoDecoder
 
     [DllImport(DLLNAME, EntryPoint = "volumetricvideo_set_mesh_pointer")]
     private static extern int volumetricvideo_set_mesh_pointer(int ID, IntPtr index_buffer_handle, int index_size, IntPtr vertex_buffer_handle, int vertex_size);
-
-    [DllImport(DLLNAME, EntryPoint = "volumetricvideo_load_mesh_data")]
-    private static extern int volumetricvideo_load_mesh_data(int ID, string filepattern, int start_frame, int end_frame);
 
     //---------------------------------------------
     // Member variables
@@ -200,30 +195,6 @@ public class VolumetricVideoDecoder
 
 
     //----------------------------------------------------------
-    // Init Mesh data
-    //----------------------------------------------------------
-    public bool init_mesh_data(string filepattern, int start_index, int stop_index)
-    {
-        // Init Mesh
-        if(!init_mesh())
-        {
-            Debug.LogError("VolumetricVideoDecoder::init_mesh_data - Error");
-            m_decoder_state = DecoderState.INIT_FAIL;
-            return false;
-        }
-
-        if(volumetricvideo_load_mesh_data(m_instance_id, filepattern, start_index, stop_index) == -1)
-        {
-            Debug.LogError("VolumetricVideoDecoder::init_mesh_data - Error");
-            m_decoder_state = DecoderState.INIT_FAIL;
-            return false;
-        }
-
-        Debug.Log("VolumetricVideoDecoder::init_mesh_data - Done");
-        return true;
-    }
-
-    //----------------------------------------------------------
     // Vertex Data structure
     //----------------------------------------------------------
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
@@ -243,7 +214,7 @@ public class VolumetricVideoDecoder
     //----------------------------------------------------------
     // Start the decoder
     //----------------------------------------------------------
-    private bool init_mesh()
+    public bool init_mesh()
     {
         // Check for init
         if (m_decoder_state != DecoderState.INITIALIZED)

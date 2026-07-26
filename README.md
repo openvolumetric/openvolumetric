@@ -3,22 +3,18 @@
 This project enables the playback of volumetric video in unity game engine.
 This is implemented as a native C++ plugin
 
+The active development roadmap is tracked in [PLAN.md](PLAN.md).
+
 
 ### Encoding Content
 
-#### Geometry
-Geometry is encoded using google draco. The following command can be used to encode a single mesh 
-
-``
-    draco_encoder -i input.obj -o encoded.drc 
-``
-
-#### Texture
-Textures are enocded using ffmpeg h265. The following command can be used to encode Textures
-
-``
-    ffmpeg -i %06d.png  -s 1024x1024 -c:v libx265 -crf 25  -pix_fmt yuv420p -x265-params keyint=20:min-keyint=1:bframes=0:slices=6 -r $FRAMERATE output.mmp4
-``
+Runtime content is a single MP4 containing HEVC texture video, timed Draco
+geometry samples, and optional audio. For one-click authoring from raw
+numbered images and OBJ meshes, open
+**Tools > Volumetric Video > Encoder** in Unity. The Editor tool performs
+Draco conversion, media encoding, packaging, and verification. See
+[`Unity/Assets/Editor/README.md`](Unity/Assets/Editor/README.md) for its input
+conventions and tool discovery.
 
 If the media file also contains an audio stream, the native plugin decodes it
 to interleaved stereo floating-point PCM. Unity plays it through a streaming
@@ -46,11 +42,13 @@ integrations:
 
 ```text
 NativePlugin/
-├── src/core/
-│   ├── decoding/
-│   ├── geometry/
-│   ├── media/
-│   └── support/
+├── src/
+│   ├── core/
+│   │   ├── decoding/
+│   │   ├── geometry/
+│   │   ├── media/
+│   │   └── support/
+│   └── authoring/
 └── integrations/
     └── unity/
         ├── include/Unity/
@@ -63,6 +61,12 @@ NativePlugin/
 `VolumetricVideoNativePlugin` target is the Unity integration and links the
 core to Unity's D3D11 or Metal rendering API. Future engine integrations, such
 as Unreal, can live beside `integrations/unity` and link the same core target.
+See [`NativePlugin/src/core/README.md`](NativePlugin/src/core/README.md) for
+the runtime data flow, directory responsibilities, threading, and ownership.
+
+`VolumetricVideoAuthoringCore` contains MP4 packaging and verification.
+`VolumetricVideoAuthoring` exposes it to the Unity Editor without adding
+authoring code to player builds.
 
 #### VS Code development container
 

@@ -4,6 +4,12 @@
 
 #define VOLUMETRIC_VIDEO_API UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
 
+// C ABI consumed by VolumetricVideoDecoder.cs. Decoder instances are
+// identified by the integer returned from volumetricvideo_init().
+//
+// Resource setup runs on Unity's main thread. Frame uploads happen through
+// GetRenderEventFunc() on Unity's render thread, using the texture and mesh
+// resources registered through this interface.
 extern "C" 
 {
 	//-----------------------------------------------
@@ -22,9 +28,6 @@ extern "C"
 	// Quit application
 	VOLUMETRIC_VIDEO_API void	volumetricvideo_quit(int ID);
 
-	// Set unity time
-	VOLUMETRIC_VIDEO_API void	volumetricvideo_set_unity_time(int ID, double unity_time);
-
 	// Set frame index
 	VOLUMETRIC_VIDEO_API void	volumetricvideo_set_frame(int ID, int frame_index);
 
@@ -40,9 +43,6 @@ extern "C"
 	VOLUMETRIC_VIDEO_API int	volumetricvideo_stop_decoding(int ID);
 
 	// Frame Index to display
-	VOLUMETRIC_VIDEO_API int	volumetricvideo_update(int ID);
-
-	// Frame Index to display
 	VOLUMETRIC_VIDEO_API int	volumetricvideo_seek(int ID, double time);
 
 
@@ -50,7 +50,7 @@ extern "C"
 	// Video Functions
 	//-----------------------------------------------
 
-	// Load video function
+	// Open a combined MP4. The call fails if video or vvge geometry is absent.
 	VOLUMETRIC_VIDEO_API int	volumetricvideo_load_video(int ID, const char* filepath);
 
 	// Get Video Details
@@ -62,7 +62,7 @@ extern "C"
 	// Pull interleaved float PCM. Unavailable samples are filled with silence.
 	VOLUMETRIC_VIDEO_API int	volumetricvideo_read_audio(int ID, float* samples, int sample_count);
 
-	// Set texture Pointer
+	// Return platform texture handles used to construct Unity textures.
 	VOLUMETRIC_VIDEO_API int	volumetricvideo_get_texture_pointers(int ID, void*& yPointer, void*& uPointer, void*& vPointer);
 
 
@@ -70,10 +70,7 @@ extern "C"
 	// Geometry Functions
 	//-----------------------------------------------
 
-	// Load mesh data Function
-	VOLUMETRIC_VIDEO_API int	volumetricvideo_load_mesh_data(int ID, char* filepattern, int start_frame, int end_frame);
-
-	// Set mesh pointers
+	// Register Unity-owned index and vertex buffers for native frame uploads.
 	VOLUMETRIC_VIDEO_API int	volumetricvideo_set_mesh_pointer(int ID, void* indexBufferHandle, int index_size, void* vertexBufferHandle, int vertex_size);
 
 }

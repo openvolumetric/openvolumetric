@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IAVDecoder.h>
+#include <GeometryPacket.h>
 
 extern "C"
 {
@@ -15,8 +16,11 @@ extern "C"
 #include <thread>
 #include <vector>
 
-
-
+/// FFmpeg implementation of the combined volumetric MP4 decoder.
+///
+/// A single worker owns av_read_frame() and routes packets by stream:
+/// video is decoded to queued YUV frames, audio to a lock-free PCM ring, and
+/// vvge samples to a mutex-protected compressed-geometry queue.
 class AVDecoderFFMPEG : public IAVDecoder
 {
 
@@ -71,6 +75,12 @@ public:
 
 	int read_audio(float* output, int sample_count) override;
 
+	bool has_embedded_geometry() const override;
+
+	bool get_geometry_data(
+		int frame_index,
+		EncodedGeometryFrame& output) override;
+
 	// --------------------------------------------------------------------------
 	//
 	// --------------------------------------------------------------------------
@@ -91,6 +101,8 @@ protected:
 
 	bool init_audio_context();
 
+	bool init_geometry_context();
+
 
 	// --------------------------------------------------------------------------
 	//
@@ -110,6 +122,8 @@ protected:
 	bool decode_video_frame();
 
 	bool decode_audio_frame();
+
+	bool queue_geometry_packet();
 
 	void push_audio(const float* samples, size_t sample_count);
 
@@ -134,16 +148,15 @@ private:
 	// --------------------------------------------------------------------------
 	struct FrameData
 	{
-		//
 		FrameData() : data(NULL), frame_index(0), frame_time(0.0){};
 
-		// frame data
+		// Owned FFmpeg frame; released when removed from m_video_frames.
 		AVFrame* data;
 
-		// frame index
+		// Presentation index derived from best_effort_timestamp.
 		int frame_index;
 
-		// Frame time
+		// Presentation time in seconds.
 		double frame_time;
 	};
 
@@ -177,20 +190,22 @@ private:
 	const AVCodec*			m_audio_codec;
 	SwrContext*				m_audio_resampler;
 
-	// --------------------------------------------------------------------------
-	// Decoding and Buffers
-	// --------------------------------------------------------------------------
+	int						m_geometry_stream_index;
+	AVStream*				m_geometry_stream;
+
+	// Queues bridge the decoder worker and engine/audio consumer threads.
 	AVPacket				m_packet;
 	std::queue<FrameData>	m_video_frames;
 	unsigned int			m_video_buffer_max;
 	std::vector<float>		m_audio_samples;
 	std::atomic<uint64_t>	m_audio_read_position;
 	std::atomic<uint64_t>	m_audio_write_position;
+	std::queue<EncodedGeometryFrame> m_geometry_frames;
 
-	// --------------------------------------------------------------------------
-	// Threading 
-	// --------------------------------------------------------------------------
+	// m_video_mutex and m_geometry_mutex protect their corresponding queues.
+	// Audio uses atomic monotonic read/write positions instead of a mutex.
 	std::thread				m_decode_thread;
 	std::mutex				m_video_mutex;
+	std::mutex				m_geometry_mutex;
 
 };

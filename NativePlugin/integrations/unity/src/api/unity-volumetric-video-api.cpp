@@ -309,26 +309,6 @@ VOLUMETRIC_VIDEO_API void	volumetricvideo_quit(int ID)
 
 
 // --------------------------------------------------------------------------
-// Set Unity time in decoder
-// --------------------------------------------------------------------------
-VOLUMETRIC_VIDEO_API void	volumetricvideo_set_unity_time(int ID, double unity_time)
-{
-	LOG("volumetricvideo_set_global_time - id: %d", ID);
-
-	//
-	VolumetricVideo_iter iter;
-	if (!get_vv_instance(ID, &iter))
-	{
-		LOG("volumetricvideo_set_unity_time - cant find instance id: %d", ID);
-		return;
-	}
-
-	// Set Unity Time in VV Decoder
-	(*iter)->set_unity_time(unity_time);
-}
-
-
-// --------------------------------------------------------------------------
 // Set frame index
 // --------------------------------------------------------------------------
 VOLUMETRIC_VIDEO_API void	volumetricvideo_set_frame(int ID, int frame_index)
@@ -399,26 +379,6 @@ VOLUMETRIC_VIDEO_API int	volumetricvideo_stop_decoding(int ID)
 // --------------------------------------------------------------------------
 // Set Frame to display
 //
-VOLUMETRIC_VIDEO_API int	volumetricvideo_update(int ID)
-{
-	LOG("volumetricvideo_update - id: %d ", ID);
-
-	//
-	VolumetricVideo_iter iter;
-	if (!get_vv_instance(ID, &iter))
-	{
-		LOG("volumetricvideo_update - cant find instance id: %d", ID);
-		return -1;
-	}
-
-	//Render
-	return (*iter)->render();
-}
-
-
-// --------------------------------------------------------------------------
-// Set Frame to display
-//
 VOLUMETRIC_VIDEO_API int	volumetricvideo_seek(int ID, double time)
 {
 	LOG("volumetricvideo_seek - id: %d - time: %d", ID, time);
@@ -461,6 +421,16 @@ VOLUMETRIC_VIDEO_API int	volumetricvideo_load_video(int ID, const char* filepath
 	if (!(*iter)->get_avdecoder_ptr()->init(filepath))
 	{
 		// Error loading video
+		return -1;
+	}
+	if (!(*iter)->get_avdecoder_ptr()->has_embedded_geometry())
+	{
+		LOG("volumetricvideo_load_video - MP4 has no vvge geometry stream");
+		return -1;
+	}
+	if (!(*iter)->get_geometrydecoder_ptr()->init())
+	{
+		LOG("volumetricvideo_load_video - failed to initialise embedded geometry");
 		return -1;
 	}
 
@@ -568,32 +538,6 @@ VOLUMETRIC_VIDEO_API int	volumetricvideo_get_texture_pointers(int ID, void*& yPo
 // Geometry Functions
 //-----------------------------------------------
 
-
-// --------------------------------------------------------------------------
-// Load mesh data
-//
-VOLUMETRIC_VIDEO_API int	volumetricvideo_load_mesh_data(int ID, char* filepattern, int start_frame, int end_frame)
-{
-	LOG("volumetricvideo_load_mesh - id: %d", ID);
-
-	// Get Instance
-	VolumetricVideo_iter iter;
-	if (!get_vv_instance(ID, &iter))
-	{
-		LOG("volumetricvideo_load_mesh - cant find instance id: %d", ID);
-		return -1;
-	}
-
-	// Load data
-	if (!(*iter)->get_geometrydecoder_ptr()->init(filepattern, start_frame, end_frame))
-	{
-		return -1;
-	}
-
-	//
-	return 1;
-
-}
 
 // --------------------------------------------------------------------------
 // Set native mesh pointers

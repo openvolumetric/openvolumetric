@@ -9,9 +9,11 @@
 #include <cstddef>
 
 
-//
-//
-//
+/// Coordinates engine-neutral decoding with an engine-specific upload backend.
+///
+/// Concrete platform implementations create the FFmpeg and Draco decoders,
+/// texture uploader, and mesh-buffer uploader. Unity calls render() on its
+/// render thread after selecting the desired presentation frame.
 class IVolumetricVideo
 {
 
@@ -20,13 +22,13 @@ public:
 	//--------------------------------------------------------
 	// default constructor
 	//--------------------------------------------------------
-	IVolumetricVideo() : m_id(-1), m_unity_time(0.0), m_frame_index(-1), m_avdecoder(NULL), m_texture(NULL), m_geometrydecoder(NULL), m_meshbuffer(NULL) {};
+	IVolumetricVideo() : m_id(-1), m_frame_index(-1), m_avdecoder(NULL), m_texture(NULL), m_geometrydecoder(NULL), m_meshbuffer(NULL) {};
 
 
 	//--------------------------------------------------------
 	// constructor with instance id
 	//--------------------------------------------------------
-	IVolumetricVideo(int id) :m_id(id), m_unity_time(0.0), m_frame_index(-1), m_avdecoder(NULL), m_texture(NULL), m_geometrydecoder(NULL), m_meshbuffer(NULL) {};
+	IVolumetricVideo(int id) :m_id(id), m_frame_index(-1), m_avdecoder(NULL), m_texture(NULL), m_geometrydecoder(NULL), m_meshbuffer(NULL) {};
 	
 	
 	//--------------------------------------------------------
@@ -66,12 +68,6 @@ public:
 
 
 	//--------------------------------------------------------
-	// set_global_time
-	//--------------------------------------------------------
-	void set_unity_time(double unity_time) { m_unity_time = unity_time; }
-
-
-	//--------------------------------------------------------
 	// set frame index
 	//--------------------------------------------------------
 	void set_frame_index(int frame_index) { m_frame_index = frame_index; }
@@ -108,6 +104,10 @@ public:
 
 protected:
 
+	/// Moves queued vvge payloads from the media decoder into the Draco worker.
+	/// A look-ahead window keeps geometry ready for upcoming render frames.
+	bool submit_embedded_geometry(int frame_index);
+
 
 	//--------------------------------------------------------
 	// instance id 
@@ -137,12 +137,6 @@ protected:
 	// Mesh Buffer
 	//--------------------------------------------------------
 	IMeshBuffer*		m_meshbuffer;
-
-
-	//--------------------------------------------------------
-	// Unity Time
-	//--------------------------------------------------------
-	double m_unity_time;
 
 
 	//--------------------------------------------------------

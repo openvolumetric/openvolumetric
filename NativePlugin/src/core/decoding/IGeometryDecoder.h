@@ -4,7 +4,14 @@
 
 #include <Mesh.h>
 
+#include <cstdint>
+#include <vector>
 
+/// Asynchronous decoder for compressed geometry samples.
+///
+/// The media decoder submits Draco payloads with their presentation index.
+/// A worker converts them to Mesh objects, which the render integration later
+/// retrieves using the same index as the corresponding video frame.
 class IGeometryDecoder : public IDecoder
 {
 
@@ -13,7 +20,7 @@ public:
 	// --------------------------------------------------------------------------
 	// Constructor
 	// --------------------------------------------------------------------------
-	IGeometryDecoder():m_current_frame(0){};
+	IGeometryDecoder() = default;
 
 
 	// --------------------------------------------------------------------------
@@ -21,39 +28,21 @@ public:
 	// --------------------------------------------------------------------------
 	~IGeometryDecoder() override {};
 
-	// --------------------------------------------------------------------------
-	// Set current frame to decode from
-	// --------------------------------------------------------------------------
-	void set_current_frame(int current_frame) { this->m_current_frame = current_frame; }
+	/// Clears previous state and prepares the embedded-geometry pipeline.
+	virtual bool init() = 0;
 
+	/// Transfers one compressed frame into the decoder's input queue.
+	virtual bool submit_encoded_frame(
+		int frame_index,
+		std::vector<std::uint8_t> payload) = 0;
 
-	// --------------------------------------------------------------------------
-	// function to init decoder with frame-by-frame loading
-	// --------------------------------------------------------------------------
-	virtual bool init(char* filepattern, int start_index, int stop_index) = 0;
-
-	// --------------------------------------------------------------------------
-	// Get mesh data for a given frame 
-	// --------------------------------------------------------------------------
+	/// Retrieves an already-decoded mesh for exactly frame_index.
 	virtual bool get_mesh_data(int frame_index, Mesh& mesh) = 0;
 
-
-	// --------------------------------------------------------------------------
-	// function to clear 
-	// --------------------------------------------------------------------------
+	/// Discards the most recently consumed decoded mesh.
 	virtual void clear_frame_data() = 0;
 	
 
 	virtual void destroy() = 0;
-
-
-
-protected:
-
-	// --------------------------------------------------------------------------
-	// current frame being decoded
-	// --------------------------------------------------------------------------
-	int m_current_frame;
-
 
 };

@@ -5,12 +5,8 @@
 
 #include "draco/compression/decode.h"
 #include "draco/core/cycle_timer.h"
-#include "draco/io/file_utils.h"
-#include "draco/io/parser_utils.h"
 
-#include <cstdio>
-#include <fstream>
-#include <iterator>
+#include <chrono>
 
 // --------------------------------------------------------------------------
 // Constructor
@@ -38,61 +34,40 @@ void GeometryDecoderDraco::destroy()
 	//
 	flush_buffer();
 
-	//
-	m_encoded_meshes.clear();
+	while (!m_streamed_meshes.empty())
+		m_streamed_meshes.pop();
 
 	//
 	LOG("GeometryDecoderDraco::destroy - stop");
 }
 
 
-// --------------------------------------------------------------------------
-//
-// --------------------------------------------------------------------------
-bool GeometryDecoderDraco::init(char* filepattern, int start_index, int stop_index)
+bool GeometryDecoderDraco::init()
 {
-	// Allocate Memory
-	m_encoded_meshes.clear();
-	m_encoded_meshes.resize(stop_index - start_index + 1);
-
-	// Load each mesh and add to vector
-	#pragma omp parallel for
-	for (int i = start_index; i <= stop_index; i++)
+	flush_buffer();
 	{
-		char filepath[1024]; 
-		std::snprintf(filepath, sizeof(filepath), filepattern, i);
-
-		// Read the encoded bytes directly. Draco's FileReaderFactory relies on
-		// static registration, whose stdio reader can be discarded when Draco
-		// is linked as a static library.
-		std::ifstream input(filepath, std::ios::binary);
-		if (!input)
-		{
-			LOG("GeometryDecoderDraco::init - Failed opening the input file - %s.", filepath);
-			return false;
-		}
-
-		std::vector<char> data(
-			(std::istreambuf_iterator<char>(input)),
-			std::istreambuf_iterator<char>());
-
-		if (data.empty()) 
-		{
-			LOG("GeometryDecoderDraco::init - Empty input file - %s.", filepath);
-			return false;
-		}
-
-		LOG("GeometryDecoderDraco::init - Loaded - %s.", filepath);
-
-
-		// Set mesh Data
-		m_encoded_meshes[i - start_index] = data;
+		std::lock_guard<std::mutex> lock(m_geometry_mutex);
+		while (!m_streamed_meshes.empty())
+			m_streamed_meshes.pop();
 	}
-	
-	//
-	this->m_initialised = true;
-	
-	// Done 
+	m_initialised = true;
+	m_decoder_state = INITIALIZED;
+	LOG("GeometryDecoderDraco::init - embedded geometry enabled");
+	return true;
+}
+
+bool GeometryDecoderDraco::submit_encoded_frame(
+	int frame_index,
+	std::vector<std::uint8_t> payload)
+{
+	if (!m_initialised || payload.empty())
+		return false;
+
+	EncodedMeshData encoded;
+	encoded.frame_index = frame_index;
+	encoded.data.assign(payload.begin(), payload.end());
+	std::lock_guard<std::mutex> lock(m_geometry_mutex);
+	m_streamed_meshes.push(std::move(encoded));
 	return true;
 }
  
@@ -164,27 +139,32 @@ bool GeometryDecoderDraco::decode()
 	//
 	if (!is_buffer_blocked())
 	{
-		//
-		LOG("GeometryDecoderDraco::decode - frame %d", m_current_frame);
-
-		// Decode Mesh
-		Mesh mesh;
-		if (!convert_draco_to_mesh(m_encoded_meshes[m_current_frame], mesh))
+		EncodedMeshData encoded;
+		bool has_encoded_mesh = false;
 		{
-			return false;
+			std::lock_guard<std::mutex> lock(m_geometry_mutex);
+			if (!m_streamed_meshes.empty())
+			{
+				encoded = std::move(m_streamed_meshes.front());
+				m_streamed_meshes.pop();
+				has_encoded_mesh = true;
+			}
+		}
+		if (!has_encoded_mesh)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			return true;
 		}
 
-		// construct mesh data struct
-		MeshData mesh_data;
-		mesh_data.mesh			= mesh;
-		mesh_data.frame_index	= m_current_frame;
-	
-		// lock geometry mutex and push
-		std::lock_guard<std::mutex> lock(m_geometry_mutex);
-		m_decoded_meshes.push(mesh_data);
+		Mesh mesh;
+		if (!convert_draco_to_mesh(encoded.data, mesh))
+			return false;
 
-		// update current frame
-		update_current_frame();
+		MeshData mesh_data;
+		mesh_data.mesh = std::move(mesh);
+		mesh_data.frame_index = encoded.frame_index;
+		std::lock_guard<std::mutex> lock(m_geometry_mutex);
+		m_decoded_meshes.push(std::move(mesh_data));
 	}
 
 	return true;
@@ -198,22 +178,6 @@ bool GeometryDecoderDraco::is_buffer_blocked()
 {
 	std::lock_guard<std::mutex> lock(m_geometry_mutex);
 	return m_decoded_meshes.size() >= m_max_buffer_size;
-}
-
-
-// --------------------------------------------------------------------------
-// 
-// --------------------------------------------------------------------------
-void GeometryDecoderDraco::update_current_frame()
-{
-	// increment index
-	m_current_frame++;
-
-	// reset if over the number of encoded meshes.
-	if (m_current_frame == m_encoded_meshes.size())
-	{
-		m_current_frame = 0;
-	}
 }
 
 
@@ -384,6 +348,8 @@ void GeometryDecoderDraco::flush_buffer()
 	std::lock_guard<std::mutex> lock(m_geometry_mutex);
 	while (!m_decoded_meshes.empty())
 		m_decoded_meshes.pop();
+	while (!m_streamed_meshes.empty())
+		m_streamed_meshes.pop();
 
 	//
 	LOG("GeometryDecoderDraco::flush_buffer - stop");

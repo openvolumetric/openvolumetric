@@ -8,9 +8,11 @@
 #include<queue>
 #include<thread>
 
-// --------------------------------------------------------------------------
-//  Geometry Decoder Class using Google Draco
-// --------------------------------------------------------------------------
+/// Draco worker for geometry samples extracted from the MP4 vvge track.
+///
+/// submit_encoded_frame() is called from the render-side coordinator.
+/// m_decode_thread consumes compressed frames and publishes engine-neutral
+/// Mesh objects for matching by presentation index.
 class GeometryDecoderDraco : public IGeometryDecoder
 {
 
@@ -32,42 +34,43 @@ public:
 	//----------------------------------
 	// Destructor
 	// --------------------------------------------------------------------------
-	virtual ~GeometryDecoderDraco();
+	~GeometryDecoderDraco() override;
 
 
-	// --------------------------------------------------------------------------
-	// function to init decoder with frame-by-frame loading
-	// --------------------------------------------------------------------------
-	bool init(char* filepattern, int start_index, int stop_index);
+	bool init() override;
+
+	bool submit_encoded_frame(
+		int frame_index,
+		std::vector<std::uint8_t> payload) override;
 
 
   	// --------------------------------------------------------------------------
 	// Start Decoding
 	// --------------------------------------------------------------------------
-	bool start_decoding();
+	bool start_decoding() override;
 
 
 	// --------------------------------------------------------------------------
 	// Stop Decoding
 	// --------------------------------------------------------------------------
-	bool stop_decoding();
+	bool stop_decoding() override;
 
 
 	// --------------------------------------------------------------------------
 	// Get mesh data for index
 	// --------------------------------------------------------------------------
-	bool get_mesh_data(int frame_index, Mesh& mesh);
+	bool get_mesh_data(int frame_index, Mesh& mesh) override;
 	
 
 	// --------------------------------------------------------------------------
 	// Clear frame data
 	// --------------------------------------------------------------------------
-	void clear_frame_data();
+	void clear_frame_data() override;
 
 	// --------------------------------------------------------------------------
 	// clean up resources
 	// --------------------------------------------------------------------------
-	void destroy();
+	void destroy() override;
 
 protected:
 
@@ -85,12 +88,6 @@ protected:
 
 
 	// --------------------------------------------------------------------------
-	// update the current frame
-	// --------------------------------------------------------------------------
-	void update_current_frame();
-
-
-	// --------------------------------------------------------------------------
 	// Stop Decoding
 	// --------------------------------------------------------------------------
 	bool convert_draco_to_mesh(DracoData & data, Mesh& mesh_out);
@@ -102,10 +99,15 @@ protected:
 
 private:
 
-	// --------------------------------------------------------------------------
-	// All Mesh data which is compressed 
-	// --------------------------------------------------------------------------
-	std::vector<DracoData> m_encoded_meshes;
+	struct EncodedMeshData
+	{
+		// Complete independently decodable Draco bitstream.
+		DracoData data;
+		// Presentation index inherited from the MP4 sample timestamp.
+		int frame_index;
+	};
+
+	std::queue<EncodedMeshData> m_streamed_meshes;
 
 	// --------------------------------------------------------------------------
 	// Mesh data struct encapsulating the decoded meshs and frame index

@@ -3,8 +3,18 @@
 #include <Logger.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <vector>
+
+namespace
+{
+constexpr std::uint32_t kVolumetricGeometryTag =
+	static_cast<std::uint32_t>('v') |
+	(static_cast<std::uint32_t>('v') << 8) |
+	(static_cast<std::uint32_t>('g') << 16) |
+	(static_cast<std::uint32_t>('e') << 24);
+}
 
 // --------------------------------------------------------------------------
 //
@@ -28,6 +38,10 @@ AVDecoderFFMPEG::AVDecoderFFMPEG() : IAVDecoder()
 	m_audio_resampler		= NULL;
 	m_audio_read_position.store(0);
 	m_audio_write_position.store(0);
+
+	// Embedded geometry
+	m_geometry_stream_index = -1;
+	m_geometry_stream = NULL;
 
 	// Buffer Sizes
 	m_video_buffer_max		= 32;
@@ -86,6 +100,13 @@ void AVDecoderFFMPEG::destroy()
 	m_audio_codec = NULL;
 	m_audio_stream = NULL;
 	flush_audio();
+	{
+		std::lock_guard<std::mutex> lock(m_geometry_mutex);
+		while (!m_geometry_frames.empty())
+			m_geometry_frames.pop();
+	}
+	m_geometry_stream = NULL;
+	m_geometry_stream_index = -1;
 
 	//
 	av_packet_unref(&m_packet);
@@ -170,6 +191,27 @@ bool AVDecoderFFMPEG::init_audio_context()
 	LOG("AVDecoderFFMPEG::init_audio_context - Sample Rate: %d", sample_rate);
 	LOG("AVDecoderFFMPEG::init_audio_context - Channels: %d",
 		m_audio_info.channels);
+	return true;
+}
+
+bool AVDecoderFFMPEG::init_geometry_context()
+{
+	for (unsigned int i = 0; i < m_avformat_ctx->nb_streams; ++i)
+	{
+		AVStream* stream = m_avformat_ctx->streams[i];
+		if (stream->codecpar->codec_type == AVMEDIA_TYPE_DATA &&
+			stream->codecpar->codec_tag == kVolumetricGeometryTag)
+		{
+			m_geometry_stream_index = static_cast<int>(i);
+			m_geometry_stream = stream;
+			LOG(
+				"AVDecoderFFMPEG::init_geometry_context - Geometry Stream: %d",
+				m_geometry_stream_index);
+			return true;
+		}
+	}
+
+	LOG("AVDecoderFFMPEG::init_geometry_context - no embedded geometry stream");
 	return true;
 }
 
@@ -327,6 +369,11 @@ bool AVDecoderFFMPEG::init(const char* filepath)
 		return false;
 	}
 
+	if (!init_geometry_context())
+	{
+		return false;
+	}
+
 	// Set decoder init = true
 	this->m_initialised = true;
 	m_decoder_state = INITIALIZED;
@@ -452,6 +499,11 @@ bool AVDecoderFFMPEG::decode()
 		{
 			decode_audio_frame();
 		}
+		else if (m_geometry_stream != NULL &&
+			m_packet.stream_index == m_geometry_stream_index)
+		{
+			queue_geometry_packet();
+		}
 	
 		// Unref current packet 
 		av_packet_unref(&m_packet);
@@ -460,6 +512,58 @@ bool AVDecoderFFMPEG::decode()
 
 	//
 	return true;
+}
+
+bool AVDecoderFFMPEG::queue_geometry_packet()
+{
+	volumetric_video::GeometryPacket packet;
+	if (!volumetric_video::parse_geometry_packet(
+		m_packet.data,
+		static_cast<std::size_t>(m_packet.size),
+		packet))
+	{
+		LOG("AVDecoderFFMPEG::queue_geometry_packet - invalid VVGF packet");
+		return false;
+	}
+
+	if (m_packet.pts == AV_NOPTS_VALUE)
+	{
+		LOG("AVDecoderFFMPEG::queue_geometry_packet - packet has no PTS");
+		return false;
+	}
+
+	EncodedGeometryFrame frame;
+	frame.presentation_time =
+		static_cast<double>(m_packet.pts) *
+		av_q2d(m_geometry_stream->time_base);
+	frame.frame_index = static_cast<int>(std::llround(
+		frame.presentation_time * m_video_info.fps));
+	frame.source_frame_number = packet.frame_number;
+	frame.payload = std::move(packet.payload);
+
+	std::lock_guard<std::mutex> lock(m_geometry_mutex);
+	m_geometry_frames.push(std::move(frame));
+	return true;
+}
+
+bool AVDecoderFFMPEG::has_embedded_geometry() const
+{
+	return m_geometry_stream_index >= 0;
+}
+
+bool AVDecoderFFMPEG::get_geometry_data(
+	int frame_index,
+	EncodedGeometryFrame& output)
+{
+	std::lock_guard<std::mutex> lock(m_geometry_mutex);
+	if (!m_geometry_frames.empty() &&
+		m_geometry_frames.front().frame_index <= frame_index)
+	{
+		output = std::move(m_geometry_frames.front());
+		m_geometry_frames.pop();
+		return true;
+	}
+	return false;
 }
 
 // --------------------------------------------------------------------------
@@ -689,13 +793,24 @@ bool AVDecoderFFMPEG::seek(double time)
 	}
 
 	// compute timestamp
-	uint64_t timeStamp = (uint64_t)time * AV_TIME_BASE;
+	const int64_t timeStamp = static_cast<int64_t>(
+		std::llround(time * static_cast<double>(AV_TIME_BASE)));
 
 	//seek to frame
 	if (av_seek_frame(m_avformat_ctx, -1, timeStamp, AVSEEK_FLAG_BACKWARD) < 0)
 	{
 		LOG("AVDecoderFFMPEG::seek - seek time fail");
 		return false;
+	}
+
+	avcodec_flush_buffers(m_video_codec_ctx);
+	if (m_audio_codec_ctx != NULL)
+		avcodec_flush_buffers(m_audio_codec_ctx);
+	flush_buffers();
+	{
+		std::lock_guard<std::mutex> lock(m_geometry_mutex);
+		while (!m_geometry_frames.empty())
+			m_geometry_frames.pop();
 	}
 
 	//

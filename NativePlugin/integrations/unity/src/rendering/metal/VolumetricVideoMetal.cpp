@@ -70,6 +70,8 @@ int VolumetricVideoMetal::render()
 	uint8_t* output_v = nullptr;
 	if (!m_avdecoder->get_video_data(m_frame_index, &output_y, &output_u, &output_v))
 		return -1;
+	if (!submit_embedded_geometry(m_frame_index))
+		return -1;
 
 	Mesh mesh;
 	if (!m_geometrydecoder->get_mesh_data(m_frame_index, mesh))

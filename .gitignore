@@ -81,3 +81,6 @@ Unity/Assets/StreamingAssets/*
 # Unity crash reports
 Unity/crashlytics-build.properties
 Unity/[Cc]rash*/
+
+
+.tmp*
