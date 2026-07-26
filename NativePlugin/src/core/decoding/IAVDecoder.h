@@ -92,6 +92,9 @@ public:
 		int frame_index,
 		EncodedGeometryFrame& output) = 0;
 
+	/// Increments whenever playback is reset or loops to a new timeline pass.
+	virtual std::uint64_t playback_generation() const = 0;
+
 	virtual std::string get_last_error() const = 0;
 
 	// --------------------------------------------------------------------------

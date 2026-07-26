@@ -11,9 +11,9 @@ combined MP4
     |
     v
 AVDecoderFFMPEG (one demux thread)
-    |-- HEVC packets --> decoded Y/U/V video-frame queue
-    |-- AAC packets  --> interleaved float PCM ring buffer
-    `-- vvge packets --> validated compressed-geometry queue
+    |-- HEVC packets --> bounded staging --> decoded Y/U/V frame queue
+    |-- AAC packets  --> bounded staging --> interleaved float PCM ring
+    `-- vvge packets --> bounded staging --> compressed-geometry queue
                               |
                               v
                     GeometryDecoderDraco
@@ -50,6 +50,12 @@ resources during Unity's render callback.
 - `AVDecoderFFMPEG` owns codec contexts, its decoder packet, decoded video
   frames, compressed geometry frames, and the audio ring buffer.
 - The demux thread is the only thread that reads from the container.
+- Runtime seek requests from an engine thread are queued synchronously and
+  executed between packet reads by the demux thread. The container and FFmpeg
+  codec contexts therefore never seek or flush concurrently with decoding.
+- Each stream has independent bounded packet staging. Pending audio is drained
+  first, so video or geometry backpressure does not immediately stall audio.
+  Demuxing pauses only when a stream's staging limit is also exhausted.
 - `GeometryDecoderDraco` owns a separate worker that consumes compressed
   geometry and produces meshes.
 - Video and geometry queues have fixed capacities and thread-safe
@@ -59,6 +65,12 @@ resources during Unity's render callback.
   graphics uploads.
 - `destroy()` must stop worker threads before releasing their queues or codec
   state.
+- Every seek or loop advances a playback generation. Compressed and decoded
+  geometry carry that generation, allowing a Draco result that completed
+  during a reset to be discarded instead of appearing in the next loop.
+- At natural end-of-stream, queued tail frames remain available to consumers.
+  The Unity playback clock explicitly seeks all native streams at its loop
+  boundary, clearing old video, geometry, and audio state together.
 
 ## Container validation
 

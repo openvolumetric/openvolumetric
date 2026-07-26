@@ -10,6 +10,13 @@ bool IVolumetricVideo::submit_embedded_geometry(int frame_index)
 		return true;
 	}
 
+	const std::uint64_t generation = m_avdecoder->playback_generation();
+	if (generation != m_geometry_generation)
+	{
+		m_geometrydecoder->reset(generation);
+		m_geometry_generation = generation;
+	}
+
 	// Geometry decoding happens asynchronously. Feed Draco ahead of the frame
 	// Unity is currently requesting so a decoded mesh is ready when its video
 	// frame is presented. This also drains any late packets instead of silently
@@ -21,6 +28,7 @@ bool IVolumetricVideo::submit_embedded_geometry(int frame_index)
 	while (m_avdecoder->get_geometry_data(submission_limit, encoded))
 	{
 		if (!m_geometrydecoder->submit_encoded_frame(
+			encoded.generation,
 			encoded.frame_index,
 			std::move(encoded.payload)))
 		{

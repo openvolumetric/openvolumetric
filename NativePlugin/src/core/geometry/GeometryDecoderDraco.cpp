@@ -12,7 +12,8 @@
 // Constructor
 // --------------------------------------------------------------------------
 GeometryDecoderDraco::GeometryDecoderDraco():
-	IGeometryDecoder(), m_streamed_meshes(256), m_decoded_meshes(64)
+	IGeometryDecoder(), m_streamed_meshes(256), m_decoded_meshes(64),
+	m_generation(0)
 {
 
 }
@@ -52,6 +53,7 @@ bool GeometryDecoderDraco::init()
 }
 
 bool GeometryDecoderDraco::submit_encoded_frame(
+	std::uint64_t generation,
 	int frame_index,
 	std::vector<std::uint8_t> payload)
 {
@@ -59,6 +61,7 @@ bool GeometryDecoderDraco::submit_encoded_frame(
 		return false;
 
 	EncodedMeshData encoded;
+	encoded.generation = generation;
 	encoded.frame_index = frame_index;
 	encoded.data.assign(payload.begin(), payload.end());
 	if (!m_streamed_meshes.try_push(std::move(encoded)))
@@ -67,6 +70,13 @@ bool GeometryDecoderDraco::submit_encoded_frame(
 		return false;
 	}
 	return true;
+}
+
+void GeometryDecoderDraco::reset(std::uint64_t generation)
+{
+	m_generation.store(generation, std::memory_order_release);
+	m_streamed_meshes.clear();
+	m_decoded_meshes.clear();
 }
  
 // --------------------------------------------------------------------------
@@ -163,7 +173,13 @@ bool GeometryDecoderDraco::decode()
 
 		MeshData mesh_data;
 		mesh_data.mesh = std::move(mesh);
+		mesh_data.generation = encoded.generation;
 		mesh_data.frame_index = encoded.frame_index;
+		if (encoded.generation !=
+			m_generation.load(std::memory_order_acquire))
+		{
+			return true;
+		}
 		if (!m_decoded_meshes.try_push(std::move(mesh_data)))
 		{
 			m_decoded_meshes.set_error("Decoded geometry queue is full.");

@@ -5,6 +5,7 @@
 
 #include<Mesh.h>
 
+#include<atomic>
 #include<thread>
 
 /// Draco worker for geometry samples extracted from the MP4 vvge track.
@@ -39,8 +40,11 @@ public:
 	bool init() override;
 
 	bool submit_encoded_frame(
+		std::uint64_t generation,
 		int frame_index,
 		std::vector<std::uint8_t> payload) override;
+
+	void reset(std::uint64_t generation) override;
 
 
   	// --------------------------------------------------------------------------
@@ -100,6 +104,7 @@ private:
 
 	struct EncodedMeshData
 	{
+		std::uint64_t generation = 0;
 		// Complete independently decodable Draco bitstream.
 		DracoData data;
 		// Presentation index inherited from the MP4 sample timestamp.
@@ -113,6 +118,7 @@ private:
 	// --------------------------------------------------------------------------
 	struct MeshData
 	{
+		std::uint64_t generation = 0;
 		// Decoded Mesh Data
 		Mesh mesh;
 
@@ -124,6 +130,7 @@ private:
 	// 
 	// --------------------------------------------------------------------------
 	volumetric_video::BoundedQueue<MeshData> m_decoded_meshes;
+	std::atomic<std::uint64_t> m_generation;
 
 
 	// --------------------------------------------------------------------------

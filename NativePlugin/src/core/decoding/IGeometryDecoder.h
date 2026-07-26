@@ -33,8 +33,12 @@ public:
 
 	/// Transfers one compressed frame into the decoder's input queue.
 	virtual bool submit_encoded_frame(
+		std::uint64_t generation,
 		int frame_index,
 		std::vector<std::uint8_t> payload) = 0;
+
+	/// Discards work belonging to an earlier seek or loop pass.
+	virtual void reset(std::uint64_t generation) = 0;
 
 	/// Retrieves an already-decoded mesh for exactly frame_index.
 	virtual bool get_mesh_data(int frame_index, Mesh& mesh) = 0;

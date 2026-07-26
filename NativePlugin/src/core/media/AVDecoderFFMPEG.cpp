@@ -3,6 +3,7 @@
 #include <Logger.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <vector>
@@ -14,7 +15,8 @@ AVDecoderFFMPEG::AVDecoderFFMPEG()
 	: IAVDecoder(),
 	  m_container(new volumetric_video::FFmpegMp4VolumetricContainer()),
 	  m_video_frames(32),
-	  m_geometry_frames(128)
+	  m_geometry_frames(128),
+	  m_playback_generation(0)
 {
 	// Video
 	m_video_stream_index	= -1;
@@ -83,7 +85,12 @@ void AVDecoderFFMPEG::destroy()
 	m_audio_codec = NULL;
 	m_audio_stream = NULL;
 	flush_audio();
+	m_audio_samples.clear();
 	m_geometry_frames.clear();
+	m_pending_video_packets.clear();
+	m_pending_audio_packets.clear();
+	m_pending_geometry_packets.clear();
+	m_deferred_packet.reset();
 	m_geometry_stream = NULL;
 	m_geometry_stream_index = -1;
 
@@ -355,15 +362,22 @@ bool AVDecoderFFMPEG::start_decoding()
 		return false;
 	}
 
+	m_stop_requested.store(false, std::memory_order_release);
+
 	// Create thread start video decoding
 	m_decode_thread = std::thread([&]() 
 	{
-		// 
+		m_thread_running.store(true, std::memory_order_release);
 		m_decoder_state = DECODING;
 		
-		//
-		while (m_decoder_state != STOP)
+		while (!m_stop_requested.load(std::memory_order_acquire))
 		{
+			if (!process_seek_request())
+			{
+				m_decoder_state = STOP;
+				break;
+			}
+
 			// Switch based on decoder state
 			switch (m_decoder_state)
 			{
@@ -374,7 +388,12 @@ bool AVDecoderFFMPEG::start_decoding()
 				//LOG("AVDecoderFFMPEG::start_decoding - decoding");
 				if (!this->decode())
 				{
-					m_decoder_state = DECODE_EOF;
+					m_decoder_state = m_container->end_of_stream()
+						? DECODE_EOF
+						: STOP;
+					if (m_decoder_state == STOP)
+						m_stop_requested.store(
+							true, std::memory_order_release);
 				}
 				break;
 			}
@@ -386,15 +405,20 @@ bool AVDecoderFFMPEG::start_decoding()
 			}
 			case DECODE_EOF:
 			{
-				LOG("AVDecoderFFMPEG::start_decoding - eof");
-				this->seek(0.0);
-				m_decoder_state = DECODING;
+				// Keep tail frames available. The engine playback clock decides
+				// whether to stop or submits a seek when looping is enabled.
+				std::this_thread::sleep_for(
+					std::chrono::milliseconds(1));
 				break;
 			}
+			default:
+				std::this_thread::yield();
+				break;
 			}
 		}
 
-		//
+		m_thread_running.store(false, std::memory_order_release);
+		m_seek_condition.notify_all();
 		LOG("AVDecoderFFMPEG::start_decoding - thread end");
 	});
 
@@ -411,13 +435,15 @@ bool AVDecoderFFMPEG::stop_decoding()
 	LOG("AVDecoderFFMPEG::stop_decoding");
 
 	//
-	m_decoder_state = STOP;
+	m_stop_requested.store(true, std::memory_order_release);
+	m_seek_condition.notify_all();
 
 	// join main thread
 	if (m_decode_thread.joinable()) 
 	{
 		m_decode_thread.join();
 	}
+	m_decoder_state = STOP;
 
 	//
 	return true;
@@ -430,72 +456,156 @@ bool AVDecoderFFMPEG::stop_decoding()
 // --------------------------------------------------------------------------
 bool AVDecoderFFMPEG::decode()
 {
-	//	LOG("DecoderFFMPEG::decode - start");
-
-	// Check that the decoder is initialised 
 	if (!m_initialised)
 	{
 		LOG("DecoderFFMPEG::decode - not initialized");
 		return false;
 	}
 
-	//
-	if (!is_buffer_blocked())
+	// Drain audio first so a full video or geometry output queue does not
+	// prevent already-demuxed audio packets from reaching the PCM ring.
+	if (!drain_pending_packets())
+		return false;
+
+	if (m_deferred_packet.has_value())
 	{
-		volumetric_video::ContainerPacket packet;
-		if (!m_container->read(packet))
-		{
-			if (m_container->end_of_stream())
-			{
-				m_video_frames.mark_end_of_stream();
-				m_geometry_frames.mark_end_of_stream();
-			}
-			else
-			{
-				m_video_frames.set_error(m_container->error());
-				m_geometry_frames.set_error(m_container->error());
-				LOG("AVDecoderFFMPEG::decode - %s",
-					m_container->error().c_str());
-			}
+		volumetric_video::ContainerPacket packet =
+			std::move(*m_deferred_packet);
+		m_deferred_packet.reset();
+		if (!route_packet(std::move(packet)))
 			return false;
-		}
-
-		av_packet_unref(&m_packet);
-		if (av_new_packet(
-			&m_packet, static_cast<int>(packet.payload.size())) < 0)
+		if (m_deferred_packet.has_value())
 		{
-			m_video_frames.set_error("Could not allocate a decoder packet.");
-			m_geometry_frames.set_error("Could not allocate a decoder packet.");
-			return false;
+			std::this_thread::yield();
+			return true;
 		}
-		std::copy(packet.payload.begin(), packet.payload.end(), m_packet.data);
-		m_packet.stream_index = packet.stream_index;
-		m_packet.pts = packet.has_pts ? packet.pts : AV_NOPTS_VALUE;
-		m_packet.dts = packet.has_dts ? packet.dts : AV_NOPTS_VALUE;
-		m_packet.duration = packet.duration;
-
-		bool success = true;
-		if (packet.kind == volumetric_video::StreamKind::Video)
-		{
-			success = decode_video_frame();
-		}
-		else if (packet.kind == volumetric_video::StreamKind::Audio)
-		{
-			success = decode_audio_frame();
-		}
-		else if (packet.kind == volumetric_video::StreamKind::Geometry)
-		{
-			success = queue_geometry_packet();
-		}
-	
-		av_packet_unref(&m_packet);
-		if (!success)
-			return false;
 	}
 
+	volumetric_video::ContainerPacket packet;
+	if (!m_container->read(packet))
+	{
+		if (m_container->end_of_stream())
+		{
+			if (!m_pending_video_packets.empty() ||
+				!m_pending_audio_packets.empty() ||
+				!m_pending_geometry_packets.empty())
+			{
+				return true;
+			}
+			m_video_frames.mark_end_of_stream();
+			m_geometry_frames.mark_end_of_stream();
+			return false;
+		}
+		m_video_frames.set_error(m_container->error());
+		m_geometry_frames.set_error(m_container->error());
+		LOG("AVDecoderFFMPEG::decode - %s",
+			m_container->error().c_str());
+		return false;
+	}
 
-	//
+	return route_packet(std::move(packet));
+}
+
+bool AVDecoderFFMPEG::route_packet(
+	volumetric_video::ContainerPacket packet)
+{
+	constexpr std::size_t max_pending_video = 64;
+	constexpr std::size_t max_pending_audio = 64;
+	constexpr std::size_t max_pending_geometry = 128;
+
+	std::deque<volumetric_video::ContainerPacket>* pending = nullptr;
+	bool blocked = false;
+	std::size_t capacity = 0;
+	switch (packet.kind)
+	{
+	case volumetric_video::StreamKind::Video:
+		pending = &m_pending_video_packets;
+		blocked = m_video_frames.full() || !pending->empty();
+		capacity = max_pending_video;
+		break;
+	case volumetric_video::StreamKind::Audio:
+		pending = &m_pending_audio_packets;
+		blocked = !audio_can_accept_packet() || !pending->empty();
+		capacity = max_pending_audio;
+		break;
+	case volumetric_video::StreamKind::Geometry:
+		pending = &m_pending_geometry_packets;
+		blocked = m_geometry_frames.full() || !pending->empty();
+		capacity = max_pending_geometry;
+		break;
+	default:
+		return true;
+	}
+
+	if (!blocked)
+		return decode_packet(packet);
+	if (pending->size() < capacity)
+	{
+		pending->push_back(std::move(packet));
+		return true;
+	}
+
+	// Preserve the packet at the demux head until its consumer makes room.
+	m_deferred_packet = std::move(packet);
 	return true;
+}
+
+bool AVDecoderFFMPEG::drain_pending_packets()
+{
+	auto drain_one = [this](
+		std::deque<volumetric_video::ContainerPacket>& packets,
+		bool ready)
+	{
+		if (!ready || packets.empty())
+			return true;
+		volumetric_video::ContainerPacket packet =
+			std::move(packets.front());
+		packets.pop_front();
+		return decode_packet(packet);
+	};
+
+	if (!drain_one(m_pending_audio_packets, audio_can_accept_packet()))
+		return false;
+	if (!drain_one(m_pending_video_packets, !m_video_frames.full()))
+		return false;
+	return drain_one(
+		m_pending_geometry_packets, !m_geometry_frames.full());
+}
+
+bool AVDecoderFFMPEG::decode_packet(
+	const volumetric_video::ContainerPacket& packet)
+{
+	av_packet_unref(&m_packet);
+	if (av_new_packet(
+		&m_packet, static_cast<int>(packet.payload.size())) < 0)
+	{
+		m_video_frames.set_error("Could not allocate a decoder packet.");
+		m_geometry_frames.set_error("Could not allocate a decoder packet.");
+		return false;
+	}
+	std::copy(packet.payload.begin(), packet.payload.end(), m_packet.data);
+	m_packet.stream_index = packet.stream_index;
+	m_packet.pts = packet.has_pts ? packet.pts : AV_NOPTS_VALUE;
+	m_packet.dts = packet.has_dts ? packet.dts : AV_NOPTS_VALUE;
+	m_packet.duration = packet.duration;
+
+	bool success = true;
+	switch (packet.kind)
+	{
+	case volumetric_video::StreamKind::Video:
+		success = decode_video_frame();
+		break;
+	case volumetric_video::StreamKind::Audio:
+		success = decode_audio_frame();
+		break;
+	case volumetric_video::StreamKind::Geometry:
+		success = queue_geometry_packet();
+		break;
+	default:
+		break;
+	}
+	av_packet_unref(&m_packet);
+	return success;
 }
 
 bool AVDecoderFFMPEG::queue_geometry_packet()
@@ -521,6 +631,8 @@ bool AVDecoderFFMPEG::queue_geometry_packet()
 	}
 
 	EncodedGeometryFrame frame;
+	frame.generation =
+		m_playback_generation.load(std::memory_order_acquire);
 	frame.presentation_time =
 		static_cast<double>(m_packet.pts) *
 		av_q2d(m_geometry_stream->time_base);
@@ -607,10 +719,18 @@ bool AVDecoderFFMPEG::decode_audio_frame()
 				frame->nb_samples);
 			if (output_samples > 0)
 			{
-				push_audio(
+				if (!push_audio(
 					converted.data(),
 					static_cast<size_t>(output_samples) *
-						static_cast<size_t>(m_audio_info.channels));
+						static_cast<size_t>(m_audio_info.channels)))
+				{
+					m_video_frames.set_error(
+						"Audio PCM ring has insufficient capacity.");
+					m_geometry_frames.set_error(
+						"Audio PCM ring has insufficient capacity.");
+					av_frame_free(&frame);
+					return false;
+				}
 			}
 			av_frame_free(&frame);
 		}
@@ -625,11 +745,11 @@ bool AVDecoderFFMPEG::decode_audio_frame()
 	return true;
 }
 
-void AVDecoderFFMPEG::push_audio(
+bool AVDecoderFFMPEG::push_audio(
 	const float* samples, size_t sample_count)
 {
 	if (samples == NULL || sample_count == 0 || m_audio_samples.empty())
-		return;
+		return true;
 
 	const uint64_t write =
 		m_audio_write_position.load(std::memory_order_relaxed);
@@ -637,11 +757,30 @@ void AVDecoderFFMPEG::push_audio(
 		m_audio_read_position.load(std::memory_order_acquire);
 	const uint64_t available =
 		static_cast<uint64_t>(m_audio_samples.size()) - (write - read);
-	const size_t count = static_cast<size_t>(
-		std::min<uint64_t>(sample_count, available));
-	for (size_t i = 0; i < count; ++i)
+	if (sample_count > available)
+		return false;
+	for (size_t i = 0; i < sample_count; ++i)
 		m_audio_samples[(write + i) % m_audio_samples.size()] = samples[i];
-	m_audio_write_position.store(write + count, std::memory_order_release);
+	m_audio_write_position.store(write + sample_count, std::memory_order_release);
+	return true;
+}
+
+bool AVDecoderFFMPEG::audio_can_accept_packet() const
+{
+	if (m_audio_codec_ctx == NULL || m_audio_samples.empty())
+		return true;
+	const uint64_t write =
+		m_audio_write_position.load(std::memory_order_acquire);
+	const uint64_t read =
+		m_audio_read_position.load(std::memory_order_acquire);
+	const uint64_t available =
+		static_cast<uint64_t>(m_audio_samples.size()) - (write - read);
+	// A one-second reserve comfortably exceeds a decoded AAC packet and keeps
+	// the demux thread from silently dropping PCM when the audio callback lags.
+	const uint64_t reserve =
+		static_cast<uint64_t>(m_audio_info.sample_rate) *
+		static_cast<uint64_t>(m_audio_info.channels);
+	return available >= reserve;
 }
 
 int AVDecoderFFMPEG::read_audio(float* output, int sample_count)
@@ -668,7 +807,7 @@ void AVDecoderFFMPEG::flush_audio()
 {
 	m_audio_read_position.store(0, std::memory_order_relaxed);
 	m_audio_write_position.store(0, std::memory_order_relaxed);
-	m_audio_samples.clear();
+	std::fill(m_audio_samples.begin(), m_audio_samples.end(), 0.0f);
 }
 
 
@@ -681,6 +820,11 @@ bool AVDecoderFFMPEG::decode_video_frame()
 
 	//Send packet to decoder
 	int ret = avcodec_send_packet(m_video_codec_ctx, &m_packet);
+	if (ret < 0 && ret != AVERROR(EAGAIN))
+	{
+		m_video_frames.set_error("FFmpeg rejected a video packet.");
+		return false;
+	}
 
 	// Get decoded frame
 	while (ret >= 0)
@@ -798,6 +942,46 @@ bool AVDecoderFFMPEG::seek(double time)
 		return false;
 	}
 
+	if (!m_thread_running.load(std::memory_order_acquire))
+		return perform_seek(time);
+
+	std::unique_lock<std::mutex> lock(m_seek_mutex);
+	const std::uint64_t request_id = ++m_seek_request_id;
+	m_requested_seek = time;
+	m_seek_condition.notify_all();
+	m_seek_condition.wait(lock, [&]()
+	{
+		return m_completed_seek_id >= request_id ||
+			!m_thread_running.load(std::memory_order_acquire);
+	});
+	return m_completed_seek_id >= request_id && m_seek_result;
+}
+
+bool AVDecoderFFMPEG::process_seek_request()
+{
+	std::optional<double> requested_time;
+	std::uint64_t request_id = 0;
+	{
+		std::lock_guard<std::mutex> lock(m_seek_mutex);
+		if (!m_requested_seek.has_value())
+			return true;
+		requested_time = m_requested_seek;
+		m_requested_seek.reset();
+		request_id = m_seek_request_id;
+	}
+
+	const bool result = perform_seek(*requested_time);
+	{
+		std::lock_guard<std::mutex> lock(m_seek_mutex);
+		m_seek_result = result;
+		m_completed_seek_id = request_id;
+	}
+	m_seek_condition.notify_all();
+	return result;
+}
+
+bool AVDecoderFFMPEG::perform_seek(double time)
+{
 	if (!m_container->seek(time))
 	{
 		LOG("AVDecoderFFMPEG::seek - %s", m_container->error().c_str());
@@ -809,9 +993,21 @@ bool AVDecoderFFMPEG::seek(double time)
 		avcodec_flush_buffers(m_audio_codec_ctx);
 	flush_buffers();
 	m_geometry_frames.clear();
+	m_pending_video_packets.clear();
+	m_pending_audio_packets.clear();
+	m_pending_geometry_packets.clear();
+	m_deferred_packet.reset();
+	flush_audio();
+	m_playback_generation.fetch_add(1, std::memory_order_acq_rel);
+	m_decoder_state = DECODING;
 
 	//
 	return true;
+}
+
+std::uint64_t AVDecoderFFMPEG::playback_generation() const
+{
+	return m_playback_generation.load(std::memory_order_acquire);
 }
 
 

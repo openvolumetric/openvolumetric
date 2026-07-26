@@ -13,7 +13,11 @@ extern "C"
 }
 
 #include <atomic>
+#include <condition_variable>
+#include <deque>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -82,6 +86,8 @@ public:
 		int frame_index,
 		EncodedGeometryFrame& output) override;
 
+	std::uint64_t playback_generation() const override;
+
 	std::string get_last_error() const override;
 
 	// --------------------------------------------------------------------------
@@ -128,9 +134,16 @@ protected:
 
 	bool queue_geometry_packet();
 
-	void push_audio(const float* samples, size_t sample_count);
+	bool push_audio(const float* samples, size_t sample_count);
 
 	void flush_audio();
+
+	bool route_packet(volumetric_video::ContainerPacket packet);
+	bool decode_packet(const volumetric_video::ContainerPacket& packet);
+	bool drain_pending_packets();
+	bool audio_can_accept_packet() const;
+	bool perform_seek(double time);
+	bool process_seek_request();
 
 
 	// --------------------------------------------------------------------------
@@ -203,6 +216,22 @@ private:
 	std::atomic<uint64_t>	m_audio_read_position;
 	std::atomic<uint64_t>	m_audio_write_position;
 	volumetric_video::BoundedQueue<EncodedGeometryFrame> m_geometry_frames;
+	std::deque<volumetric_video::ContainerPacket> m_pending_video_packets;
+	std::deque<volumetric_video::ContainerPacket> m_pending_audio_packets;
+	std::deque<volumetric_video::ContainerPacket> m_pending_geometry_packets;
+	std::optional<volumetric_video::ContainerPacket> m_deferred_packet;
+	std::atomic<std::uint64_t> m_playback_generation;
+
+	// Runtime seeks are submitted by an engine thread and executed only by the
+	// demux thread, which exclusively owns FFmpeg container/codec mutation.
+	mutable std::mutex m_seek_mutex;
+	std::condition_variable m_seek_condition;
+	std::optional<double> m_requested_seek;
+	std::uint64_t m_seek_request_id = 0;
+	std::uint64_t m_completed_seek_id = 0;
+	bool m_seek_result = false;
+	std::atomic<bool> m_thread_running{false};
+	std::atomic<bool> m_stop_requested{false};
 
 	// BoundedQueue protects video/geometry access and carries terminal state.
 	// Audio uses atomic monotonic read/write positions.

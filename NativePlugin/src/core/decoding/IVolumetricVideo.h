@@ -7,6 +7,7 @@
 #include <Mesh.h>
 
 #include <cstddef>
+#include <cstdint>
 
 
 /// Coordinates engine-neutral decoding with an engine-specific upload backend.
@@ -22,13 +23,13 @@ public:
 	//--------------------------------------------------------
 	// default constructor
 	//--------------------------------------------------------
-	IVolumetricVideo() : m_id(-1), m_frame_index(-1), m_avdecoder(NULL), m_texture(NULL), m_geometrydecoder(NULL), m_meshbuffer(NULL) {};
+	IVolumetricVideo() : m_id(-1), m_avdecoder(NULL), m_texture(NULL), m_geometrydecoder(NULL), m_meshbuffer(NULL), m_frame_index(-1), m_geometry_generation(0) {};
 
 
 	//--------------------------------------------------------
 	// constructor with instance id
 	//--------------------------------------------------------
-	IVolumetricVideo(int id) :m_id(id), m_frame_index(-1), m_avdecoder(NULL), m_texture(NULL), m_geometrydecoder(NULL), m_meshbuffer(NULL) {};
+	IVolumetricVideo(int id) :m_id(id), m_avdecoder(NULL), m_texture(NULL), m_geometrydecoder(NULL), m_meshbuffer(NULL), m_frame_index(-1), m_geometry_generation(0) {};
 	
 	
 	//--------------------------------------------------------
@@ -143,5 +144,8 @@ protected:
 	// Frame Index
 	//--------------------------------------------------------
 	int m_frame_index;
+
+	// Identifies which seek/loop pass currently owns queued Draco work.
+	std::uint64_t m_geometry_generation;
 
 };

@@ -90,5 +90,9 @@ int VolumetricVideoMetal::render()
 
 int VolumetricVideoMetal::seek(double time)
 {
-	return m_avdecoder->seek(time) ? 1 : -1;
+	if (!m_avdecoder->seek(time))
+		return -1;
+	m_geometrydecoder->reset(m_avdecoder->playback_generation());
+	m_geometry_generation = m_avdecoder->playback_generation();
+	return 1;
 }

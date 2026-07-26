@@ -516,7 +516,20 @@ public class VolumetricVideoDecoder
 
         //Check if there is a requirement to update the frame
         if (m_previous_frame != current_frame)
-        { 
+        {
+            // The managed playback clock owns loop detection. Reset every
+            // native stream before requesting frame zero so no texture,
+            // geometry, or audio from the previous pass can leak across.
+            if(current_frame < m_previous_frame)
+            {
+                m_loop = true;
+                if(volumetricvideo_seek(m_instance_id, 0.0) == -1)
+                {
+                    Debug.LogError("VolumetricVideoDecoder::update - failed to reset decoder at loop boundary");
+                    return;
+                }
+            }
+
             // Set frame index to display within native plugin
             volumetricvideo_set_frame(m_instance_id, current_frame);
 
@@ -526,12 +539,6 @@ public class VolumetricVideoDecoder
             // Recalculate Mesh Bounds
             m_mesh.RecalculateBounds();
             
-            // flag to detect that the content has looped
-            if(current_frame < m_previous_frame)
-            {
-                m_loop = true;
-            }
-
             // keep track of previous frame
             m_previous_frame = current_frame;
         }    
