@@ -49,7 +49,7 @@ NativePlugin/*.lastbuildstate
 # Locally built macOS native plugin artifacts. Keep their Unity .meta files
 # tracked so importer settings remain stable after rebuilding.
 *.dylib
-
+*.dylib.meta
 # -----------------------------------------------------------------------------
 # Unity-generated directories
 # -----------------------------------------------------------------------------
