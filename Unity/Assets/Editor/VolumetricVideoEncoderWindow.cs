@@ -110,7 +110,11 @@ public sealed class VolumetricVideoEncoderWindow : EditorWindow
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Encoding Settings", EditorStyles.boldLabel);
-            frameRate = EditorGUILayout.FloatField("Frame Rate", frameRate);
+            frameRate = EditorGUILayout.FloatField(
+                new GUIContent(
+                    "Source Frame Rate",
+                    "Controls image-sequence encoding. Geometry timing is read back from the encoded video samples."),
+                frameRate);
             crf = EditorGUILayout.IntSlider(
                 new GUIContent("HEVC Quality (CRF)", "Lower values produce higher quality and larger files."),
                 crf,
@@ -276,6 +280,8 @@ public sealed class VolumetricVideoEncoderWindow : EditorWindow
             progress = 0.48f;
             List<string> ffmpegArguments = BuildFFmpegArguments(inputs, mediaPath);
             RunProcess(ffmpegPath, ffmpegArguments, token);
+            AppendLog(
+                "Texture video encoded; geometry timing will be derived from its sample timestamps.");
 
             token.ThrowIfCancellationRequested();
             status = "Packaging and verifying MP4";

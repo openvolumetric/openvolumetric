@@ -109,6 +109,10 @@ protected:
 	/// A look-ahead window keeps geometry ready for upcoming render frames.
 	bool submit_embedded_geometry(double presentation_time);
 
+	/// Blocks a running pipeline briefly after seek until texture and geometry
+	/// for the target timestamp are both decoded.
+	bool prepare_presentation(double presentation_time);
+
 
 	//--------------------------------------------------------
 	// instance id 

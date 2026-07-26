@@ -46,6 +46,12 @@ struct GeometryInput
 	fs::path path;
 };
 
+struct VideoSampleTiming
+{
+	std::int64_t pts;
+	std::int64_t duration;
+};
+
 std::string ffmpeg_error(int error)
 {
 	std::array<char, AV_ERROR_MAX_STRING_SIZE> buffer{};
@@ -146,11 +152,79 @@ bool discover_geometry(
 	return true;
 }
 
+bool collect_video_timing(
+	AVFormatContext* input,
+	int video_stream_index,
+	std::vector<VideoSampleTiming>& timing)
+{
+	AVPacket* packet = av_packet_alloc();
+	if (packet == nullptr)
+		return false;
+
+	int result = 0;
+	while ((result = av_read_frame(input, packet)) >= 0)
+	{
+		if (packet->stream_index == video_stream_index)
+		{
+			const std::int64_t pts =
+				packet->pts == AV_NOPTS_VALUE ? packet->dts : packet->pts;
+			if (pts == AV_NOPTS_VALUE)
+			{
+				std::cerr << "Video packet has no usable timestamp\n";
+				av_packet_free(&packet);
+				return false;
+			}
+			timing.push_back({pts, packet->duration});
+		}
+		av_packet_unref(packet);
+	}
+	av_packet_free(&packet);
+	if (result != AVERROR_EOF || timing.empty())
+	{
+		std::cerr << "Could not collect source video sample timestamps\n";
+		return false;
+	}
+
+	std::sort(timing.begin(), timing.end(), [](const auto& left, const auto& right)
+	{
+		return left.pts < right.pts;
+	});
+	for (std::size_t index = 1; index < timing.size(); ++index)
+	{
+		if (timing[index].pts <= timing[index - 1].pts)
+		{
+			std::cerr << "Video presentation timestamps are not unique and monotonic\n";
+			return false;
+		}
+		if (timing[index - 1].duration <= 0)
+			timing[index - 1].duration =
+				timing[index].pts - timing[index - 1].pts;
+	}
+	if (timing.back().duration <= 0)
+	{
+		timing.back().duration = timing.size() > 1
+			? timing[timing.size() - 2].duration
+			: 1;
+	}
+
+	result = avformat_seek_file(
+		input, -1, std::numeric_limits<std::int64_t>::min(), 0,
+		std::numeric_limits<std::int64_t>::max(), 0);
+	if (result < 0)
+	{
+		std::cerr << "Could not rewind source media after timing probe: "
+			<< ffmpeg_error(result) << '\n';
+		return false;
+	}
+	avformat_flush(input);
+	return true;
+}
+
 bool write_geometry_sample(
 	AVFormatContext* output,
 	AVStream* stream,
 	AVRational source_time_base,
-	std::size_t presentation_index,
+	const VideoSampleTiming& timing,
 	const GeometryInput& input)
 {
 	volumetric_video::GeometryPacket geometry_packet;
@@ -181,9 +255,9 @@ bool write_geometry_sample(
 	{
 		std::copy(bytes.begin(), bytes.end(), packet->data);
 		packet->stream_index = stream->index;
-		packet->pts = static_cast<std::int64_t>(presentation_index);
-		packet->dts = static_cast<std::int64_t>(presentation_index);
-		packet->duration = 1;
+		packet->pts = timing.pts;
+		packet->dts = timing.pts;
+		packet->duration = timing.duration;
 		packet->flags = AV_PKT_FLAG_KEY;
 		av_packet_rescale_ts(packet, source_time_base, stream->time_base);
 		result = av_interleaved_write_frame(output, packet);
@@ -236,25 +310,21 @@ bool mux_file(
 			std::cerr << "Input media has no video stream\n";
 			goto cleanup;
 		}
-		const std::int64_t video_frame_count =
-			input->streams[video_index]->nb_frames;
-		if (video_frame_count > 0 &&
-			static_cast<std::uint64_t>(video_frame_count) != geometry.size())
+		std::vector<VideoSampleTiming> video_timing;
+		if (!collect_video_timing(input, video_index, video_timing))
+			goto cleanup;
+		if (video_timing.size() != geometry.size())
 		{
 			std::cerr << "Geometry/video frame count mismatch: "
 				<< geometry.size() << " geometry frames and "
-				<< video_frame_count << " video frames\n";
+				<< video_timing.size() << " timestamped video samples\n";
 			goto cleanup;
 		}
+		std::cout << "Using " << video_timing.size()
+			<< " source video sample timestamps for geometry timing\n";
 
-		AVRational frame_rate = av_guess_frame_rate(
-			input, input->streams[video_index], nullptr);
-		if (frame_rate.num <= 0 || frame_rate.den <= 0)
-		{
-			std::cerr << "Input video has no usable frame rate\n";
-			goto cleanup;
-		}
-		const AVRational geometry_time_base = av_inv_q(frame_rate);
+		const AVRational geometry_time_base =
+			input->streams[video_index]->time_base;
 
 		result = avformat_alloc_output_context2(
 			&output, nullptr, "mp4", temporary_path.string().c_str());
@@ -351,7 +421,7 @@ bool mux_file(
 			while (next_geometry < geometry.size() &&
 				media_timestamp != AV_NOPTS_VALUE &&
 				av_compare_ts(
-					static_cast<std::int64_t>(next_geometry),
+					video_timing[next_geometry].pts,
 					geometry_time_base,
 					media_timestamp,
 					input_stream->time_base) <= 0)
@@ -360,7 +430,7 @@ bool mux_file(
 					output,
 					geometry_stream,
 					geometry_time_base,
-					next_geometry,
+					video_timing[next_geometry],
 					geometry[next_geometry]))
 				{
 					goto cleanup;
@@ -397,7 +467,7 @@ bool mux_file(
 				output,
 				geometry_stream,
 				geometry_time_base,
-				next_geometry,
+				video_timing[next_geometry],
 				geometry[next_geometry]))
 			{
 				goto cleanup;
@@ -600,14 +670,19 @@ bool verify_file(
 			std::cerr << "Reopened MP4 has no video stream\n";
 			goto cleanup;
 		}
-		AVRational frame_rate = av_guess_frame_rate(
-			input, input->streams[video_stream_index], nullptr);
-		if (frame_rate.num <= 0 || frame_rate.den <= 0)
+		std::vector<VideoSampleTiming> video_timing;
+		if (!collect_video_timing(
+				input, video_stream_index, video_timing))
 		{
-			std::cerr << "Could not recover the video frame rate\n";
 			goto cleanup;
 		}
-		const AVRational geometry_time_base = av_inv_q(frame_rate);
+		if (video_timing.size() != geometry.size())
+		{
+			std::cerr << "Verified video/geometry sample count mismatch\n";
+			goto cleanup;
+		}
+		const AVRational video_time_base =
+			input->streams[video_stream_index]->time_base;
 
 		packet = av_packet_alloc();
 		if (packet == nullptr)
@@ -659,12 +734,12 @@ bool verify_file(
 					goto cleanup;
 				}
 				const std::int64_t expected_pts = av_rescale_q(
-					static_cast<std::int64_t>(geometry_index),
-					geometry_time_base,
+					video_timing[geometry_index].pts,
+					video_time_base,
 					input->streams[geometry_stream_index]->time_base);
 				const std::int64_t expected_duration = av_rescale_q(
-					1,
-					geometry_time_base,
+					video_timing[geometry_index].duration,
+					video_time_base,
 					input->streams[geometry_stream_index]->time_base);
 				if (packet->pts != expected_pts ||
 					packet->duration != expected_duration)
@@ -688,8 +763,8 @@ bool verify_file(
 
 		const GeometryInput& seek_input = geometry[geometry.size() / 2];
 		const std::int64_t seek_timestamp = av_rescale_q(
-			static_cast<std::int64_t>(geometry.size() / 2),
-			geometry_time_base,
+			video_timing[geometry.size() / 2].pts,
+			video_time_base,
 			input->streams[geometry_stream_index]->time_base);
 		result = av_seek_frame(
 			input,

@@ -223,6 +223,7 @@ private:
 	std::vector<float>		m_audio_samples;
 	std::atomic<uint64_t>	m_audio_read_position;
 	std::atomic<uint64_t>	m_audio_write_position;
+	double					m_audio_discard_before = -1.0;
 	volumetric_video::BoundedQueue<EncodedGeometryFrame> m_geometry_frames;
 	std::deque<volumetric_video::ContainerPacket> m_pending_video_packets;
 	std::deque<volumetric_video::ContainerPacket> m_pending_audio_packets;

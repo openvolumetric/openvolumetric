@@ -207,6 +207,12 @@ int VolumetricVideoD3D11::seek(double time)
 	this->m_geometrydecoder->reset(
 		this->m_avdecoder->playback_generation());
 	m_geometry_generation = this->m_avdecoder->playback_generation();
+	if (this->m_geometrydecoder->get_decoder_state() ==
+			IDecoder::DECODING &&
+		!prepare_presentation(time))
+	{
+		return -1;
+	}
 
 	//
 	return 1;

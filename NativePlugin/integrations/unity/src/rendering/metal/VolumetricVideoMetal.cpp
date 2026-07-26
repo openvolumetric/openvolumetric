@@ -115,5 +115,10 @@ int VolumetricVideoMetal::seek(double time)
 		return -1;
 	m_geometrydecoder->reset(m_avdecoder->playback_generation());
 	m_geometry_generation = m_avdecoder->playback_generation();
+	if (m_geometrydecoder->get_decoder_state() == IDecoder::DECODING &&
+		!prepare_presentation(time))
+	{
+		return -1;
+	}
 	return 1;
 }

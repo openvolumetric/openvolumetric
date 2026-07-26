@@ -33,7 +33,8 @@ One click performs the following stages:
 1. Validate the source sequences before creating output.
 2. Encode every OBJ as a temporary Draco `.drc` frame.
 3. Encode the image sequence as HEVC and add optional AAC audio.
-4. Add the timed `vvge` geometry track through the native authoring library.
+4. Probe the encoded video samples and add each `vvge` geometry sample using
+   its matching video's actual presentation timestamp and duration.
 5. Reopen the MP4 and verify every geometry payload, timestamp, and a seek.
 6. Replace the selected output only after verification succeeds.
 7. Remove temporary media and Draco files.
@@ -56,3 +57,7 @@ executable can be selected without installing it system-wide.
 MP4 packaging is called directly through the Editor-only
 `VolumetricVideoAuthoring` native library. It is built and staged alongside
 the runtime plugin by the normal CMake build.
+
+The Frame Rate field controls how the source image sequence is encoded. It is
+not separately reused to synthesize geometry timestamps; packaging reads the
+timestamps back from the resulting video track.

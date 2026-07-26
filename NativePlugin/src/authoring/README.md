@@ -13,6 +13,19 @@ and verification entry points.
 The Unity Editor calls `pack_volumetric_video()` through the authoring C API,
 so MP4 construction and verification have one implementation.
 
+## Geometry timing
+
+The packer probes every encoded video sample and assigns the matching geometry
+sample that video's actual presentation timestamp and duration. It does not
+synthesize geometry timing from an assumed constant frame rate. This preserves
+non-zero start times and variable frame timing, and also provides reliable
+video/geometry frame-count validation when the container does not populate
+`nb_frames`.
+
+Output verification independently reads the packaged video and geometry
+tracks, compares every PTS and duration after time-base conversion, verifies
+payload identity, and performs a middle-sample seek.
+
 ## Current boundary
 
 The library accepts an already encoded video/audio MP4 and a directory of

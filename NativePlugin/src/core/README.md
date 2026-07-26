@@ -73,6 +73,9 @@ resources during Unity's render callback.
 - Runtime seek requests from an engine thread are queued synchronously and
   executed between packet reads by the demux thread. The container and FFmpeg
   codec contexts therefore never seek or flush concurrently with decoding.
+- After a running seek, the engine call waits for packet production to decode
+  forward until a timestamp-matched video and Draco mesh are both ready.
+  Audio frames before the target timestamp are discarded during preroll.
 - Each stream has independent bounded packet staging. Pending audio is drained
   first, so video or geometry backpressure does not immediately stall audio.
   Demuxing pauses only when a stream's staging limit is also exhausted.

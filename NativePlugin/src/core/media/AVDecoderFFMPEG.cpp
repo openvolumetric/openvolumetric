@@ -735,10 +735,50 @@ bool AVDecoderFFMPEG::decode_audio_frame()
 				frame->nb_samples);
 			if (output_samples > 0)
 			{
+				std::size_t sample_offset = 0;
+				if (m_audio_discard_before >= 0.0 &&
+					frame->best_effort_timestamp != AV_NOPTS_VALUE)
+				{
+					const double frame_time =
+						static_cast<double>(frame->best_effort_timestamp) *
+						av_q2d(m_audio_stream->time_base);
+					const double frame_end =
+						frame_time +
+						static_cast<double>(output_samples) /
+							static_cast<double>(m_audio_info.sample_rate);
+					if (frame_end <= m_audio_discard_before)
+					{
+						sample_offset =
+							static_cast<std::size_t>(output_samples) *
+							static_cast<std::size_t>(m_audio_info.channels);
+					}
+					else
+					{
+						if (frame_time < m_audio_discard_before)
+						{
+							const double seconds_to_skip =
+								m_audio_discard_before - frame_time;
+							const std::size_t frames_to_skip =
+								static_cast<std::size_t>(std::ceil(
+									seconds_to_skip *
+									m_audio_info.sample_rate));
+							sample_offset = std::min(
+								frames_to_skip *
+									static_cast<std::size_t>(
+										m_audio_info.channels),
+								static_cast<std::size_t>(output_samples) *
+									static_cast<std::size_t>(
+										m_audio_info.channels));
+						}
+						m_audio_discard_before = -1.0;
+					}
+				}
+				const std::size_t converted_count =
+					static_cast<std::size_t>(output_samples) *
+					static_cast<std::size_t>(m_audio_info.channels);
 				if (!push_audio(
-					converted.data(),
-					static_cast<size_t>(output_samples) *
-						static_cast<size_t>(m_audio_info.channels)))
+					converted.data() + sample_offset,
+					converted_count - sample_offset))
 				{
 					m_video_frames.set_error(
 						"Audio PCM ring has insufficient capacity.");
@@ -1025,6 +1065,7 @@ bool AVDecoderFFMPEG::perform_seek(double time)
 	m_pending_geometry_packets.clear();
 	m_deferred_packet.reset();
 	flush_audio();
+	m_audio_discard_before = time;
 	m_playback_generation.fetch_add(1, std::memory_order_acq_rel);
 	m_last_video_packet_time = -1.0;
 	m_last_geometry_packet_time = -1.0;
@@ -1063,18 +1104,23 @@ volumetric_video::FrameMatchResult AVDecoderFFMPEG::get_video_data(
 
 	AVFrame* frame = m_video_frames.access([&](auto& frames) -> AVFrame*
 	{
+		std::size_t dropped = 0;
 		while (!frames.empty())
 		{
 			if (frames.front().frame_time >= presentation_time - tolerance)
-				return frames.front().data;
-			LOG(
-				"SYNC dropped video sample pts=%f target=%f",
-				frames.front().frame_time,
-				presentation_time);
+				break;
 			av_frame_free(&frames.front().data);
 			frames.pop_front();
+			++dropped;
 		}
-		return nullptr;
+		if (dropped > 0)
+		{
+			LOG(
+				"SYNC dropped %zu video sample(s) before target=%f",
+				dropped,
+				presentation_time);
+		}
+		return frames.empty() ? nullptr : frames.front().data;
 	});
 	update_buffer_state();
 

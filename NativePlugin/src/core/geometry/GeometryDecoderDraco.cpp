@@ -231,19 +231,24 @@ volumetric_video::FrameMatchResult GeometryDecoderDraco::get_mesh_data(
 {
 	return m_decoded_meshes.access([&](auto& meshes)
 	{
+		std::size_t dropped = 0;
 		while (!meshes.empty())
 		{
 			if (meshes.front().presentation_time <
 				presentation_time - tolerance)
 			{
-				LOG(
-					"SYNC dropped geometry sample pts=%f target=%f",
-					meshes.front().presentation_time,
-					presentation_time);
 				meshes.pop_front();
+				++dropped;
 				continue;
 			}
 			break;
+		}
+		if (dropped > 0)
+		{
+			LOG(
+				"SYNC dropped %zu geometry sample(s) before target=%f",
+				dropped,
+				presentation_time);
 		}
 		if (meshes.empty())
 		{
