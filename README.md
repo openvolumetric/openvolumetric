@@ -120,6 +120,28 @@ Unity plugin directory. On macOS it builds the Metal implementation and stages
 `Unity/Assets/Plugins/VolumetricVideo/macOS`. Linux builds the portable decoder
 core only.
 
+For Meta Quest, configure and build the Android ARM64 preset using Unity's
+installed Android NDK:
+
+```sh
+export ANDROID_NDK_ROOT=/path/to/Unity/PlaybackEngines/AndroidPlayer/NDK
+export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
+cd NativePlugin
+cmake --preset vcpkg-android-arm64
+cmake --build --preset vcpkg-android-arm64
+```
+
+The Android build stages the Vulkan plugin in
+`Unity/Assets/Plugins/Android/arm64-v8a`. Quest builds optionally create a
+camera-attached developer overlay when `Enable Developer Overlay` is selected
+on the `VolumetricVideo` component:
+
+- A / right primary: play or pause
+- B / right secondary: toggle looping
+- X / left primary: seek backward 10 seconds
+- Y / left secondary: seek forward 10 seconds
+- Left menu: show or hide the overlay
+
 The normal macOS preset builds for the host architecture. This repository
 currently targets Unity 2019.4, whose macOS editor requires an Intel plugin.
 On an Apple Silicon Mac, build that version explicitly with:

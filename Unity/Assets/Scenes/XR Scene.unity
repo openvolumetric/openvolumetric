@@ -557,6 +557,7 @@ MonoBehaviour:
   redProjectionCorrection: 0
   enableLoop: 0
   enableScriptedStart: 0
+  enableDeveloperOverlay: 1
   debug: 0
 --- !u!4 &1772797575
 Transform:

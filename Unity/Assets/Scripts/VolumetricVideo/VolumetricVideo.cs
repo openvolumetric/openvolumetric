@@ -39,6 +39,8 @@ public class VolumetricVideo : MonoBehaviour
     public bool enableLoop = false;
     [Tooltip("Enables playback to be started via a script ")]
     public bool enableScriptedStart;
+    [Tooltip("Show the controller-operated developer overlay in headset builds")]
+    public bool enableDeveloperOverlay = true;
 
     // Debug options
     [Header("Debug Settings")]
@@ -55,21 +57,46 @@ public class VolumetricVideo : MonoBehaviour
 
     // Start time
     private double m_start_time;
+    private double m_audio_start_time;
     private bool m_has_scheduled_start;
 
     // Enum for the Playback state
-    enum PlaybackState
+    public enum PlaybackState
     {
         INIT_FAIL = -1,
         UNINITIALISED,
         INITIALISED,
         SCHEDULED,
+        PAUSED,
         STOPPED,
         PLAYING,
     };
 
     // Playback State
     private PlaybackState m_playback_state = PlaybackState.UNINITIALISED;
+    private double m_playback_position;
+
+    public PlaybackState State { get { return m_playback_state; } }
+    public bool IsPlaying { get { return m_playback_state == PlaybackState.PLAYING; } }
+    public double Duration { get { return m_decoder != null ? m_decoder.Duration : 0.0; } }
+    public double CurrentTime
+    {
+        get
+        {
+            if (m_playback_state == PlaybackState.PLAYING ||
+                m_playback_state == PlaybackState.SCHEDULED)
+            {
+                double time = System.Math.Max(
+                    0.0, AudioSettings.dspTime - m_start_time);
+                if(enableLoop && Duration > 0.0)
+                {
+                    time %= Duration;
+                }
+                return time;
+            }
+            return m_playback_position;
+        }
+    }
     
 
     //----------------------------------------------------------
@@ -130,6 +157,13 @@ public class VolumetricVideo : MonoBehaviour
             m_audio_source.clip = m_decoder.AudioClip;
         }
 
+#if UNITY_ANDROID && !UNITY_EDITOR
+        if(enableDeveloperOverlay)
+        {
+            VolumetricVideoDeveloperOverlay.Attach(this);
+        }
+#endif
+
         //
         m_decoder.set_colour_correction_values(luminaceCorrection, blueProjectionCorrection, redProjectionCorrection);
 
@@ -171,6 +205,7 @@ public class VolumetricVideo : MonoBehaviour
         {
             // Workout the frame number         
             double time = AudioSettings.dspTime - m_start_time;
+            m_playback_position = time;
 
             // Set counter in decoder
             m_decoder.update(time);
@@ -179,7 +214,12 @@ public class VolumetricVideo : MonoBehaviour
             if(!enableLoop && m_decoder.ContentLooped)
             {
                 m_playback_state = PlaybackState.STOPPED;
+                m_playback_position = m_decoder.Duration;
                 m_decoder.MeshRenderer.enabled = false;
+                if(m_audio_source != null)
+                {
+                    m_audio_source.Stop();
+                }
             }
          }
 
@@ -226,7 +266,9 @@ public class VolumetricVideo : MonoBehaviour
     //----------------------------------------------------------
     public void set_scheduled_start(double dspTime)
     {
+        m_playback_position = 0.0;
         m_start_time        = dspTime;
+        m_audio_start_time  = dspTime;
         m_has_scheduled_start = true;
         m_playback_state    = PlaybackState.SCHEDULED;
         schedule_audio();
@@ -236,7 +278,115 @@ public class VolumetricVideo : MonoBehaviour
     {
         if(m_audio_source != null && m_audio_source.clip != null)
         {
-            m_audio_source.PlayScheduled(m_start_time);
+            m_audio_source.time = (float)m_playback_position;
+            m_audio_source.PlayScheduled(m_audio_start_time);
+        }
+    }
+
+    public void TogglePlayPause()
+    {
+        if(m_playback_state == PlaybackState.PLAYING ||
+            m_playback_state == PlaybackState.SCHEDULED)
+        {
+            PausePlayback();
+        }
+        else
+        {
+            Play();
+        }
+    }
+
+    public void Play()
+    {
+        if(m_decoder == null ||
+            m_playback_state == PlaybackState.INIT_FAIL ||
+            m_playback_state == PlaybackState.UNINITIALISED)
+        {
+            return;
+        }
+
+        if(m_playback_position >= Duration)
+        {
+            Seek(0.0);
+        }
+
+        m_decoder.MeshRenderer.enabled = true;
+        m_audio_start_time = AudioSettings.dspTime + 0.05;
+        m_start_time = m_audio_start_time - m_playback_position;
+        m_playback_state = PlaybackState.SCHEDULED;
+        if(m_audio_source != null)
+        {
+            m_audio_source.Stop();
+        }
+        schedule_audio();
+    }
+
+    public void PausePlayback()
+    {
+        if(m_playback_state != PlaybackState.PLAYING &&
+            m_playback_state != PlaybackState.SCHEDULED)
+        {
+            return;
+        }
+
+        m_playback_position = System.Math.Min(CurrentTime, Duration);
+        m_playback_state = PlaybackState.PAUSED;
+        if(m_audio_source != null)
+        {
+            m_audio_source.Stop();
+        }
+    }
+
+    public bool Seek(double time)
+    {
+        if(m_decoder == null || Duration <= 0.0)
+        {
+            return false;
+        }
+
+        double target = System.Math.Max(0.0, System.Math.Min(time, Duration));
+        bool resume = m_playback_state == PlaybackState.PLAYING ||
+            m_playback_state == PlaybackState.SCHEDULED;
+        if(!m_decoder.seek(target))
+        {
+            return false;
+        }
+
+        m_playback_position = target;
+        m_decoder.MeshRenderer.enabled = true;
+        if(m_audio_source != null)
+        {
+            m_audio_source.Stop();
+            m_audio_source.time = (float)target;
+        }
+
+        if(resume)
+        {
+            Play();
+        }
+        else
+        {
+            m_playback_state = PlaybackState.PAUSED;
+            m_decoder.update(target);
+        }
+        return true;
+    }
+
+    public void SeekRelative(double seconds)
+    {
+        Seek(CurrentTime + seconds);
+    }
+
+    public void ToggleLoop()
+    {
+        enableLoop = !enableLoop;
+        if(m_audio_source != null)
+        {
+            m_audio_source.loop = enableLoop;
+        }
+        if(enableLoop && m_decoder != null)
+        {
+            m_decoder.reset_loop_flag();
         }
     }
 

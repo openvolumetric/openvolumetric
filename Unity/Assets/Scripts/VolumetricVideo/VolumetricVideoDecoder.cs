@@ -150,6 +150,16 @@ public class VolumetricVideoDecoder : IDisposable
         get { return m_loop; }
     }
 
+    public double Duration
+    {
+        get { return video_duration; }
+    }
+
+    public double FrameRate
+    {
+        get { return video_fps; }
+    }
+
     //---------------------------------------------
     // Constructor
     //---------------------------------------------
@@ -544,6 +554,33 @@ public class VolumetricVideoDecoder : IDisposable
 
         //
         return true;
+    }
+
+    public bool seek(double time)
+    {
+        if (m_decoder_state != DecoderState.STARTED ||
+            video_duration <= 0.0)
+        {
+            return false;
+        }
+
+        double target = Math.Max(0.0, Math.Min(time, video_duration));
+        if (volumetricvideo_seek(m_instance_id, target) == -1)
+        {
+            Debug.LogError(String.Format(
+                "VolumetricVideoDecoder::seek - Failed to seek to {0:F3}",
+                target));
+            return false;
+        }
+
+        m_previous_frame = -1;
+        m_loop = false;
+        return true;
+    }
+
+    public void reset_loop_flag()
+    {
+        m_loop = false;
     }
 
 
