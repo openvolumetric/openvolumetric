@@ -422,7 +422,7 @@ MonoBehaviour:
   meshFilepattern: /Users/mv0011/Workspace/volumetric-video-unity/Unity/Assets/StreamingAssets/encoded/%06d.drc
   meshStartIndex: 110
   meshStopIndex: 3736
-  videoFilename: /Users/mv0011/Workspace/volumetric-video-unity/Unity/Assets/StreamingAssets/video_crf25_1024_6s_hevc.mp4
+  videoFilename: /Users/mv0011/Workspace/volumetric-video-unity/Unity/Assets/StreamingAssets/video_crf25_1024_6s_hevc_with_audio.mp4
   luminaceCorrection: 0
   blueProjectionCorrection: 0
   redProjectionCorrection: 0

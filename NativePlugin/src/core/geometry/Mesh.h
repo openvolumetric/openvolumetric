@@ -95,4 +95,3 @@ public:
 	std::vector<int> indexes;
 
 };
-

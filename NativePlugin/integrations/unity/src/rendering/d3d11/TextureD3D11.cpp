@@ -224,4 +224,3 @@ void TextureD3D11::upload(unsigned char* ych, unsigned char* uch, unsigned char*
 	}
 	ctx->Release();
 }
-

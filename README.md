@@ -41,6 +41,29 @@ streams. Media without audio continues to play normally.
 The native build uses CMake and vcpkg manifest mode. FFmpeg and Draco are
 downloaded and built by vcpkg.
 
+The native source is divided into an engine-independent core and engine
+integrations:
+
+```text
+NativePlugin/
+├── src/core/
+│   ├── decoding/
+│   ├── geometry/
+│   ├── media/
+│   └── support/
+└── integrations/
+    └── unity/
+        ├── include/Unity/
+        └── src/
+            ├── api/
+            └── rendering/
+```
+
+`VolumetricVideoCore` contains the portable decoding and data model. The
+`VolumetricVideoNativePlugin` target is the Unity integration and links the
+core to Unity's D3D11 or Metal rendering API. Future engine integrations, such
+as Unreal, can live beside `integrations/unity` and link the same core target.
+
 #### VS Code development container
 
 The preferred Linux development environment captures CMake, Ninja, Clang,

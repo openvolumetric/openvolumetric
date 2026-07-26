@@ -16,4 +16,3 @@ struct StreamInfo
 	double total_time;
 	BufferState buffer_state;
 };
-

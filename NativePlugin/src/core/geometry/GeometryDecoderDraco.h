@@ -142,4 +142,3 @@ private:
 	std::mutex m_geometry_mutex;
 
 };
-

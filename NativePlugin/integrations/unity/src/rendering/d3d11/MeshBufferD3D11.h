@@ -75,4 +75,3 @@ private:
 	int m_vertex_stride;
 
 };
-
