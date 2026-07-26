@@ -75,7 +75,7 @@ public class VolumetricVideo : MonoBehaviour
     //----------------------------------------------------------
     // Start is called before the first frame update
     //----------------------------------------------------------
-    void Start()
+    IEnumerator Start()
     {
         // Add components required to draw mesh
         MeshFilter mesh_filter = gameObject.AddComponent<MeshFilter>();
@@ -85,19 +85,29 @@ public class VolumetricVideo : MonoBehaviour
         m_decoder = new VolumetricVideoDecoder(debug);
              
         // The MP4 contains texture, geometry, and optional audio.
-        string filepath = Path.Combine(Application.streamingAssetsPath, videoFilename);
+        string filepath = null;
+        yield return StreamingAssetFile.PrepareReadablePath(
+            videoFilename,
+            path => filepath = path);
+        if(string.IsNullOrEmpty(filepath))
+        {
+            Debug.LogError(
+                "VolumetricVideo::Start - Failed to prepare volumetric video input");
+            m_playback_state = PlaybackState.INIT_FAIL;
+            yield break;
+        }
         if(!m_decoder.init_texture(ref mesh_renderer, filepath))
         {
             Debug.LogError("VolumetricVideo::Start - Failed to init VolumetricVideoDecoder");
             m_playback_state = PlaybackState.INIT_FAIL;
-            return;
+            yield break;
         }
 
         if(!m_decoder.init_mesh())
         {
             Debug.LogError("VolumetricVideo::Start - Failed to init geometry");
             m_playback_state = PlaybackState.INIT_FAIL;
-            return;
+            yield break;
         }
 
         // Assign the native-backed mesh to the mesh filter.
@@ -180,14 +190,7 @@ public class VolumetricVideo : MonoBehaviour
     //----------------------------------------------------------
     void OnApplicationQuit() 
     {
-        if(m_audio_source != null)
-        {
-            m_audio_source.Stop();
-        }
-		if(m_decoder.stop_decoding())
-        {
-            m_playback_state = PlaybackState.STOPPED;
-        }
+        shutdown();
 	}
 
     //----------------------------------------------------------
@@ -195,14 +198,26 @@ public class VolumetricVideo : MonoBehaviour
     //----------------------------------------------------------
     void OnDestroy() 
     {
+        shutdown();
+    }
+
+    private void shutdown()
+    {
         if(m_audio_source != null)
         {
             m_audio_source.Stop();
         }
-        if (m_decoder.stop_decoding())
+        if(m_decoder != null)
         {
-            m_playback_state = PlaybackState.STOPPED;
+            if(m_decoder.DecoderStatus ==
+                VolumetricVideoDecoder.DecoderState.STARTED)
+            {
+                m_decoder.stop_decoding();
+            }
+            m_decoder.Dispose();
+            m_decoder = null;
         }
+        m_playback_state = PlaybackState.STOPPED;
     }
 
     //----------------------------------------------------------

@@ -16,7 +16,7 @@ using System;
 /// during GL.IssuePluginEvent. Audio is pulled through the streaming AudioClip
 /// callback.
 /// </summary>
-public class VolumetricVideoDecoder
+public class VolumetricVideoDecoder : IDisposable
 {
     //---------------------------------------------
     // DLL Interface
@@ -69,6 +69,10 @@ public class VolumetricVideoDecoder
     [DllImport(DLLNAME, EntryPoint = "volumetricvideo_get_texture_pointers")]
     private static extern int volumetricvideo_get_texture_pointers(int ID, ref IntPtr Y, ref IntPtr U, ref IntPtr V);
 
+    [DllImport(DLLNAME, EntryPoint = "volumetricvideo_register_texture_pointers")]
+    private static extern int volumetricvideo_register_texture_pointers(
+        int ID, IntPtr Y, IntPtr U, IntPtr V);
+
     [DllImport(DLLNAME, EntryPoint = "volumetricvideo_set_mesh_pointer")]
     private static extern int volumetricvideo_set_mesh_pointer(int ID, IntPtr index_buffer_handle, int index_size, IntPtr vertex_buffer_handle, int vertex_size);
 
@@ -119,6 +123,7 @@ public class VolumetricVideoDecoder
 
     // Flag for debug mode
     private bool m_debug;
+    private bool m_disposed;
 
     // Enum for decodered state
     public enum DecoderState
@@ -173,11 +178,18 @@ public class VolumetricVideoDecoder
         m_decoder_state = DecoderState.INITIALIZED;
     }
 
-    //---------------------------------------------
-    // Destructor
-    //---------------------------------------------
-    ~VolumetricVideoDecoder()
+    /// <summary>
+    /// Releases native decoder and graphics resources while Unity's graphics
+    /// device is still alive. This must be called from the main thread.
+    /// </summary>
+    public void Dispose()
     {
+        if (m_disposed)
+        {
+            return;
+        }
+        m_disposed = true;
+
         // Release Textures
         m_YTexture = null;
         m_UTexture = null;
@@ -187,13 +199,23 @@ public class VolumetricVideoDecoder
         // Close logging terminal
         if(m_debug)
         {
-            Debug.Log(String.Format("VolumetricVideoDecoder::~VolumetricVideoDecoder - Closing External Console - id: {0}", m_instance_id));
+            Debug.Log(String.Format(
+                "VolumetricVideoDecoder::Dispose - Closing External Console - id: {0}",
+                m_instance_id));
             volumetricvideo_close_external_console();
         }
 
         // quit decoder plugin
-        Debug.Log(String.Format("VolumetricVideoDecoder::~VolumetricVideoDecoder - Destructor - id: {0}", m_instance_id));
-        volumetricvideo_quit(m_instance_id);
+        if (m_instance_id >= 0)
+        {
+            Debug.Log(String.Format(
+                "VolumetricVideoDecoder::Dispose - id: {0}",
+                m_instance_id));
+            volumetricvideo_quit(m_instance_id);
+            m_instance_id = -1;
+        }
+
+        GC.SuppressFinalize(this);
     }
 
 
@@ -432,9 +454,29 @@ public class VolumetricVideoDecoder
         }
 
         // Create Unity Textures - Y is full size - U & V are half size
-        m_YTexture = Texture2D.CreateExternalTexture(width,     height,     TextureFormat.Alpha8, false, false, Y);
-        m_UTexture = Texture2D.CreateExternalTexture(width/2,   height/2,   TextureFormat.Alpha8, false, false, U);
-        m_VTexture = Texture2D.CreateExternalTexture(width/2,   height/2,   TextureFormat.Alpha8, false, false, V);
+#if UNITY_ANDROID && !UNITY_EDITOR
+        const TextureFormat planeFormat = TextureFormat.R8;
+#else
+        const TextureFormat planeFormat = TextureFormat.Alpha8;
+#endif
+        m_YTexture = Texture2D.CreateExternalTexture(width,     height,     planeFormat, false, true, Y);
+        m_UTexture = Texture2D.CreateExternalTexture(width/2,   height/2,   planeFormat, false, true, U);
+        m_VTexture = Texture2D.CreateExternalTexture(width/2,   height/2,   planeFormat, false, true, V);
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+        // Unity tracks Vulkan resource state using its own native handles.
+        // Register those handles after wrapping the plugin-owned VkImages.
+        if (volumetricvideo_register_texture_pointers(
+                m_instance_id,
+                m_YTexture.GetNativeTexturePtr(),
+                m_UTexture.GetNativeTexturePtr(),
+                m_VTexture.GetNativeTexturePtr()) == -1)
+        {
+            Debug.LogError("VolumetricVideoDecoder::init_textures - Error Registering Vulkan Textures");
+            m_decoder_state = DecoderState.INIT_FAIL;
+            return false;
+        }
+#endif
 
         // Set Shader Uniforms
         mesh_renderer.material.SetTexture("_YTex", m_YTexture);

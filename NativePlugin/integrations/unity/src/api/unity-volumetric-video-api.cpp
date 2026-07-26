@@ -12,6 +12,8 @@
 #elif defined(__APPLE__)
 #include <Unity/IUnityGraphicsMetal.h>
 #import <Metal/Metal.h>
+#elif defined(__ANDROID__)
+#include <Unity/IUnityGraphicsVulkan.h>
 #endif
 
 // STL + C
@@ -25,6 +27,8 @@
 #include <VolumetricVideoD3D11.h>
 #elif defined(__APPLE__)
 #include <VolumetricVideoMetal.h>
+#elif defined(__ANDROID__)
+#include <VolumetricVideoVulkan.h>
 #endif
 #include <IVolumetricVideo.h>
 #include <Logger.h>
@@ -132,6 +136,15 @@ static void DoEventGraphicsDeviceMetal(UnityGfxDeviceEventType eventType)
 		g_GraphicsDevice = metal;
 	}
 }
+#elif defined(__ANDROID__)
+static void DoEventGraphicsDeviceVulkan(UnityGfxDeviceEventType eventType)
+{
+	if (eventType == kUnityGfxDeviceEventInitialize)
+	{
+		g_GraphicsDevice =
+			s_UnityInterfaces->Get<IUnityGraphicsVulkan>();
+	}
+}
 #endif
 
 // --------------------------------------------------------------------------
@@ -173,6 +186,12 @@ static void UNITY_INTERFACE_API OnGraphicsDeviceEvent(UnityGfxDeviceEventType ev
 	{
 #if defined(__APPLE__)
 		DoEventGraphicsDeviceMetal(eventType);
+#endif
+	}
+	else if (currentDeviceType == kUnityGfxRendererVulkan)
+	{
+#if defined(__ANDROID__)
+		DoEventGraphicsDeviceVulkan(eventType);
 #endif
 	}
 
@@ -265,6 +284,9 @@ VOLUMETRIC_VIDEO_API int volumetricvideo_init(int& ID)
 #elif defined(__APPLE__)
 	if (s_DeviceType == kUnityGfxRendererMetal)
 		vv = new VolumetricVideoMetal(ID);
+#elif defined(__ANDROID__)
+	if (s_DeviceType == kUnityGfxRendererVulkan)
+		vv = new VolumetricVideoVulkan(ID);
 #endif
 	if (vv == NULL || g_GraphicsDevice == NULL)
 	{
@@ -536,6 +558,19 @@ VOLUMETRIC_VIDEO_API int	volumetricvideo_get_texture_pointers(int ID, void*& yPo
 	//
 	LOG("volumetricvideo_set_texture_pointer - end");
 	return 1;	
+}
+
+VOLUMETRIC_VIDEO_API int volumetricvideo_register_texture_pointers(
+	int ID, void* yPointer, void* uPointer, void* vPointer)
+{
+	VolumetricVideo_iter iter;
+	if (!get_vv_instance(ID, &iter) ||
+		yPointer == NULL || uPointer == NULL || vPointer == NULL)
+		return -1;
+
+	(*iter)->get_texture_ptr()->registerResourcePointers(
+		yPointer, uPointer, vPointer);
+	return 1;
 }
 
 

@@ -70,9 +70,18 @@ Shader "VolumetricVideo/YUV2RGBA"
 				float2 inv_uv = float2(i.uv.x, 1.0 - i.uv.y);
 
 				//Get YUV Values
-				float ych = tex2D(_YTex, inv_uv).a + _LuminanceCorrection;
-				float uch = tex2D(_UTex, inv_uv).a * 0.872 - 0.436 + _BlueProjectionCorrection;		//	Scale from 0 ~ 1 to -0.436 ~ +0.436
-				float vch = tex2D(_VTex, inv_uv).a * 1.230 - 0.615 + _RedProjectionCorrection;		//	Scale from 0 ~ 1 to -0.615 ~ +0.615
+				#if defined(SHADER_API_VULKAN)
+					float ySample = tex2D(_YTex, inv_uv).r;
+					float uSample = tex2D(_UTex, inv_uv).r;
+					float vSample = tex2D(_VTex, inv_uv).r;
+				#else
+					float ySample = tex2D(_YTex, inv_uv).a;
+					float uSample = tex2D(_UTex, inv_uv).a;
+					float vSample = tex2D(_VTex, inv_uv).a;
+				#endif
+				float ych = ySample + _LuminanceCorrection;
+				float uch = uSample * 0.872 - 0.436 + _BlueProjectionCorrection;		//	Scale from 0 ~ 1 to -0.436 ~ +0.436
+				float vch = vSample * 1.230 - 0.615 + _RedProjectionCorrection;		//	Scale from 0 ~ 1 to -0.615 ~ +0.615
 										/*	BT.601	*/
 				// Convert to RGB
 				float rch = clamp(ych + 1.13983 * vch, 0.0, 1.0);

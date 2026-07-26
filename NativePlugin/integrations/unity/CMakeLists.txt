@@ -75,4 +75,50 @@ elseif(APPLE)
     LIBRARY_OUTPUT_DIRECTORY
       "${PROJECT_SOURCE_DIR}/../Unity/Assets/Plugins/VolumetricVideo/macOS"
   )
+elseif(ANDROID)
+  find_library(VULKAN_LIBRARY vulkan REQUIRED)
+  find_library(LOG_LIBRARY log REQUIRED)
+
+  add_library(VolumetricVideoNativePlugin SHARED
+    ${VV_UNITY_API_SOURCES}
+    src/rendering/vulkan/MeshBufferVulkan.cpp
+    src/rendering/vulkan/TextureVulkan.cpp
+    src/rendering/vulkan/VulkanUploadBuffer.cpp
+    src/rendering/vulkan/VolumetricVideoVulkan.cpp
+  )
+
+  target_include_directories(VolumetricVideoNativePlugin
+    PRIVATE
+      ${VV_UNITY_INCLUDE_DIRS}
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/vulkan"
+  )
+
+  target_compile_definitions(VolumetricVideoNativePlugin
+    PRIVATE
+      NATIVEPLUGIN_EXPORTS
+  )
+
+  target_link_libraries(VolumetricVideoNativePlugin
+    PRIVATE
+      VolumetricVideoCore
+      ${VULKAN_LIBRARY}
+      ${LOG_LIBRARY}
+  )
+
+  target_link_options(VolumetricVideoNativePlugin
+    PRIVATE
+      "-Wl,-Bsymbolic"
+  )
+
+  set_target_properties(VolumetricVideoNativePlugin PROPERTIES
+    OUTPUT_NAME "VolumetricVideoNativePlugin"
+    LIBRARY_OUTPUT_DIRECTORY
+      "${PROJECT_SOURCE_DIR}/../Unity/Assets/Plugins/Android/arm64-v8a"
+  )
+
+  add_custom_command(TARGET VolumetricVideoNativePlugin POST_BUILD
+    COMMAND "${CMAKE_STRIP}" --strip-unneeded
+      "$<TARGET_FILE:VolumetricVideoNativePlugin>"
+    COMMENT "Stripping Android native plugin"
+  )
 endif()

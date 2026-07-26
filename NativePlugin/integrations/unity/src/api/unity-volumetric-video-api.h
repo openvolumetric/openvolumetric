@@ -67,6 +67,8 @@ extern "C"
 
 	// Return platform texture handles used to construct Unity textures.
 	VOLUMETRIC_VIDEO_API int	volumetricvideo_get_texture_pointers(int ID, void*& yPointer, void*& uPointer, void*& vPointer);
+	VOLUMETRIC_VIDEO_API int volumetricvideo_register_texture_pointers(
+		int ID, void* yPointer, void* uPointer, void* vPointer);
 
 
 	//-----------------------------------------------

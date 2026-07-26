@@ -11,11 +11,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_subdirectory(src/core)
-add_subdirectory(src/authoring)
+if(NOT ANDROID)
+  add_subdirectory(src/authoring)
+endif()
 
 # Engine integrations link to the portable decoder core. More integrations,
 # such as Unreal, can be added alongside Unity without changing the core.
-if(WIN32 OR APPLE)
+if(WIN32 OR APPLE OR ANDROID)
   add_subdirectory(integrations/unity)
 else()
   message(STATUS

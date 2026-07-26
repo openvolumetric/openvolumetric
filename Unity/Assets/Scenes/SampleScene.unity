@@ -423,7 +423,7 @@ MonoBehaviour:
   luminaceCorrection: 0
   blueProjectionCorrection: 0
   redProjectionCorrection: 0
-  enableLoop: 0
+  enableLoop: 1
   enableScriptedStart: 0
   debug: 0
 --- !u!1660057539 &9223372036854775807

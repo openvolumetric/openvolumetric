@@ -50,6 +50,7 @@ NativePlugin/*.lastbuildstate
 # tracked so importer settings remain stable after rebuilding.
 *.dylib
 *.dylib.meta
+*.so
 # -----------------------------------------------------------------------------
 # Unity-generated directories
 # -----------------------------------------------------------------------------
@@ -84,3 +85,5 @@ Unity/[Cc]rash*/
 
 
 .tmp*
+.utmp*
+Unity/Assets/Plugins/Android/arm64-v8a/libVolumetricVideoNativePlugin.so.meta

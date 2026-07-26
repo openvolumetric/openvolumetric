@@ -18,6 +18,12 @@ public:
 	//----------------------------------
 	//
 	virtual void getResourcePointers(void*& ptry, void*& ptru, void*& ptrv) = 0;
+
+	//----------------------------------
+	// Register the handles Unity returns after wrapping external textures.
+	// Backends that can use their original resource pointers need no override.
+	virtual void registerResourcePointers(
+		void* ptry, void* ptru, void* ptrv) {}
 	
 	//----------------------------------
 	//

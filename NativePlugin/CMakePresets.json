@@ -31,6 +31,22 @@
         "CMAKE_OSX_ARCHITECTURES": "x86_64",
         "VCPKG_TARGET_TRIPLET": "x64-osx"
       }
+    },
+    {
+      "name": "vcpkg-android-arm64",
+      "displayName": "Android ARM64 core with vcpkg",
+      "inherits": "vcpkg",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "environment": {
+        "ANDROID_NDK_HOME": "$env{ANDROID_NDK_ROOT}"
+      },
+      "cacheVariables": {
+        "CMAKE_SYSTEM_NAME": "Android",
+        "CMAKE_SYSTEM_VERSION": "29",
+        "CMAKE_ANDROID_ARCH_ABI": "arm64-v8a",
+        "CMAKE_ANDROID_NDK": "$env{ANDROID_NDK_ROOT}",
+        "VCPKG_TARGET_TRIPLET": "arm64-android"
+      }
     }
   ],
   "buildPresets": [
@@ -41,6 +57,10 @@
     {
       "name": "vcpkg-macos-x64",
       "configurePreset": "vcpkg-macos-x64"
+    },
+    {
+      "name": "vcpkg-android-arm64",
+      "configurePreset": "vcpkg-android-arm64"
     }
   ]
 }
