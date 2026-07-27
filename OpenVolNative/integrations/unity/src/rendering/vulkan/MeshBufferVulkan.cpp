@@ -5,12 +5,16 @@
 #include <algorithm>
 #include <cstring>
 
+namespace openvol::unity
+{
+
 MeshBufferVulkan::MeshBufferVulkan() = default;
 
 MeshBufferVulkan::~MeshBufferVulkan()
 {
     destroy();
 }
+
 
 bool MeshBufferVulkan::init(
     void* handler,
@@ -184,3 +188,5 @@ void MeshBufferVulkan::destroy()
     m_index_count = 0;
     m_vertex_count = 0;
 }
+
+} // namespace openvol::unity

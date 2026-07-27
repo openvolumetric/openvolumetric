@@ -9,6 +9,9 @@
 #include <string>
 #include <vector>
 
+namespace openvol
+{
+
 /// Asynchronous decoder for compressed geometry samples.
 ///
 /// The media decoder submits Draco payloads with their presentation timestamp.
@@ -68,3 +71,5 @@ public:
 	virtual void destroy() = 0;
 
 };
+
+} // namespace openvol

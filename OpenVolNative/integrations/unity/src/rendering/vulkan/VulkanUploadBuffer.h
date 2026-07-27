@@ -4,6 +4,9 @@
 
 #include <cstddef>
 
+namespace openvol::unity
+{
+
 /// Persistently mapped, host-visible Vulkan staging buffer.
 class VulkanUploadBuffer
 {
@@ -34,3 +37,5 @@ private:
     void* m_mapped = nullptr;
     VkDeviceSize m_size = 0;
 };
+
+} // namespace openvol::unity

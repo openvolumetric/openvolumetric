@@ -25,10 +25,14 @@ bool find_memory_type(
 }
 }
 
+namespace openvol::unity
+{
+
 VulkanUploadBuffer::~VulkanUploadBuffer()
 {
     destroy();
 }
+
 
 bool VulkanUploadBuffer::create(
     const UnityVulkanInstance& instance,
@@ -105,3 +109,5 @@ void VulkanUploadBuffer::destroy()
     m_mapped = nullptr;
     m_size = 0;
 }
+
+} // namespace openvol::unity

@@ -2,6 +2,9 @@
 
 #include <vector>
 
+namespace openvol
+{
+
 /// Interleaved vertex layout shared by the core and engine upload backends.
 ///
 /// Field ordering must remain synchronized with Unity's Mesh vertex attribute
@@ -72,3 +75,5 @@ public:
 	std::vector<int> indexes;
 
 };
+
+} // namespace openvol

@@ -4,7 +4,8 @@ Open Volumetric is an open, cross-platform volumetric-video playback and
 authoring project, known as OpenVol in code. It currently provides a native
 C++ core and Unity integration, with Unreal integration planned.
 
-The active development roadmap is tracked in [PLAN.md](PLAN.md).
+The active development roadmap is tracked in
+[docs/PLAN.md](docs/PLAN.md).
 
 
 ### Encoding Content

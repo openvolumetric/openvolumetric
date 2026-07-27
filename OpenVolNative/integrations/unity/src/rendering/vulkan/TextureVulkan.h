@@ -7,6 +7,9 @@
 
 #include <array>
 
+namespace openvol::unity
+{
+
 /// Uploads YUV420P planes into Unity-owned Vulkan images.
 class TextureVulkan : public ITexture
 {
@@ -63,3 +66,5 @@ private:
     std::array<UploadSlot, kUploadSlots> m_slots;
     VkDeviceSize m_upload_size = 0;
 };
+
+} // namespace openvol::unity

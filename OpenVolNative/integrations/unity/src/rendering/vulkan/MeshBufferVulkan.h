@@ -7,6 +7,9 @@
 
 #include <array>
 
+namespace openvol::unity
+{
+
 /// Uploads decoded meshes into Unity Vulkan buffers using rotating staging slots.
 class MeshBufferVulkan : public IMeshBuffer
 {
@@ -51,3 +54,5 @@ private:
     int m_vertex_count = 0;
     std::array<UploadSlot, kUploadSlots> m_slots;
 };
+
+} // namespace openvol::unity

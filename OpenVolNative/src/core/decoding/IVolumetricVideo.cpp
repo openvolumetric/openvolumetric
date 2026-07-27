@@ -7,6 +7,9 @@
 #include <thread>
 #include <utility>
 
+namespace openvol
+{
+
 bool IVolumetricVideo::submit_embedded_geometry(double presentation_time)
 {
 	if (m_avdecoder == nullptr || m_geometrydecoder == nullptr ||
@@ -106,3 +109,5 @@ bool IVolumetricVideo::prepare_presentation(double presentation_time)
 	LOG("SYNC timed out preparing seek target pts=%f", presentation_time);
 	return false;
 }
+
+} // namespace openvol

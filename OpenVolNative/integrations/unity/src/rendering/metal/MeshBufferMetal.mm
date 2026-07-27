@@ -8,6 +8,9 @@
 #include <algorithm>
 #include <cstring>
 
+namespace openvol::unity
+{
+
 MeshBufferMetal::MeshBufferMetal()
 	: m_device(nullptr),
 	  m_unity_metal(nullptr),
@@ -19,6 +22,7 @@ MeshBufferMetal::MeshBufferMetal()
 	  m_vertex_stride(0)
 {
 }
+
 
 MeshBufferMetal::~MeshBufferMetal()
 {
@@ -133,3 +137,5 @@ void MeshBufferMetal::destroy()
 	m_index_stride = 0;
 	m_vertex_stride = 0;
 }
+
+} // namespace openvol::unity

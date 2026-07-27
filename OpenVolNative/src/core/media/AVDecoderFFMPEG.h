@@ -21,6 +21,9 @@ extern "C"
 #include <thread>
 #include <vector>
 
+namespace openvol
+{
+
 /// FFmpeg implementation of the combined volumetric MP4 decoder.
 ///
 /// A single worker owns av_read_frame() and routes packets by stream:
@@ -208,3 +211,5 @@ private:
 	std::thread				m_decode_thread;
 
 };
+
+} // namespace openvol

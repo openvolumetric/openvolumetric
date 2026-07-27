@@ -11,6 +11,9 @@
 #pragma warning(disable:4996)
 #endif
 
+namespace openvol
+{
+
 //
 // Instance of logger
 //
@@ -100,3 +103,5 @@ void Logger::log(const char* str, ...)
 #endif
 	va_end(args);
 }
+
+} // namespace openvol

@@ -5,6 +5,8 @@
 #include <IMeshBuffer.h>
 #include <Mesh.h>
 
+namespace openvol::unity
+{
 
 /// Copies decoded meshes into Unity-owned D3D11 buffers.
 class MeshBufferD3D11: public IMeshBuffer
@@ -55,3 +57,5 @@ private:
 	int m_vertex_stride;
 
 };
+
+} // namespace openvol::unity

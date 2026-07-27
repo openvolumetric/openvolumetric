@@ -1,4 +1,8 @@
 #pragma once
+
+namespace openvol
+{
+
 /// Engine-specific uploader for the decoder's planar Y, U, and V images.
 ///
 /// Implementations either expose native resources for Unity to wrap or accept
@@ -37,3 +41,5 @@ public:
 	/// Number of planes in the supported YUV420P layout.
 	static const unsigned int TEXTURE_NUM = 3;
 };
+
+} // namespace openvol

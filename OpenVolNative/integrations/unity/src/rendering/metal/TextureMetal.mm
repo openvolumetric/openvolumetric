@@ -7,6 +7,9 @@
 
 #include <cstring>
 
+namespace openvol::unity
+{
+
 TextureMetal::TextureMetal()
 	: m_device(nullptr),
 	  m_unity_metal(nullptr),
@@ -20,6 +23,7 @@ TextureMetal::TextureMetal()
 	for (unsigned int i = 0; i < TEXTURE_NUM; ++i)
 		m_textures[i] = nullptr;
 }
+
 
 TextureMetal::~TextureMetal()
 {
@@ -161,3 +165,5 @@ void TextureMetal::destroy()
 	m_device = nullptr;
 	m_unity_metal = nullptr;
 }
+
+} // namespace openvol::unity

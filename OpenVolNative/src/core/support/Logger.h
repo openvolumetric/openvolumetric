@@ -11,6 +11,9 @@
 
 #include <string>
 
+namespace openvol
+{
+
 /// Minimal process-wide logger shared by the native core and engine adapters.
 ///
 /// Android messages are forwarded to logcat. Desktop builds can optionally
@@ -43,3 +46,5 @@ private:
 	/// Prevents duplicate console allocation and release.
 	bool console_active;
 };
+
+} // namespace openvol

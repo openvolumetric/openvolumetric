@@ -2,6 +2,9 @@
 
 #include <IVolumetricVideo.h>
 
+namespace openvol::unity
+{
+
 /// Vulkan-specific OpenVol coordinator used by Unity on Android/Quest.
 class VolumetricVideoVulkan : public IVolumetricVideo
 {
@@ -26,3 +29,5 @@ private:
     bool m_has_pending_video = false;
     double m_pending_video_time = 0.0;
 };
+
+} // namespace openvol::unity

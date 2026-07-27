@@ -8,6 +8,9 @@
 #include<atomic>
 #include<thread>
 
+namespace openvol
+{
+
 /// Draco worker for geometry samples extracted from the MP4 vvge track.
 ///
 /// submit_encoded_frame() is called from the render-side coordinator.
@@ -115,3 +118,5 @@ private:
 	std::thread m_decode_thread;
 
 };
+
+} // namespace openvol

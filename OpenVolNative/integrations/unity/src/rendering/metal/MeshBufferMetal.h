@@ -2,6 +2,9 @@
 
 #include <IMeshBuffer.h>
 
+namespace openvol::unity
+{
+
 /// Copies decoded meshes into Unity-owned Metal buffers on the render thread.
 class MeshBufferMetal : public IMeshBuffer
 {
@@ -28,3 +31,5 @@ private:
 	int m_index_stride;
 	int m_vertex_stride;
 };
+
+} // namespace openvol::unity

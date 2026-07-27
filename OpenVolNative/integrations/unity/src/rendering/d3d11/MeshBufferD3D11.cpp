@@ -9,6 +9,9 @@
 //----------------------------------
 //
 //----------------------------------
+namespace openvol::unity
+{
+
 MeshBufferD3D11::MeshBufferD3D11()
 {
 	// Device Pointer
@@ -25,6 +28,7 @@ MeshBufferD3D11::MeshBufferD3D11()
 	m_vertex_buffer_size	= -1;
 	m_vertex_stride			= -1;
 }
+
 
 //----------------------------------
 //
@@ -223,9 +227,4 @@ bool MeshBufferD3D11::update(Mesh* mesh)
 
 }
 
-
-
-
-
-
-
+} // namespace openvol::unity

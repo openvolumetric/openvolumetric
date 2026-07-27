@@ -13,6 +13,9 @@
 //----------------------------------------------
 // 
 //----------------------------------------------
+namespace openvol::unity
+{
+
 VolumetricVideoD3D11::VolumetricVideoD3D11(int ID) : IVolumetricVideo(ID)
 {
 	LOG("VolumetricVideoD3D11::VolumetricVideoD3D11 - Constructor - %d", ID);
@@ -29,6 +32,7 @@ VolumetricVideoD3D11::VolumetricVideoD3D11(int ID) : IVolumetricVideo(ID)
 	// Create Mesh Buffer
 	this->m_meshbuffer		= new MeshBufferD3D11();
 }
+
 
 //----------------------------------------------
 // 
@@ -217,3 +221,5 @@ int VolumetricVideoD3D11::seek(double time)
 	//
 	return 1;
 }
+
+} // namespace openvol::unity

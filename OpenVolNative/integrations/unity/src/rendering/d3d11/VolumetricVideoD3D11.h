@@ -5,6 +5,9 @@
 
 #include <thread>
 
+namespace openvol::unity
+{
+
 /// D3D11-specific OpenVol coordinator used by Unity on Windows.
 class VolumetricVideoD3D11 : public IVolumetricVideo
 {
@@ -38,3 +41,5 @@ private:
 	/// Temporary destination used when retrieving a decoded mesh.
 	Mesh m_mesh;
 };
+
+} // namespace openvol::unity

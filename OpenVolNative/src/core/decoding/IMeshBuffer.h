@@ -3,6 +3,9 @@
 
 #include <Mesh.h>
 
+namespace openvol
+{
+
 /// Engine-specific destination for decoded mesh data.
 ///
 /// Implementations translate the engine-neutral Mesh into graphics resources
@@ -35,3 +38,5 @@ public:
 	/// buffers themselves.
 	virtual void destroy() = 0;
 };
+
+} // namespace openvol

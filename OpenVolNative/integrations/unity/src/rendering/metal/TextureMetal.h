@@ -2,6 +2,9 @@
 
 #include <ITexture.h>
 
+namespace openvol::unity
+{
+
 /// Owns three single-channel Metal textures used as Unity external textures.
 class TextureMetal : public ITexture
 {
@@ -31,3 +34,5 @@ private:
 	unsigned int m_height_uv;
 	unsigned int m_row_bytes_uv;
 };
+
+} // namespace openvol::unity

@@ -8,6 +8,9 @@
 
 #include <cmath>
 
+namespace openvol::unity
+{
+
 VolumetricVideoMetal::VolumetricVideoMetal(int ID) : IVolumetricVideo(ID)
 {
 	LOG("VolumetricVideoMetal::VolumetricVideoMetal - Constructor - %d", ID);
@@ -16,6 +19,7 @@ VolumetricVideoMetal::VolumetricVideoMetal(int ID) : IVolumetricVideo(ID)
 	m_geometrydecoder = new GeometryDecoderDraco();
 	m_meshbuffer = new MeshBufferMetal();
 }
+
 
 VolumetricVideoMetal::~VolumetricVideoMetal()
 {
@@ -122,3 +126,5 @@ int VolumetricVideoMetal::seek(double time)
 	}
 	return 1;
 }
+
+} // namespace openvol::unity

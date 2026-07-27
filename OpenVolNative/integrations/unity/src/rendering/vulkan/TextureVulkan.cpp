@@ -27,12 +27,16 @@ bool find_device_memory(
 }
 }
 
+namespace openvol::unity
+{
+
 TextureVulkan::TextureVulkan() = default;
 
 TextureVulkan::~TextureVulkan()
 {
     destroy();
 }
+
 
 int TextureVulkan::init(
     void* handler,
@@ -273,3 +277,5 @@ void TextureVulkan::destroy()
     m_unity_texture_handles = {};
     m_upload_size = 0;
 }
+
+} // namespace openvol::unity

@@ -4,6 +4,8 @@
 #include <ITexture.h>
 #include <d3d11.h>
 
+namespace openvol::unity
+{
 
 /// Owns three D3D11 single-channel textures exposed to Unity.
 class TextureD3D11 : public ITexture
@@ -48,3 +50,5 @@ private:
 
 
 };
+
+} // namespace openvol::unity

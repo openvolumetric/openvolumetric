@@ -8,6 +8,9 @@
 #include <string>
 #include <vector>
 
+namespace openvol
+{
+
 /// Engine-independent view of the combined MP4 decoder.
 ///
 /// Implementations own demuxing and media-codec state. Consumers retrieve
@@ -112,3 +115,5 @@ protected:
 
 	
 };
+
+} // namespace openvol

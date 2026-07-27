@@ -8,6 +8,9 @@
 
 #include <cmath>
 
+namespace openvol::unity
+{
+
 VolumetricVideoVulkan::VolumetricVideoVulkan(int id)
     : IVolumetricVideo(id)
 {
@@ -17,6 +20,7 @@ VolumetricVideoVulkan::VolumetricVideoVulkan(int id)
     m_geometrydecoder = new GeometryDecoderDraco();
     m_meshbuffer = new MeshBufferVulkan();
 }
+
 
 VolumetricVideoVulkan::~VolumetricVideoVulkan() = default;
 
@@ -131,3 +135,5 @@ int VolumetricVideoVulkan::seek(double time)
         return -1;
     return 1;
 }
+
+} // namespace openvol::unity

@@ -4,8 +4,12 @@
 knows how to demux and decode the combined volumetric MP4, but it does not
 include Unity or platform graphics headers.
 
+All public and internal runtime types in this library use the `openvol`
+namespace. Source subdirectories organize responsibilities but do not create
+additional namespace levels.
+
 The source-level contract for Unity and future engine adapters is documented
-in [ENGINE_INTEGRATION.md](../../docs/ENGINE_INTEGRATION.md).
+in [ENGINE_INTEGRATION.md](../../../docs/ENGINE_INTEGRATION.md).
 
 ## Runtime data flow
 

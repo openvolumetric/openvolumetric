@@ -1,4 +1,8 @@
 #pragma once
+
+namespace openvol
+{
+
 /// Basic metadata shared by decoded media streams.
 struct StreamInfo
 {
@@ -12,3 +16,5 @@ struct StreamInfo
 	/// Container-reported stream duration, in seconds.
 	double total_time;
 };
+
+} // namespace openvol

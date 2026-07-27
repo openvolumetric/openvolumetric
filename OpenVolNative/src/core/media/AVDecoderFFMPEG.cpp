@@ -8,6 +8,9 @@
 #include <cstring>
 #include <vector>
 
+namespace openvol
+{
+
 // --------------------------------------------------------------------------
 //
 // --------------------------------------------------------------------------
@@ -1204,3 +1207,5 @@ openvol::FrameMatchResult AVDecoderFFMPEG::get_video_data(
 	//
 	return openvol::FrameMatchResult::Ready;
 }
+
+} // namespace openvol

@@ -2,6 +2,9 @@
 
 #include <IVolumetricVideo.h>
 
+namespace openvol::unity
+{
+
 /// Metal-specific OpenVol coordinator used by the Unity native API.
 class VolumetricVideoMetal : public IVolumetricVideo
 {
@@ -22,3 +25,5 @@ public:
 	/// Idempotently releases all owned components.
 	void destroy() override;
 };
+
+} // namespace openvol::unity

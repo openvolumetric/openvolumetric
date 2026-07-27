@@ -33,6 +33,16 @@
 #include <IVolumetricVideo.h>
 #include <Logger.h>
 
+using openvol::IVolumetricVideo;
+using openvol::IAVDecoder;
+using openvol::Logger;
+#if defined(_WIN32)
+using openvol::unity::VolumetricVideoD3D11;
+#elif defined(__APPLE__)
+using openvol::unity::VolumetricVideoMetal;
+#elif defined(__ANDROID__)
+using openvol::unity::VolumetricVideoVulkan;
+#endif
 
 // --------------------------------------------------------------------------
 // Unity functions

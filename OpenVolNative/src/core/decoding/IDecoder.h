@@ -2,6 +2,9 @@
 
 #include <atomic>
 
+namespace openvol
+{
+
 /// Common lifecycle state shared by the media and geometry decoders.
 ///
 /// State is atomic because the engine and worker threads inspect it
@@ -48,3 +51,5 @@ protected:
 	/// Atomic lifecycle state shared with engine-side coordinators.
 	std::atomic<DecoderState> m_decoder_state;
 };
+
+} // namespace openvol

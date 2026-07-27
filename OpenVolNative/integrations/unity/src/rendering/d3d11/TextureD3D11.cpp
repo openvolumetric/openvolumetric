@@ -5,6 +5,9 @@
 
 //----------------------------------
 //
+namespace openvol::unity
+{
+
 TextureD3D11::TextureD3D11()
 {
 	mD3D11Device = NULL;
@@ -17,6 +20,7 @@ TextureD3D11::TextureD3D11()
 	}
 
 }
+
 
 //----------------------------------
 //
@@ -224,3 +228,5 @@ void TextureD3D11::upload(unsigned char* ych, unsigned char* uch, unsigned char*
 	}
 	ctx->Release();
 }
+
+} // namespace openvol::unity

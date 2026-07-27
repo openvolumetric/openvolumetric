@@ -9,6 +9,9 @@
 #include <chrono>
 #include <limits>
 
+namespace openvol
+{
+
 // --------------------------------------------------------------------------
 // Constructor
 // --------------------------------------------------------------------------
@@ -433,3 +436,5 @@ void GeometryDecoderDraco::flush_buffer()
 	//
 	LOG("GeometryDecoderDraco::flush_buffer - stop");
 }
+
+} // namespace openvol

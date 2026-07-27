@@ -10,6 +10,9 @@
 #include <cstdint>
 #include <atomic>
 
+namespace openvol
+{
+
 
 /// Coordinates engine-neutral decoding with an engine-specific upload backend.
 ///
@@ -107,3 +110,5 @@ protected:
 	std::atomic<double> m_last_presented_time;
 
 };
+
+} // namespace openvol
