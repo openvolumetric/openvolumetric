@@ -6,6 +6,7 @@
 #include <TimedFrame.h>
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 /// Asynchronous decoder for compressed geometry samples.
@@ -37,6 +38,15 @@ public:
 		std::uint64_t generation,
 		double presentation_time,
 		std::vector<std::uint8_t> payload) = 0;
+
+	/// True when the input queue can accept another compressed frame.
+	///
+	/// The coordinator checks this before removing a packet from the media
+	/// queue, so temporary Draco backpressure cannot discard geometry.
+	virtual bool can_accept_encoded_frame() const = 0;
+
+	/// Returns a persistent decoder/queue error, or an empty string.
+	virtual std::string get_last_error() const = 0;
 
 	/// Discards work belonging to an earlier seek or loop pass.
 	virtual void reset(std::uint64_t generation) = 0;

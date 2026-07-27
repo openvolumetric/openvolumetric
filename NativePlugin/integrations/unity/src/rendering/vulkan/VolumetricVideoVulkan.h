@@ -13,4 +13,8 @@ public:
     int stop() override;
     int render() override;
     int seek(double time) override;
+
+private:
+    bool m_has_pending_video = false;
+    double m_pending_video_time = 0.0;
 };

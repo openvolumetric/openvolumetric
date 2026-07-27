@@ -17,7 +17,9 @@ int volumetricvideo_authoring_encode_obj(
 	const char* output_path,
 	int position_quantization,
 	int normal_quantization,
-	int texture_quantization)
+	int texture_quantization,
+	int encode_speed,
+	int decode_speed)
 {
 	last_error.clear();
 	if (input_path == nullptr || output_path == nullptr)
@@ -32,6 +34,8 @@ int volumetricvideo_authoring_encode_obj(
 		options.position_quantization = position_quantization;
 		options.normal_quantization = normal_quantization;
 		options.texture_quantization = texture_quantization;
+		options.encode_speed = encode_speed;
+		options.decode_speed = decode_speed;
 		return volumetric_video::authoring::encode_obj_to_draco(
 			std::filesystem::u8path(input_path),
 			std::filesystem::u8path(output_path),

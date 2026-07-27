@@ -55,6 +55,7 @@ extern "C"
 
 	// Human-readable error from the instance's most recent media operation.
 	VOLUMETRIC_VIDEO_API const char* volumetricvideo_get_last_error(int ID);
+	VOLUMETRIC_VIDEO_API double volumetricvideo_get_last_presented_time(int ID);
 
 	// Get Video Details
 	VOLUMETRIC_VIDEO_API int	volumetricvideo_get_video_details(int ID, int& width, int& height, double& fps, double& duration);

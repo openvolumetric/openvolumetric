@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <atomic>
 
 
 /// Coordinates engine-neutral decoding with an engine-specific upload backend.
@@ -23,13 +24,13 @@ public:
 	//--------------------------------------------------------
 	// default constructor
 	//--------------------------------------------------------
-	IVolumetricVideo() : m_id(-1), m_avdecoder(NULL), m_texture(NULL), m_geometrydecoder(NULL), m_meshbuffer(NULL), m_geometry_generation(0) {};
+	IVolumetricVideo() : m_id(-1), m_avdecoder(NULL), m_texture(NULL), m_geometrydecoder(NULL), m_meshbuffer(NULL), m_geometry_generation(0), m_last_presented_time(-1.0) {};
 
 
 	//--------------------------------------------------------
 	// constructor with instance id
 	//--------------------------------------------------------
-	IVolumetricVideo(int id) :m_id(id), m_avdecoder(NULL), m_texture(NULL), m_geometrydecoder(NULL), m_meshbuffer(NULL), m_geometry_generation(0) {};
+	IVolumetricVideo(int id) :m_id(id), m_avdecoder(NULL), m_texture(NULL), m_geometrydecoder(NULL), m_meshbuffer(NULL), m_geometry_generation(0), m_last_presented_time(-1.0) {};
 	
 	
 	//--------------------------------------------------------
@@ -102,8 +103,17 @@ public:
 	//--------------------------------------------------------
 	virtual void destroy() = 0;
 
+	double get_last_presented_time() const
+	{
+		return m_last_presented_time.load(std::memory_order_acquire);
+	}
 
 protected:
+
+	void set_last_presented_time(double time)
+	{
+		m_last_presented_time.store(time, std::memory_order_release);
+	}
 
 	/// Moves queued vvge payloads from the media decoder into the Draco worker.
 	/// A look-ahead window keeps geometry ready for upcoming render frames.
@@ -149,5 +159,6 @@ protected:
 
 	// Identifies which seek/loop pass currently owns queued Draco work.
 	std::uint64_t m_geometry_generation;
+	std::atomic<double> m_last_presented_time;
 
 };

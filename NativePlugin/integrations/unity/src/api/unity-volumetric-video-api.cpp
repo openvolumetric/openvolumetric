@@ -397,7 +397,7 @@ VOLUMETRIC_VIDEO_API int	volumetricvideo_stop_decoding(int ID)
 //
 VOLUMETRIC_VIDEO_API int	volumetricvideo_seek(int ID, double time)
 {
-	LOG("volumetricvideo_seek - id: %d - time: %d", ID, time);
+	LOG("volumetricvideo_seek - id: %d - time: %f", ID, time);
 
 	//
 	VolumetricVideo_iter iter;
@@ -464,7 +464,17 @@ VOLUMETRIC_VIDEO_API const char* volumetricvideo_get_last_error(int ID)
 		return error.c_str();
 	}
 	error = (*iter)->get_avdecoder_ptr()->get_last_error();
+	if (error.empty())
+		error = (*iter)->get_geometrydecoder_ptr()->get_last_error();
 	return error.c_str();
+}
+
+VOLUMETRIC_VIDEO_API double volumetricvideo_get_last_presented_time(int ID)
+{
+	VolumetricVideo_iter iter;
+	if (!get_vv_instance(ID, &iter))
+		return -1.0;
+	return (*iter)->get_last_presented_time();
 }
 
 

@@ -44,6 +44,10 @@ public:
 		double presentation_time,
 		std::vector<std::uint8_t> payload) override;
 
+	bool can_accept_encoded_frame() const override;
+
+	std::string get_last_error() const override;
+
 	void reset(std::uint64_t generation) override;
 
 	void mark_end_of_stream(std::uint64_t generation) override;

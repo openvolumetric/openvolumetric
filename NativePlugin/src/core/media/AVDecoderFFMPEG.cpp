@@ -262,6 +262,13 @@ bool AVDecoderFFMPEG::init_video_context()
 			return false;
 		}
 
+		// Decoder threading must be configured before avcodec_open2().
+		// Setting these fields afterward leaves codecs such as HEVC using the
+		// threading configuration chosen when the context was opened.
+		m_video_codec_ctx->thread_count = 8;
+		m_video_codec_ctx->thread_type =
+			FF_THREAD_SLICE | FF_THREAD_FRAME;
+
 		// Ready to decode ?
 		if (avcodec_open2(m_video_codec_ctx, m_video_codec, NULL) < 0)
 		{
@@ -269,15 +276,21 @@ bool AVDecoderFFMPEG::init_video_context()
 			return false;
 		}
 
-		//Decoder Thread settings
-		m_video_codec_ctx->thread_count	= 8;
-		m_video_codec_ctx->thread_type	= FF_THREAD_SLICE | FF_THREAD_FRAME;
-
 		// Populate video_info
 		m_video_info.is_enabled			= true;
 		m_video_info.width				= m_video_stream->codecpar->width;
 		m_video_info.height				= m_video_stream->codecpar->height;
-		m_video_info.fps				= av_q2d(m_video_stream->r_frame_rate);
+		// avg_frame_rate reflects the timestamps actually stored in the MP4.
+		// r_frame_rate is only FFmpeg's guessed nominal rate and can be wrong
+		// for HEVC streams, causing the engine clock to skip valid samples.
+		const double average_fps =
+			av_q2d(m_video_stream->avg_frame_rate);
+		const double nominal_fps =
+			av_q2d(m_video_stream->r_frame_rate);
+		m_video_info.fps =
+			std::isfinite(average_fps) && average_fps > 0.0
+				? average_fps
+				: nominal_fps;
 		m_video_info.frame_count		= m_video_stream->nb_frames;
 
 		// Calculate video duration
@@ -288,8 +301,14 @@ bool AVDecoderFFMPEG::init_video_context()
 		LOG("AVDecoderFFMPEG::init_video_context - Video Stream:  %d",		m_video_stream_index);
 		LOG("AVDecoderFFMPEG::init_video_context - Size:          %d x %d", m_video_info.width, m_video_info.height);
 		LOG("AVDecoderFFMPEG::init_video_context - FPS:           %f",		m_video_info.fps);
+		LOG("AVDecoderFFMPEG::init_video_context - Nominal FPS:   %f",		nominal_fps);
 		LOG("AVDecoderFFMPEG::init_video_context - Duration:      %f",		m_video_info.total_time);
 		LOG("AVDecoderFFMPEG::init_video_context - Frame Count:   %f",		m_video_info.frame_count);
+		LOG(
+			"AVDecoderFFMPEG::init_video_context - Decoder Threads: %d "
+			"(active type: %d)",
+			m_video_codec_ctx->thread_count,
+			m_video_codec_ctx->active_thread_type);
 
 		//Done
 		return true;
@@ -390,6 +409,12 @@ bool AVDecoderFFMPEG::start_decoding()
 					m_decoder_state = m_container->end_of_stream()
 						? DECODE_EOF
 						: STOP;
+					if (m_decoder_state == STOP)
+					{
+						LOG(
+							"AVDecoderFFMPEG::start_decoding - decoder stopped: %s",
+							get_last_error().c_str());
+					}
 					if (m_decoder_state == STOP)
 						m_stop_requested.store(
 							true, std::memory_order_release);
@@ -695,7 +720,14 @@ bool AVDecoderFFMPEG::decode_audio_frame()
 {
 	int ret = avcodec_send_packet(m_audio_codec_ctx, &m_packet);
 	if (ret < 0 && ret != AVERROR(EAGAIN))
+	{
+		char error[AV_ERROR_MAX_STRING_SIZE]{};
+		av_strerror(ret, error, sizeof(error));
+		LOG(
+			"AVDecoderFFMPEG::decode_audio_frame - send failed: %s",
+			error);
 		return false;
+	}
 
 	while (ret >= 0)
 	{
@@ -775,6 +807,10 @@ bool AVDecoderFFMPEG::decode_audio_frame()
 						"Audio PCM ring has insufficient capacity.");
 					m_geometry_frames.set_error(
 						"Audio PCM ring has insufficient capacity.");
+					LOG(
+						"AVDecoderFFMPEG::decode_audio_frame - PCM ring full "
+						"(samples=%zu)",
+						converted_count - sample_offset);
 					av_frame_free(&frame);
 					return false;
 				}
@@ -786,6 +822,11 @@ bool AVDecoderFFMPEG::decode_audio_frame()
 			av_frame_free(&frame);
 			if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
 				break;
+			char error[AV_ERROR_MAX_STRING_SIZE]{};
+			av_strerror(ret, error, sizeof(error));
+			LOG(
+				"AVDecoderFFMPEG::decode_audio_frame - receive failed: %s",
+				error);
 			return false;
 		}
 	}
@@ -852,9 +893,15 @@ int AVDecoderFFMPEG::read_audio(float* output, int sample_count)
 
 void AVDecoderFFMPEG::flush_audio()
 {
-	m_audio_read_position.store(0, std::memory_order_relaxed);
-	m_audio_write_position.store(0, std::memory_order_relaxed);
-	std::fill(m_audio_samples.begin(), m_audio_samples.end(), 0.0f);
+	// The Unity audio callback is the consumer and can be in read_audio()
+	// while the decoder thread seeks. Resetting both monotonic positions to
+	// zero lets an in-flight callback publish an old, much larger read value
+	// afterward. That underflows write-read and permanently blocks the shared
+	// demux thread. Discard buffered PCM by advancing read to the current
+	// write position without ever moving the producer position backwards.
+	const uint64_t write =
+		m_audio_write_position.load(std::memory_order_acquire);
+	m_audio_read_position.store(write, std::memory_order_release);
 }
 
 
@@ -863,32 +910,42 @@ void AVDecoderFFMPEG::flush_audio()
 // --------------------------------------------------------------------------
 bool AVDecoderFFMPEG::decode_video_frame()
 {
-//	LOG("DecoderFFMPEG::decode_video_frame - start");
-
-	//Send packet to decoder
-	int ret = avcodec_send_packet(m_video_codec_ctx, &m_packet);
-	if (ret < 0 && ret != AVERROR(EAGAIN))
+	auto receive_available_frames = [this]()
 	{
-		m_video_frames.set_error("FFmpeg rejected a video packet.");
-		return false;
-	}
-
-	// Get decoded frame
-	while (ret >= 0)
-	{
-		//Allocate Frame
-		AVFrame* frame = av_frame_alloc();
-
-		// Get frame from decoder
-		ret = avcodec_receive_frame(m_video_codec_ctx, frame);
-
-		// Frame Decoded 
-		if (ret == 0)
+		while (true)
 		{
-			// Construct frame data
+			AVFrame* frame = av_frame_alloc();
+			if (frame == nullptr)
+			{
+				m_video_frames.set_error(
+					"Could not allocate a decoded video frame.");
+				return false;
+			}
+
+			const int receive_result =
+				avcodec_receive_frame(m_video_codec_ctx, frame);
+			if (receive_result == AVERROR(EAGAIN) ||
+				receive_result == AVERROR_EOF)
+			{
+				av_frame_free(&frame);
+				return true;
+			}
+			if (receive_result < 0)
+			{
+				av_frame_free(&frame);
+				char error[AV_ERROR_MAX_STRING_SIZE]{};
+				av_strerror(receive_result, error, sizeof(error));
+				m_video_frames.set_error(
+					std::string("FFmpeg video receive failed: ") + error);
+				LOG(
+					"AVDecoderFFMPEG::decode_video_frame - receive failed: %s",
+					error);
+				return false;
+			}
+
 			FrameData framedata;
-			framedata.data			= frame;
-			framedata.frame_time		=
+			framedata.data = frame;
+			framedata.frame_time =
 				av_q2d(m_video_stream->time_base) *
 				static_cast<double>(frame->best_effort_timestamp);
 			if (std::abs(
@@ -906,29 +963,32 @@ bool AVDecoderFFMPEG::decode_video_frame()
 				m_video_frames.set_error("Decoded video queue is full.");
 				return false;
 			}
-						
-			//LOG("DecoderFFMPEG::decode_video_frame - m_video_frames: %d", m_video_frames.size());
 		}
+	};
 
-		// Error or End of File 
-		else if (ret == AVERROR(EAGAIN))
-		{
-			av_frame_free(&frame);
-			//char error_str[64];
-			//av_make_error_string(error_str, 64, ret);
-			//LOG("DecoderFFMPEG::decode_video_frame - ERROR: %s", error_str);
-			break;
-		}
-		else
-		{
-			av_frame_free(&frame);
+	int send_result = avcodec_send_packet(m_video_codec_ctx, &m_packet);
+	if (send_result == AVERROR(EAGAIN))
+	{
+		// FFmpeg still owns output from an earlier packet. Drain that output,
+		// then retry this exact packet instead of silently dropping it.
+		LOG("AVDecoderFFMPEG::decode_video_frame - recovering send EAGAIN");
+		if (!receive_available_frames())
 			return false;
-		}
+		send_result = avcodec_send_packet(m_video_codec_ctx, &m_packet);
+	}
+	if (send_result < 0)
+	{
+		char error[AV_ERROR_MAX_STRING_SIZE]{};
+		av_strerror(send_result, error, sizeof(error));
+		m_video_frames.set_error(
+			std::string("FFmpeg rejected a video packet: ") + error);
+		LOG(
+			"AVDecoderFFMPEG::decode_video_frame - send failed: %s",
+			error);
+		return false;
 	}
 
-
-	//
-	return true;
+	return receive_available_frames();
 }
 
 
@@ -1041,7 +1101,18 @@ bool AVDecoderFFMPEG::perform_seek(double time)
 
 	avcodec_flush_buffers(m_video_codec_ctx);
 	if (m_audio_codec_ctx != NULL)
+	{
 		avcodec_flush_buffers(m_audio_codec_ctx);
+		swr_close(m_audio_resampler);
+		if (swr_init(m_audio_resampler) < 0)
+		{
+			m_video_frames.set_error(
+				"Audio resampler could not be reset after seek.");
+			m_geometry_frames.set_error(
+				"Audio resampler could not be reset after seek.");
+			return false;
+		}
+	}
 	flush_buffers();
 	m_geometry_frames.clear();
 	m_pending_video_packets.clear();
@@ -1088,22 +1159,16 @@ volumetric_video::FrameMatchResult AVDecoderFFMPEG::get_video_data(
 
 	AVFrame* frame = m_video_frames.access([&](auto& frames) -> AVFrame*
 	{
-		std::size_t dropped = 0;
 		while (!frames.empty())
 		{
 			if (frames.front().frame_time >= presentation_time - tolerance)
 				break;
 			av_frame_free(&frames.front().data);
 			frames.pop_front();
-			++dropped;
 		}
-		if (dropped > 0)
-		{
-			LOG(
-				"SYNC dropped %zu video sample(s) before target=%f",
-				dropped,
-				presentation_time);
-		}
+		// Dropping obsolete decoded frames is normal when the engine render
+		// rate and encoded rate differ. Never log here: this executes on the
+		// render thread and per-frame I/O creates a self-amplifying stall.
 		return frames.empty() ? nullptr : frames.front().data;
 	});
 

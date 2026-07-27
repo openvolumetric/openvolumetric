@@ -11,6 +11,8 @@ struct DracoEncodeOptions
 	int position_quantization = 14;
 	int normal_quantization = 10;
 	int texture_quantization = 12;
+	int encode_speed = 5;
+	int decode_speed = 5;
 };
 
 /// Loads a triangular OBJ mesh and writes an independently decodable Draco

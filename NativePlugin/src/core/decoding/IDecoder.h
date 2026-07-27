@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 
 // --------------------------------------------------------------------------
 // Basic Decoder Interface
@@ -39,7 +40,10 @@ public:
 	// --------------------------------------------------------------------------
 	// Return the decoder state
 	// --------------------------------------------------------------------------
-	DecoderState get_decoder_state() { return m_decoder_state; }
+	DecoderState get_decoder_state()
+	{
+		return m_decoder_state.load(std::memory_order_acquire);
+	}
 
 	// --------------------------------------------------------------------------
 	// Stop Decoding
@@ -61,6 +65,6 @@ protected:
 	// --------------------------------------------------------------------------
 	// decoder state flag
 	// --------------------------------------------------------------------------
-	DecoderState m_decoder_state;
+	std::atomic<DecoderState> m_decoder_state;
 
 };

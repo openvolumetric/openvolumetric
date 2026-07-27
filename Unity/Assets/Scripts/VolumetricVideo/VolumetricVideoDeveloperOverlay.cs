@@ -185,11 +185,12 @@ public sealed class VolumetricVideoDeveloperOverlay : MonoBehaviour
         float frameMs = m_smoothedDelta * 1000.0F;
         long memoryMb = Profiler.GetTotalAllocatedMemoryLong() /
             (1024L * 1024L);
+        string error = m_player.LastError;
         m_text.text = string.Format(
             "VOLUMETRIC VIDEO\n" +
             "{0}  {1:F1}/{2:F1}s  Loop:{3}\n" +
             "{4:F1} fps  {5:F2} ms  Memory:{6} MB\n" +
-            "{7} | {8}\n" +
+            "{7} | {8}{9}\n" +
             "A Play/Pause  B Loop\n" +
             "X -10s  Y +10s  Menu Hide",
             m_player.State,
@@ -200,6 +201,7 @@ public sealed class VolumetricVideoDeveloperOverlay : MonoBehaviour
             frameMs,
             memoryMb,
             SystemInfo.graphicsDeviceType,
-            SystemInfo.deviceModel);
+            SystemInfo.deviceModel,
+            string.IsNullOrEmpty(error) ? string.Empty : "\nERROR: " + error);
     }
 }

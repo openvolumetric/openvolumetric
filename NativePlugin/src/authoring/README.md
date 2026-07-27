@@ -31,8 +31,27 @@ payload identity, and performs a middle-sample seek.
 The packer accepts an already encoded video/audio MP4 and a directory of
 numbered Draco frames. The Unity Editor uses the same authoring library's
 linked Draco API to convert each OBJ to a temporary `.drc` frame, invokes
-FFmpeg separately for HEVC/AAC encoding, then passes those artifacts to the
-packer.
+FFmpeg separately for HEVC or H.264 video and optional AAC audio encoding,
+then passes those artifacts to the packer.
+
+## Platform presets
+
+The Unity Editor encoder provides four content profiles:
+
+- **Desktop Quality** uses HEVC CRF 20, three reference frames, and balanced
+  Draco encode/decode speed. It prioritises quality and compression.
+- **Quest Balanced** uses HEVC CRF 25 with no B-frames, one reference frame,
+  SAO disabled, and Draco decode speed 9. This is the default Quest profile.
+- **Quest Performance** uses H.264 CRF 23 with no B-frames, one reference
+  frame, reduced geometry quantization, and Draco decode speed 10. It trades
+  file size and some geometry precision for lower software decode cost.
+- **Custom** exposes codec, CRF, keyframe interval, reference frames, HEVC SAO,
+  quantization, and Draco encode/decode speed.
+
+Draco speed values range from 0 (slowest, best compression) to 10 (fastest).
+The decode-speed choice changes how Draco encodes the bitstream and can
+therefore increase geometry size. Presets do not resize source images or
+change the selected source frame rate.
 
 Draco encoding is intentionally part of the Editor-only
 `VolumetricVideoAuthoring` target. Runtime players do not expose authoring

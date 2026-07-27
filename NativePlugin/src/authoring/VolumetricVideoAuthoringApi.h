@@ -20,7 +20,9 @@ VV_AUTHORING_API int volumetricvideo_authoring_encode_obj(
 	const char* output_path,
 	int position_quantization,
 	int normal_quantization,
-	int texture_quantization);
+	int texture_quantization,
+	int encode_speed,
+	int decode_speed);
 
 /// Packages an existing video/audio MP4 and numbered Draco directory.
 /// Returns 1 on success and -1 on failure.

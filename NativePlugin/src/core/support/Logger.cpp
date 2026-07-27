@@ -3,6 +3,10 @@
 #include <Windows.h>
 #endif
 
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
+
 #if defined(_MSC_VER)
 #pragma warning(disable:4996)
 #endif
@@ -83,8 +87,16 @@ void Logger::log(const char* str, ...)
 {
 	va_list args;
 	va_start(args, str);
+#if defined(__ANDROID__)
+	__android_log_vprint(
+		ANDROID_LOG_INFO,
+		"VolumetricVideo",
+		str,
+		args);
+#else
 	vprintf(str, args);
-	va_end(args);
 	fflush(stdout);
 	printf("\n");
+#endif
+	va_end(args);
 }

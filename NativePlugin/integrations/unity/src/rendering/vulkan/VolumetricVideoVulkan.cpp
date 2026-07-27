@@ -78,14 +78,21 @@ int VolumetricVideoVulkan::render()
     std::uint8_t* y = nullptr;
     std::uint8_t* u = nullptr;
     std::uint8_t* v = nullptr;
+    const double video_target =
+        m_has_pending_video ? m_pending_video_time : m_presentation_time;
     if (m_avdecoder->get_video_data(
-            m_presentation_time,
+            video_target,
             tolerance,
             video_time,
             &y,
             &u,
             &v) != volumetric_video::FrameMatchResult::Ready)
         return -1;
+    if (!m_has_pending_video)
+    {
+        m_has_pending_video = true;
+        m_pending_video_time = video_time;
+    }
 
     Mesh mesh;
     double geometry_time = 0.0;
@@ -95,6 +102,7 @@ int VolumetricVideoVulkan::render()
     {
         LOG("SYNC dropping unmatched video pts=%f", video_time);
         m_avdecoder->clean_frame_data();
+        m_has_pending_video = false;
         return -1;
     }
     if (geometry_result != volumetric_video::FrameMatchResult::Ready)
@@ -106,11 +114,14 @@ int VolumetricVideoVulkan::render()
 
     m_avdecoder->clean_frame_data();
     m_geometrydecoder->clear_frame_data();
+    m_has_pending_video = false;
+    set_last_presented_time(video_time);
     return static_cast<int>(std::llround(video_time * fps));
 }
 
 int VolumetricVideoVulkan::seek(double time)
 {
+    m_has_pending_video = false;
     if (!m_avdecoder->seek(time))
         return -1;
     m_geometrydecoder->reset(m_avdecoder->playback_generation());

@@ -42,7 +42,9 @@ public sealed class VolumetricVideoEncoderWindow : EditorWindow
         [MarshalAs(UnmanagedType.LPUTF8Str)] string outputPath,
         int positionQuantization,
         int normalQuantization,
-        int textureQuantization);
+        int textureQuantization,
+        int encodeSpeed,
+        int decodeSpeed);
 
     [DllImport(
         AuthoringLibrary,
@@ -53,15 +55,37 @@ public sealed class VolumetricVideoEncoderWindow : EditorWindow
     private static readonly Regex NumberedFile =
         new Regex(@"^(?<frame>[0-9]+)$", RegexOptions.Compiled);
 
+    private enum EncodingPreset
+    {
+        DesktopQuality,
+        QuestBalanced,
+        QuestPerformance,
+        Custom
+    }
+
+    private enum VideoCodec
+    {
+        HEVC,
+        H264
+    }
+
+    [SerializeField] private EncodingPreset encodingPreset =
+        EncodingPreset.QuestBalanced;
     [SerializeField] private string imageDirectory = "";
     [SerializeField] private string geometryDirectory = "";
     [SerializeField] private string audioFile = "";
     [SerializeField] private string outputFile = "";
     [SerializeField] private float frameRate = 30.0f;
+    [SerializeField] private VideoCodec videoCodec = VideoCodec.HEVC;
     [SerializeField] private int crf = 25;
+    [SerializeField] private int keyframeInterval = 30;
+    [SerializeField] private int referenceFrames = 1;
+    [SerializeField] private bool disableSao = true;
     [SerializeField] private int positionQuantization = 14;
     [SerializeField] private int normalQuantization = 10;
     [SerializeField] private int textureQuantization = 12;
+    [SerializeField] private int dracoEncodeSpeed = 7;
+    [SerializeField] private int dracoDecodeSpeed = 9;
     [SerializeField] private bool overwriteOutput;
     [SerializeField] private bool showAdvanced;
     [SerializeField] private string ffmpegPath = "";
@@ -118,26 +142,68 @@ public sealed class VolumetricVideoEncoderWindow : EditorWindow
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Encoding Settings", EditorStyles.boldLabel);
+            encodingPreset = (EncodingPreset)EditorGUILayout.EnumPopup(
+                new GUIContent(
+                    "Platform Preset",
+                    "Selects video and geometry settings for the target platform."),
+                encodingPreset);
             frameRate = EditorGUILayout.FloatField(
                 new GUIContent(
                     "Source Frame Rate",
                     "Controls image-sequence encoding. Geometry timing is read back from the encoded video samples."),
                 frameRate);
-            crf = EditorGUILayout.IntSlider(
-                new GUIContent("HEVC Quality (CRF)", "Lower values produce higher quality and larger files."),
-                crf,
-                0,
-                51);
+
+            EncodingSettings effective = GetEncodingSettings();
+            EditorGUILayout.HelpBox(
+                effective.Description + "\n" +
+                String.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0}, CRF {1}, keyframes {2}; Draco speed {3}/{4}.",
+                    effective.Codec,
+                    effective.Crf,
+                    effective.KeyframeInterval,
+                    effective.DracoEncodeSpeed,
+                    effective.DracoDecodeSpeed),
+                MessageType.Info);
 
             showAdvanced = EditorGUILayout.Foldout(showAdvanced, "Advanced", true);
             if (showAdvanced)
             {
-                positionQuantization = EditorGUILayout.IntSlider(
-                    "Position Quantization", positionQuantization, 1, 30);
-                normalQuantization = EditorGUILayout.IntSlider(
-                    "Normal Quantization", normalQuantization, 1, 30);
-                textureQuantization = EditorGUILayout.IntSlider(
-                    "UV Quantization", textureQuantization, 1, 30);
+                using (new EditorGUI.DisabledScope(
+                    encodingPreset != EncodingPreset.Custom))
+                {
+                    videoCodec = (VideoCodec)EditorGUILayout.EnumPopup(
+                        "Video Codec", videoCodec);
+                    crf = EditorGUILayout.IntSlider(
+                        new GUIContent(
+                            "Video Quality (CRF)",
+                            "Lower values produce higher quality and larger files."),
+                        crf,
+                        0,
+                        51);
+                    keyframeInterval = EditorGUILayout.IntSlider(
+                        "Keyframe Interval", keyframeInterval, 1, 300);
+                    referenceFrames = EditorGUILayout.IntSlider(
+                        "Reference Frames", referenceFrames, 1, 5);
+                    if(videoCodec == VideoCodec.HEVC)
+                    {
+                        disableSao = EditorGUILayout.Toggle(
+                            new GUIContent(
+                                "Disable HEVC SAO",
+                                "Reduces software decode work at a small quality cost."),
+                            disableSao);
+                    }
+                    positionQuantization = EditorGUILayout.IntSlider(
+                        "Position Quantization", positionQuantization, 1, 30);
+                    normalQuantization = EditorGUILayout.IntSlider(
+                        "Normal Quantization", normalQuantization, 1, 30);
+                    textureQuantization = EditorGUILayout.IntSlider(
+                        "UV Quantization", textureQuantization, 1, 30);
+                    dracoEncodeSpeed = EditorGUILayout.IntSlider(
+                        "Draco Encode Speed", dracoEncodeSpeed, 0, 10);
+                    dracoDecodeSpeed = EditorGUILayout.IntSlider(
+                        "Draco Decode Speed", dracoDecodeSpeed, 0, 10);
+                }
                 ffmpegPath = FileField("FFmpeg", ffmpegPath, "Select FFmpeg", "");
             }
 
@@ -249,6 +315,7 @@ public sealed class VolumetricVideoEncoderWindow : EditorWindow
 
     private void Encode(EncodingInputs inputs, CancellationToken token)
     {
+        EncodingSettings settings = GetEncodingSettings();
         string temporaryDirectory = Path.Combine(
             Path.GetTempPath(),
             "volumetric-video-" + Guid.NewGuid().ToString("N"));
@@ -269,9 +336,11 @@ public sealed class VolumetricVideoEncoderWindow : EditorWindow
                 if (EncodeObjToDraco(
                     source.Path,
                     destination,
-                    positionQuantization,
-                    normalQuantization,
-                    textureQuantization) != 1)
+                    settings.PositionQuantization,
+                    settings.NormalQuantization,
+                    settings.TextureQuantization,
+                    settings.DracoEncodeSpeed,
+                    settings.DracoDecodeSpeed) != 1)
                 {
                     string error = Marshal.PtrToStringAnsi(GetAuthoringError());
                     throw new InvalidOperationException(
@@ -286,7 +355,8 @@ public sealed class VolumetricVideoEncoderWindow : EditorWindow
             token.ThrowIfCancellationRequested();
             status = "Encoding texture video and audio";
             progress = 0.48f;
-            List<string> ffmpegArguments = BuildFFmpegArguments(inputs, mediaPath);
+            List<string> ffmpegArguments =
+                BuildFFmpegArguments(inputs, mediaPath, settings);
             RunProcess(ffmpegPath, ffmpegArguments, token);
             AppendLog(
                 "Texture video encoded; geometry timing will be derived from its sample timestamps.");
@@ -356,7 +426,10 @@ public sealed class VolumetricVideoEncoderWindow : EditorWindow
         }
     }
 
-    private List<string> BuildFFmpegArguments(EncodingInputs inputs, string mediaPath)
+    private List<string> BuildFFmpegArguments(
+        EncodingInputs inputs,
+        string mediaPath,
+        EncodingSettings settings)
     {
         NumberedPath first = inputs.Images[0];
         string imagePattern = Path.Combine(
@@ -380,11 +453,32 @@ public sealed class VolumetricVideoEncoderWindow : EditorWindow
         arguments.AddRange(new[]
         {
             "-frames:v", inputs.Images.Count.ToString(CultureInfo.InvariantCulture),
-            "-c:v", "libx265",
-            "-crf", crf.ToString(CultureInfo.InvariantCulture),
-            "-pix_fmt", "yuv420p",
-            "-x265-params", "keyint=20:min-keyint=1:bframes=0"
+            "-c:v", settings.Codec == VideoCodec.HEVC ? "libx265" : "libx264",
+            "-crf", settings.Crf.ToString(CultureInfo.InvariantCulture),
+            "-pix_fmt", "yuv420p"
         });
+        if(settings.Codec == VideoCodec.HEVC)
+        {
+            string parameters = String.Format(
+                CultureInfo.InvariantCulture,
+                "keyint={0}:min-keyint=1:bframes=0:ref={1}{2}",
+                settings.KeyframeInterval,
+                settings.ReferenceFrames,
+                settings.DisableSao ? ":no-sao=1" : "");
+            arguments.Add("-x265-params");
+            arguments.Add(parameters);
+        }
+        else
+        {
+            arguments.Add("-preset");
+            arguments.Add("fast");
+            arguments.Add("-x264-params");
+            arguments.Add(String.Format(
+                CultureInfo.InvariantCulture,
+                "keyint={0}:min-keyint=1:bframes=0:ref={1}",
+                settings.KeyframeInterval,
+                settings.ReferenceFrames));
+        }
 
         if (!String.IsNullOrEmpty(audioFile))
         {
@@ -707,6 +801,82 @@ public sealed class VolumetricVideoEncoderWindow : EditorWindow
         EditorPrefs.SetString(PreferencePrefix + "Audio", audioFile);
         EditorPrefs.SetString(PreferencePrefix + "Output", outputFile);
         EditorPrefs.SetString(PreferencePrefix + "FFmpeg", ffmpegPath);
+    }
+
+    private EncodingSettings GetEncodingSettings()
+    {
+        switch(encodingPreset)
+        {
+            case EncodingPreset.DesktopQuality:
+                return new EncodingSettings(
+                    VideoCodec.HEVC, 20, 60, 3, false,
+                    14, 10, 12, 5, 5,
+                    "Prioritises texture and geometry quality for desktop playback.");
+            case EncodingPreset.QuestBalanced:
+                return new EncodingSettings(
+                    VideoCodec.HEVC, 25, 30, 1, true,
+                    14, 10, 12, 7, 9,
+                    "Default Quest profile with a simpler HEVC bitstream and fast Draco decoding.");
+            case EncodingPreset.QuestPerformance:
+                return new EncodingSettings(
+                    VideoCodec.H264, 23, 30, 1, false,
+                    12, 8, 10, 8, 10,
+                    "Prioritises software decoding speed at the cost of larger video files and geometry precision.");
+            default:
+                return new EncodingSettings(
+                    videoCodec,
+                    crf,
+                    keyframeInterval,
+                    referenceFrames,
+                    disableSao,
+                    positionQuantization,
+                    normalQuantization,
+                    textureQuantization,
+                    dracoEncodeSpeed,
+                    dracoDecodeSpeed,
+                    "Uses the advanced settings below.");
+        }
+    }
+
+    private sealed class EncodingSettings
+    {
+        public readonly VideoCodec Codec;
+        public readonly int Crf;
+        public readonly int KeyframeInterval;
+        public readonly int ReferenceFrames;
+        public readonly bool DisableSao;
+        public readonly int PositionQuantization;
+        public readonly int NormalQuantization;
+        public readonly int TextureQuantization;
+        public readonly int DracoEncodeSpeed;
+        public readonly int DracoDecodeSpeed;
+        public readonly string Description;
+
+        public EncodingSettings(
+            VideoCodec codec,
+            int crfValue,
+            int keyframes,
+            int references,
+            bool disableSaoValue,
+            int position,
+            int normal,
+            int texture,
+            int encodeSpeed,
+            int decodeSpeed,
+            string description)
+        {
+            Codec = codec;
+            Crf = crfValue;
+            KeyframeInterval = keyframes;
+            ReferenceFrames = references;
+            DisableSao = disableSaoValue;
+            PositionQuantization = position;
+            NormalQuantization = normal;
+            TextureQuantization = texture;
+            DracoEncodeSpeed = encodeSpeed;
+            DracoDecodeSpeed = decodeSpeed;
+            Description = description;
+        }
     }
 
     private sealed class EncodingInputs

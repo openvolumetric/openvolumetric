@@ -59,6 +59,12 @@ public class VolumetricVideo : MonoBehaviour
     private double m_start_time;
     private double m_audio_start_time;
     private bool m_has_scheduled_start;
+    private double m_last_dsp_time;
+    private bool m_has_last_dsp_time;
+    private double m_decoder_lag_started = -1.0;
+    private double m_last_decoder_recovery = -10.0;
+    private bool m_decoder_recovering;
+    private double m_decoder_recovery_target;
 
     // Enum for the Playback state
     public enum PlaybackState
@@ -79,6 +85,10 @@ public class VolumetricVideo : MonoBehaviour
     public PlaybackState State { get { return m_playback_state; } }
     public bool IsPlaying { get { return m_playback_state == PlaybackState.PLAYING; } }
     public double Duration { get { return m_decoder != null ? m_decoder.Duration : 0.0; } }
+    public string LastError
+    {
+        get { return m_decoder != null ? m_decoder.LastError : string.Empty; }
+    }
     public double CurrentTime
     {
         get
@@ -86,8 +96,7 @@ public class VolumetricVideo : MonoBehaviour
             if (m_playback_state == PlaybackState.PLAYING ||
                 m_playback_state == PlaybackState.SCHEDULED)
             {
-                double time = System.Math.Max(
-                    0.0, AudioSettings.dspTime - m_start_time);
+                double time = System.Math.Max(0.0, m_playback_position);
                 if(enableLoop && Duration > 0.0)
                 {
                     time %= Duration;
@@ -194,21 +203,63 @@ public class VolumetricVideo : MonoBehaviour
     //----------------------------------------------------------
     void Update()
     {
+        if(m_decoder_recovering)
+        {
+            m_decoder.update(m_decoder_recovery_target);
+            double presented = m_decoder.LastPresentedTime;
+            double tolerance = m_decoder.FrameRate > 0.0
+                ? 1.0 / m_decoder.FrameRate
+                : 0.034;
+            if(presented >= m_decoder_recovery_target - tolerance)
+            {
+                m_decoder_recovering = false;
+                m_playback_position = m_decoder_recovery_target;
+                m_audio_start_time = AudioSettings.dspTime + 0.05;
+                m_start_time =
+                    m_audio_start_time - m_playback_position;
+                m_last_dsp_time = m_audio_start_time;
+                m_has_last_dsp_time = true;
+                m_playback_state = PlaybackState.SCHEDULED;
+                schedule_audio();
+                Debug.Log("VolumetricVideo - synchronized recovery complete");
+            }
+            return;
+        }
+
         // handle the case that playback has been scheduled
         if (m_playback_state == PlaybackState.SCHEDULED && AudioSettings.dspTime >= m_start_time)
         {
             m_playback_state = PlaybackState.PLAYING;
+            m_last_dsp_time = m_start_time;
+            m_has_last_dsp_time = true;
         }
 
         // If started then begin to update time
         if (m_playback_state == PlaybackState.PLAYING)
         {
-            // Workout the frame number         
-            double time = AudioSettings.dspTime - m_start_time;
-            m_playback_position = time;
+            // Accumulate the DSP delta instead of deriving an absolute time.
+            // Some Android audio-stack transitions briefly move dspTime
+            // backwards. Treating that discontinuity as a loop used to seek
+            // native playback to zero while the engine clock continued.
+            double dspTime = AudioSettings.dspTime;
+            if(!m_has_last_dsp_time)
+            {
+                m_last_dsp_time = dspTime;
+                m_has_last_dsp_time = true;
+            }
+            double delta = dspTime - m_last_dsp_time;
+            m_last_dsp_time = dspTime;
+            if(delta >= 0.0 && delta <= 0.5)
+            {
+                m_playback_position += delta;
+            }
 
             // Set counter in decoder
-            m_decoder.update(time);
+            m_decoder.update(m_playback_position);
+            if(TryRecoverDecoderLag(dspTime))
+            {
+                return;
+            }
 
             //
             if(!enableLoop && m_decoder.ContentLooped)
@@ -223,6 +274,55 @@ public class VolumetricVideo : MonoBehaviour
             }
          }
 
+    }
+
+    private bool TryRecoverDecoderLag(double dspTime)
+    {
+        double presented = m_decoder.LastPresentedTime;
+        if(presented < 0.0)
+        {
+            return false;
+        }
+
+        double target = Duration > 0.0
+            ? m_playback_position % Duration
+            : m_playback_position;
+        double lag = target - presented;
+        if(lag < 0.0)
+        {
+            lag += Duration;
+        }
+        if(lag <= 0.5)
+        {
+            m_decoder_lag_started = -1.0;
+            return false;
+        }
+        if(m_decoder_lag_started < 0.0)
+        {
+            m_decoder_lag_started = dspTime;
+            return false;
+        }
+        if(dspTime - m_decoder_lag_started < 0.5 ||
+            dspTime - m_last_decoder_recovery < 3.0)
+        {
+            return false;
+        }
+
+        m_last_decoder_recovery = dspTime;
+        m_decoder_lag_started = -1.0;
+        Debug.LogWarning(string.Format(
+            "VolumetricVideo - decoder lagged by {0:F3}s; " +
+            "pausing all streams to catch up at {1:F3}s",
+            lag,
+            target));
+        m_decoder_recovering = true;
+        m_decoder_recovery_target = target;
+        m_playback_position = target;
+        if(m_audio_source != null)
+        {
+            m_audio_source.Stop();
+        }
+        return true;
     }
 
     //----------------------------------------------------------
@@ -270,6 +370,8 @@ public class VolumetricVideo : MonoBehaviour
         m_start_time        = dspTime;
         m_audio_start_time  = dspTime;
         m_has_scheduled_start = true;
+        m_last_dsp_time = dspTime;
+        m_has_last_dsp_time = true;
         m_playback_state    = PlaybackState.SCHEDULED;
         schedule_audio();
     }
@@ -313,6 +415,8 @@ public class VolumetricVideo : MonoBehaviour
         m_decoder.MeshRenderer.enabled = true;
         m_audio_start_time = AudioSettings.dspTime + 0.05;
         m_start_time = m_audio_start_time - m_playback_position;
+        m_last_dsp_time = m_audio_start_time;
+        m_has_last_dsp_time = true;
         m_playback_state = PlaybackState.SCHEDULED;
         if(m_audio_source != null)
         {
@@ -330,6 +434,7 @@ public class VolumetricVideo : MonoBehaviour
         }
 
         m_playback_position = System.Math.Min(CurrentTime, Duration);
+        m_has_last_dsp_time = false;
         m_playback_state = PlaybackState.PAUSED;
         if(m_audio_source != null)
         {

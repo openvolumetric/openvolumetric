@@ -57,6 +57,9 @@ public class VolumetricVideoDecoder : IDisposable
     [DllImport(DLLNAME, EntryPoint = "volumetricvideo_get_last_error")]
     private static extern IntPtr volumetricvideo_get_last_error(int ID);
 
+    [DllImport(DLLNAME, EntryPoint = "volumetricvideo_get_last_presented_time")]
+    private static extern double volumetricvideo_get_last_presented_time(int ID);
+
     [DllImport(DLLNAME, EntryPoint = "volumetricvideo_get_video_details")]
     private static extern int volumetricvideo_get_video_details(int ID, ref int width, ref int height, ref double fps, ref double duration);
 
@@ -158,6 +161,26 @@ public class VolumetricVideoDecoder : IDisposable
     public double FrameRate
     {
         get { return video_fps; }
+    }
+
+    public string LastError
+    {
+        get
+        {
+            if(m_instance_id < 0)
+            {
+                return String.Empty;
+            }
+            IntPtr message = volumetricvideo_get_last_error(m_instance_id);
+            return message == IntPtr.Zero
+                ? String.Empty
+                : Marshal.PtrToStringAnsi(message);
+        }
+    }
+
+    public double LastPresentedTime
+    {
+        get { return volumetricvideo_get_last_presented_time(m_instance_id); }
     }
 
     //---------------------------------------------
@@ -595,13 +618,22 @@ public class VolumetricVideoDecoder : IDisposable
         // Compute frame within the sequence
         int current_frame = (int)(presentation_time * video_fps);
 
-        //Check if there is a requirement to update the frame
+        // Update frame bookkeeping and loop detection only when the encoded
+        // frame changes. The render callback is still issued every Unity
+        // update so a texture waiting for asynchronous Draco output can retry
+        // the same timestamp instead of being abandoned on the next frame.
         if (m_previous_frame != current_frame)
         {
             // The managed playback clock owns loop detection. Reset every
             // native stream before requesting frame zero so no texture,
             // geometry, or audio from the previous pass can leak across.
-            if(current_frame < m_previous_frame)
+            int total_frames = (int)(video_duration * video_fps);
+            int loop_guard_frames = System.Math.Max(2, (int)video_fps * 2);
+            bool crossed_loop_boundary =
+                current_frame < m_previous_frame &&
+                m_previous_frame >= total_frames - loop_guard_frames &&
+                current_frame <= loop_guard_frames;
+            if(crossed_loop_boundary)
             {
                 m_loop = true;
                 if(volumetricvideo_seek(m_instance_id, 0.0) == -1)
@@ -611,18 +643,14 @@ public class VolumetricVideoDecoder : IDisposable
                 }
             }
 
-            // Video, geometry, and audio all use the same DSP-clock time.
-            volumetricvideo_set_time(m_instance_id, presentation_time);
-
-            // Issue render event
-            GL.IssuePluginEvent(GetRenderEventFunc(), m_instance_id);
-
-            // Recalculate Mesh Bounds
-            m_mesh.RecalculateBounds();
-            
             // keep track of previous frame
             m_previous_frame = current_frame;
-        }    
+        }
+
+        // Video, geometry, and audio all use the same presentation time.
+        volumetricvideo_set_time(m_instance_id, presentation_time);
+        GL.IssuePluginEvent(GetRenderEventFunc(), m_instance_id);
+        m_mesh.RecalculateBounds();
     }
 
     //----------------------------------------------------------

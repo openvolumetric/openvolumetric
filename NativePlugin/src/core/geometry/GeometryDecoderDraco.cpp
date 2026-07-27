@@ -76,6 +76,21 @@ bool GeometryDecoderDraco::submit_encoded_frame(
 	return true;
 }
 
+bool GeometryDecoderDraco::can_accept_encoded_frame() const
+{
+	return m_streamed_meshes.state() == volumetric_video::QueueState::Open &&
+		!m_streamed_meshes.full();
+}
+
+std::string GeometryDecoderDraco::get_last_error() const
+{
+	if (m_streamed_meshes.state() == volumetric_video::QueueState::Error)
+		return m_streamed_meshes.error();
+	if (m_decoded_meshes.state() == volumetric_video::QueueState::Error)
+		return m_decoded_meshes.error();
+	return {};
+}
+
 void GeometryDecoderDraco::reset(std::uint64_t generation)
 {
 	m_generation.store(generation, std::memory_order_release);
@@ -179,6 +194,9 @@ bool GeometryDecoderDraco::decode()
 			m_decode_active.store(false, std::memory_order_release);
 			m_decoded_meshes.set_error(
 				"Draco geometry frame could not be decoded.");
+			LOG(
+				"GeometryDecoderDraco::decode - failed at pts=%f",
+				encoded.presentation_time);
 			return false;
 		}
 
@@ -196,6 +214,9 @@ bool GeometryDecoderDraco::decode()
 		{
 			m_decode_active.store(false, std::memory_order_release);
 			m_decoded_meshes.set_error("Decoded geometry queue is full.");
+			LOG(
+				"GeometryDecoderDraco::decode - decoded queue rejected pts=%f",
+				encoded.presentation_time);
 			return false;
 		}
 		m_decode_active.store(false, std::memory_order_release);
@@ -225,25 +246,18 @@ volumetric_video::FrameMatchResult GeometryDecoderDraco::get_mesh_data(
 {
 	return m_decoded_meshes.access([&](auto& meshes)
 	{
-		std::size_t dropped = 0;
 		while (!meshes.empty())
 		{
 			if (meshes.front().presentation_time <
 				presentation_time - tolerance)
 			{
 				meshes.pop_front();
-				++dropped;
 				continue;
 			}
 			break;
 		}
-		if (dropped > 0)
-		{
-			LOG(
-				"SYNC dropped %zu geometry sample(s) before target=%f",
-				dropped,
-				presentation_time);
-		}
+		// Discarding obsolete geometry is expected when presentation advances
+		// across more than one sample. Avoid render-thread logging here.
 		if (meshes.empty())
 		{
 			const std::uint64_t generation =

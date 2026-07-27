@@ -27,9 +27,14 @@ bool encode_obj_to_draco(
 		options.normal_quantization < 1 ||
 		options.normal_quantization > 30 ||
 		options.texture_quantization < 1 ||
-		options.texture_quantization > 30)
+		options.texture_quantization > 30 ||
+		options.encode_speed < 0 ||
+		options.encode_speed > 10 ||
+		options.decode_speed < 0 ||
+		options.decode_speed > 10)
 	{
-		error = "Draco quantization values must be between 1 and 30.";
+		error =
+			"Draco quantization must be 1-30 and speed values must be 0-10.";
 		return false;
 	}
 
@@ -66,7 +71,7 @@ bool encode_obj_to_draco(
 	}
 
 	draco::Encoder encoder;
-	encoder.SetSpeedOptions(5, 5);
+	encoder.SetSpeedOptions(options.encode_speed, options.decode_speed);
 	encoder.SetAttributeQuantization(
 		draco::GeometryAttribute::POSITION,
 		options.position_quantization);

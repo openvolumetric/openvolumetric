@@ -31,7 +31,8 @@ bool IVolumetricVideo::submit_embedded_geometry(double presentation_time)
 		presentation_time + geometry_lookahead_seconds;
 
 	IAVDecoder::EncodedGeometryFrame encoded;
-	while (m_avdecoder->get_geometry_data(submission_limit, encoded))
+	while (m_geometrydecoder->can_accept_encoded_frame() &&
+		m_avdecoder->get_geometry_data(submission_limit, encoded))
 	{
 		if (!m_geometrydecoder->submit_encoded_frame(
 			encoded.generation,
