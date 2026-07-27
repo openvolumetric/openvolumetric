@@ -13,6 +13,7 @@ namespace openvol
 namespace
 {
 
+/// Packs a four-character code using FFmpeg's tag byte order.
 constexpr std::uint32_t make_tag(char a, char b, char c, char d)
 {
 	return static_cast<std::uint32_t>(a) |
@@ -23,6 +24,7 @@ constexpr std::uint32_t make_tag(char a, char b, char c, char d)
 
 constexpr std::uint32_t kGeometryTag = make_tag('v', 'v', 'g', 'e');
 
+/// Converts one FFmpeg status code into a readable diagnostic.
 std::string ffmpeg_error(int value)
 {
 	std::array<char, AV_ERROR_MAX_STRING_SIZE> buffer{};
@@ -30,6 +32,7 @@ std::string ffmpeg_error(int value)
 	return buffer.data();
 }
 
+/// Maps the public stream kind to the fixed stream-index array slot.
 std::size_t kind_slot(StreamKind kind)
 {
 	switch (kind)

@@ -26,6 +26,7 @@ namespace
 
 namespace fs = std::filesystem;
 
+/// Packs four ASCII bytes into the integer representation used by FFmpeg tags.
 constexpr std::uint32_t make_tag(char a, char b, char c, char d)
 {
 	return
@@ -52,6 +53,7 @@ struct VideoSampleTiming
 	std::int64_t duration;
 };
 
+/// Converts one FFmpeg error code into readable text.
 std::string ffmpeg_error(int error)
 {
 	std::array<char, AV_ERROR_MAX_STRING_SIZE> buffer{};
@@ -59,6 +61,7 @@ std::string ffmpeg_error(int error)
 	return buffer.data();
 }
 
+/// Reads an entire geometry payload while rejecting empty or unreadable files.
 bool read_file(const fs::path& path, std::vector<std::uint8_t>& output)
 {
 	std::ifstream input(path, std::ios::binary | std::ios::ate);
@@ -82,6 +85,7 @@ bool read_file(const fs::path& path, std::vector<std::uint8_t>& output)
 		reinterpret_cast<char*>(output.data()), size));
 }
 
+/// Discovers a contiguous, numerically named Draco sequence.
 bool discover_geometry(
 	const fs::path& directory,
 	std::vector<GeometryInput>& geometry)
@@ -152,6 +156,7 @@ bool discover_geometry(
 	return true;
 }
 
+/// Extracts one exact PTS/duration pair per source video frame.
 bool collect_video_timing(
 	AVFormatContext* input,
 	int video_stream_index,
@@ -220,6 +225,7 @@ bool collect_video_timing(
 	return true;
 }
 
+/// Wraps and writes one Draco payload as a timed VVGF geometry sample.
 bool write_geometry_sample(
 	AVFormatContext* output,
 	AVStream* stream,
@@ -273,6 +279,7 @@ bool write_geometry_sample(
 	return true;
 }
 
+/// Copies media streams and interleaves a newly created geometry stream.
 bool mux_file(
 	const PackOptions& options,
 	const std::vector<GeometryInput>& geometry,
@@ -505,6 +512,7 @@ cleanup:
 	return success;
 }
 
+/// Reads an unsigned big-endian MP4 box field.
 std::uint32_t read_be32(const std::uint8_t* value)
 {
 	return
@@ -514,6 +522,7 @@ std::uint32_t read_be32(const std::uint8_t* value)
 		static_cast<std::uint32_t>(value[3]);
 }
 
+/// Rewrites FFmpeg's generic binary-data sample entry to the OpenVol vvge tag.
 bool replace_geometry_sample_entry(const fs::path& path)
 {
 	std::fstream file(path, std::ios::binary | std::ios::in | std::ios::out);
@@ -622,6 +631,7 @@ bool replace_geometry_sample_entry(const fs::path& path)
 	return true;
 }
 
+/// Reopens the output and verifies tracks, timestamps, payloads, and seeking.
 bool verify_file(
 	const fs::path& path,
 	const std::vector<GeometryInput>& geometry)

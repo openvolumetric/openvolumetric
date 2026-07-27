@@ -5,64 +5,36 @@
 
 #include <thread>
 
-//
-//
-//
+/// D3D11-specific OpenVol coordinator used by Unity on Windows.
 class VolumetricVideoD3D11 : public IVolumetricVideo
 {
-
 public:
-
-	//--------------------------------------------------------
-	// default constructor
-	//--------------------------------------------------------
+	/// Constructs an unattached coordinator.
 	VolumetricVideoD3D11() : IVolumetricVideo() {};
 
-	
-	//--------------------------------------------------------
-	// constructor with instance id - id passed to base class
-	//--------------------------------------------------------
+	/// Creates media, geometry, texture, and mesh components.
 	VolumetricVideoD3D11(int ID);
 
+	/// Releases every owned component.
+	~VolumetricVideoD3D11() override;
 
-	//--------------------------------------------------------
-	// destructor
-	//--------------------------------------------------------
-	~VolumetricVideoD3D11();
+	/// Starts media and geometry workers.
+	int start() override;
 
+	/// Stops both decode workers.
+	int stop() override;
 
-	//--------------------------------------------------------
-	//
-	//--------------------------------------------------------
-	int start();
+	/// Performs a unified timestamp seek and generation reset.
+	int seek(double time) override;
 
+	/// Matches and uploads one timestamped texture/mesh presentation.
+	int render() override;
 
-	//--------------------------------------------------------
-	//
-	//--------------------------------------------------------
-	int stop();
-
-
-	//--------------------------------------------------------
-	// inherited function to set frame index
-	//--------------------------------------------------------
-	int seek(double time);
-
-	//--------------------------------------------------------
-	// inherited function to perform rendering
-	//--------------------------------------------------------
-	int render();
-
-	//--------------------------------------------------------
-	//
-	//--------------------------------------------------------
-	void destroy();
+	/// Idempotently stops workers and releases all owned components.
+	void destroy() override;
 
 
 private:
-	
-	//--------------------------------------------------------
-	//
+	/// Temporary destination used when retrieving a decoded mesh.
 	Mesh m_mesh;
 };
-

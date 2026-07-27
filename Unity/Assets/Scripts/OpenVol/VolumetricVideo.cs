@@ -114,9 +114,10 @@ public class VolumetricVideo : MonoBehaviour
     }
     
 
-    //----------------------------------------------------------
-    // Start is called before the first frame update
-    //----------------------------------------------------------
+    /// <summary>
+    /// Resolves the combined MP4, creates Unity render/audio resources, and
+    /// starts the native decode workers.
+    /// </summary>
     IEnumerator Start()
     {
         // Add components required to draw mesh
@@ -204,9 +205,10 @@ public class VolumetricVideo : MonoBehaviour
         }
     }
 
-    //----------------------------------------------------------
-    // Update is called once per frame
-    //----------------------------------------------------------
+    /// <summary>
+    /// Advances the shared DSP-clock timeline and submits its presentation
+    /// target to the native render callback once per Unity frame.
+    /// </summary>
     void Update()
     {
         if(m_decoder_recovering)
@@ -282,6 +284,11 @@ public class VolumetricVideo : MonoBehaviour
 
     }
 
+    /// <summary>
+    /// Pauses all streams when native presentation remains behind the engine
+    /// clock, allowing texture and geometry to catch up without losing sync.
+    /// </summary>
+    /// <returns>True when synchronized recovery was started.</returns>
     private bool TryRecoverDecoderLag(double dspTime)
     {
         double presented = m_decoder.LastPresentedTime;
@@ -331,22 +338,21 @@ public class VolumetricVideo : MonoBehaviour
         return true;
     }
 
-    //----------------------------------------------------------
-    // On Application Quit - stop decoding
-    //----------------------------------------------------------
+    /// <summary>Stops native workers before Unity tears down the application.</summary>
     void OnApplicationQuit() 
     {
         shutdown();
 	}
 
-    //----------------------------------------------------------
-    // On Destroy - stop decoding
-    //----------------------------------------------------------
+    /// <summary>Releases native and Unity resources when the component dies.</summary>
     void OnDestroy() 
     {
         shutdown();
     }
 
+    /// <summary>
+    /// Idempotently stops audio/decoding and disposes the native instance.
+    /// </summary>
     private void shutdown()
     {
         if(m_audio_source != null)
@@ -366,10 +372,9 @@ public class VolumetricVideo : MonoBehaviour
         m_playback_state = PlaybackState.STOPPED;
     }
 
-    //----------------------------------------------------------
-    // Option to schedult start based on a DSP time 
-    // Needs to be in the future otherwise it will just start on load
-    //----------------------------------------------------------
+    /// <summary>
+    /// Schedules synchronized playback at an absolute future DSP timestamp.
+    /// </summary>
     public void set_scheduled_start(double dspTime)
     {
         m_playback_position = 0.0;
@@ -382,6 +387,10 @@ public class VolumetricVideo : MonoBehaviour
         schedule_audio();
     }
 
+    /// <summary>
+    /// Schedules the streaming AudioClip from the current playback position.
+    /// Texture and geometry use the same DSP-derived timeline.
+    /// </summary>
     private void schedule_audio()
     {
         if(m_audio_source != null && m_audio_source.clip != null)
@@ -391,6 +400,7 @@ public class VolumetricVideo : MonoBehaviour
         }
     }
 
+    /// <summary>Toggles between paused and scheduled/playing states.</summary>
     public void TogglePlayPause()
     {
         if(m_playback_state == PlaybackState.PLAYING ||
@@ -404,6 +414,9 @@ public class VolumetricVideo : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Resumes from the current position using a short scheduling lead time.
+    /// </summary>
     public void Play()
     {
         if(m_decoder == null ||
@@ -431,6 +444,7 @@ public class VolumetricVideo : MonoBehaviour
         schedule_audio();
     }
 
+    /// <summary>Freezes the shared timeline and stops audio consumption.</summary>
     public void PausePlayback()
     {
         if(m_playback_state != PlaybackState.PLAYING &&
@@ -448,6 +462,10 @@ public class VolumetricVideo : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Seeks every native stream and updates Unity audio to the clamped target.
+    /// </summary>
+    /// <returns>False when the decoder is unavailable or native seek fails.</returns>
     public bool Seek(double time)
     {
         if(m_decoder == null || Duration <= 0.0)
@@ -483,11 +501,13 @@ public class VolumetricVideo : MonoBehaviour
         return true;
     }
 
+    /// <summary>Seeks by a signed number of seconds from the current time.</summary>
     public void SeekRelative(double seconds)
     {
         Seek(CurrentTime + seconds);
     }
 
+    /// <summary>Changes loop policy for both native playback and Unity audio.</summary>
     public void ToggleLoop()
     {
         enableLoop = !enableLoop;
@@ -502,9 +522,9 @@ public class VolumetricVideo : MonoBehaviour
     }
 
 
-    //----------------------------------------------------------
-    // On Destroy - stop decoding
-    //----------------------------------------------------------
+    /// <summary>
+    /// Applies Inspector colour-correction edits during active playback.
+    /// </summary>
     private void OnValidate()
     {
         if(m_playback_state == PlaybackState.PLAYING)

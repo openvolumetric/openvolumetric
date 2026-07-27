@@ -17,6 +17,7 @@ enum class StreamKind
 
 struct Rational
 {
+	/// Numerator and denominator of a media timestamp time base.
 	int numerator = 0;
 	int denominator = 1;
 };
@@ -42,15 +43,23 @@ struct ContainerPacket
 class IVolumetricContainer
 {
 public:
+	/// Releases implementation-owned container resources.
 	virtual ~IVolumetricContainer() = default;
 
+	/// Opens and validates a combined volumetric media file.
 	virtual bool open(const char* path) = 0;
+	/// Closes the file and clears stream discovery and error state.
 	virtual void close() = 0;
+	/// Reads the next recognized compressed sample in demux order.
 	virtual bool read(ContainerPacket& packet) = 0;
+	/// Repositions demuxing to a timestamp in seconds.
 	virtual bool seek(double seconds) = 0;
 
+	/// Returns whether a container is currently available for reads.
 	virtual bool is_open() const = 0;
+	/// Returns whether read() reached the physical end of the container.
 	virtual bool end_of_stream() const = 0;
+	/// Returns the most recent container error.
 	virtual const std::string& error() const = 0;
 };
 

@@ -20,96 +20,56 @@ class IVolumetricVideo
 {
 
 public:
-
-	//--------------------------------------------------------
-	// default constructor
-	//--------------------------------------------------------
+	/// Constructs an unattached coordinator for tests or deferred assignment.
 	IVolumetricVideo() : m_id(-1), m_avdecoder(NULL), m_texture(NULL), m_geometrydecoder(NULL), m_meshbuffer(NULL), m_geometry_generation(0), m_last_presented_time(-1.0) {};
 
-
-	//--------------------------------------------------------
-	// constructor with instance id
-	//--------------------------------------------------------
+	/// Constructs a coordinator with the stable identifier exposed by the C API.
 	IVolumetricVideo(int id) :m_id(id), m_avdecoder(NULL), m_texture(NULL), m_geometrydecoder(NULL), m_meshbuffer(NULL), m_geometry_generation(0), m_last_presented_time(-1.0) {};
 	
-	
-	//--------------------------------------------------------
-	// destructor
-	//--------------------------------------------------------
+	/// Concrete backends call destroy() before base destruction.
 	virtual ~IVolumetricVideo() {};
 
+	/// Returns the stable decoder identifier used by exported API calls.
+	int get_id() const { return m_id; }
 
-	//--------------------------------------------------------
-	// return the instance id
-	//--------------------------------------------------------
-	int get_id() { return m_id; }
-
-
-	//--------------------------------------------------------
-	//  get Texture pointers
-	//--------------------------------------------------------
+	/// Returns the owned media decoder; valid after backend construction.
 	IAVDecoder* get_avdecoder_ptr() { return m_avdecoder; }
 
-
-	//--------------------------------------------------------
-	// get Texture pointers
-	//--------------------------------------------------------
+	/// Returns the owned texture uploader; valid after backend construction.
 	ITexture* get_texture_ptr() { return m_texture; }
 
-
-	//--------------------------------------------------------
-	//  get Geometry Decoder pointer
-	//--------------------------------------------------------
+	/// Returns the owned asynchronous geometry decoder.
 	IGeometryDecoder* get_geometrydecoder_ptr() { return m_geometrydecoder; }
 
-
-	//--------------------------------------------------------
-	//  get Mesh Buffer pointer
-	//--------------------------------------------------------
+	/// Returns the owned engine-specific mesh uploader.
 	IMeshBuffer* get_meshbuffer() { return m_meshbuffer; }
 
-
-	//--------------------------------------------------------
-	// Set the engine-clock presentation target in seconds.
-	//--------------------------------------------------------
+	/// Sets the engine-clock presentation target in seconds.
 	void set_presentation_time(double time) { m_presentation_time = time; }
 
-
-	//--------------------------------------------------------
-	// function to implement: start decoder
-	//--------------------------------------------------------
+	/// Starts the media and geometry workers for this backend.
 	virtual int start() = 0;
 
-
-	//--------------------------------------------------------
-	// function to implement: stop decoder
-	//--------------------------------------------------------
+	/// Stops workers without releasing registered graphics resources.
 	virtual int stop() = 0;
 
-
-	//--------------------------------------------------------
-	// function to implement: set frame
-	//--------------------------------------------------------
+	/// Seeks every stream and prepares a complete presentation near time.
 	virtual int seek(double time) = 0;
 
-
-	//--------------------------------------------------------
-	// function to implement: render
-	//--------------------------------------------------------
+	/// Selects matching texture/geometry and uploads them on the render thread.
 	virtual int render() = 0;
 
-	//--------------------------------------------------------
-	// function to implement: destroy - memory cleanup etc
-	//--------------------------------------------------------
+	/// Stops decoding and releases all backend-owned resources.
 	virtual void destroy() = 0;
 
+	/// Returns the PTS most recently uploaded successfully, or -1 before one.
 	double get_last_presented_time() const
 	{
 		return m_last_presented_time.load(std::memory_order_acquire);
 	}
 
 protected:
-
+	/// Publishes the completed presentation time across the C API boundary.
 	void set_last_presented_time(double time)
 	{
 		m_last_presented_time.store(time, std::memory_order_release);
@@ -124,37 +84,22 @@ protected:
 	bool prepare_presentation(double presentation_time);
 
 
-	//--------------------------------------------------------
-	// instance id 
-	//--------------------------------------------------------
+	/// Stable identifier assigned by the exported Unity API.
 	int					m_id;
 
-
-	//--------------------------------------------------------
-	// AV decoder
-	//--------------------------------------------------------
+	/// Owned combined MP4 decoder.
 	IAVDecoder*			m_avdecoder;
 
-
-	//--------------------------------------------------------
-	// Texture
-	//--------------------------------------------------------
+	/// Owned graphics-backend texture uploader.
 	ITexture*			m_texture;
 
-
-	//--------------------------------------------------------
-	// Geometry Decoder
-	//--------------------------------------------------------
+	/// Owned Draco worker and decoded-mesh queue.
 	IGeometryDecoder*	m_geometrydecoder;
 
-
-	//--------------------------------------------------------
-	// Mesh Buffer
-	//--------------------------------------------------------
+	/// Owned graphics-backend mesh uploader.
 	IMeshBuffer*		m_meshbuffer;
 
-
-	//--------------------------------------------------------
+	/// Current presentation target supplied by the engine clock.
 	double m_presentation_time = 0.0;
 
 	// Identifies which seek/loop pass currently owns queued Draco work.

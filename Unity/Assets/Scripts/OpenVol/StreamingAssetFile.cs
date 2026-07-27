@@ -17,6 +17,13 @@ namespace OpenVol
 /// </summary>
 public static class StreamingAssetFile
 {
+    /// <summary>
+    /// Produces a filesystem path that native FFmpeg can open.
+    /// </summary>
+    /// <remarks>
+    /// Desktop StreamingAssets are already files. Android assets live inside
+    /// the APK and are copied once to persistent storage before completion.
+    /// </remarks>
     public static IEnumerator PrepareReadablePath(
         string relativePath,
         Action<string> completed)

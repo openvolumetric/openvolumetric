@@ -2,15 +2,22 @@
 
 #include <ITexture.h>
 
+/// Owns three single-channel Metal textures used as Unity external textures.
 class TextureMetal : public ITexture
 {
 public:
+	/// Constructs an empty texture set.
 	TextureMetal();
+	/// Releases uploader-owned Metal textures.
 	~TextureMetal() override;
 
+	/// Allocates luma and half-resolution chroma textures.
 	int init(void* handler, unsigned int width, unsigned int height) override;
+	/// Exposes native MTLTexture pointers for Unity wrapping.
 	void getResourcePointers(void*& ptry, void*& ptru, void*& ptrv) override;
+	/// Replaces all three planes with one decoded YUV420P frame.
 	void upload(unsigned char* ych, unsigned char* uch, unsigned char* vch) override;
+	/// Releases textures and invalidates borrowed interface pointers.
 	void destroy() override;
 
 private:

@@ -100,6 +100,7 @@ public sealed class OpenVolEncoderWindow : EditorWindow
     private volatile bool running;
     private volatile string status = "Ready";
 
+    /// <summary>Opens or focuses the OpenVol authoring window.</summary>
     [MenuItem("Tools/OpenVol/Encoder")]
     private static void Open()
     {
@@ -108,6 +109,7 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         window.minSize = new Vector2(560, 620);
     }
 
+    /// <summary>Restores persisted paths when Unity creates the window.</summary>
     private void OnEnable()
     {
         imageDirectory = Load("Images", imageDirectory);
@@ -117,11 +119,13 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         ffmpegPath = Load("FFmpeg", FindExecutable("ffmpeg"));
     }
 
+    /// <summary>Persists current paths before the window is destroyed.</summary>
     private void OnDisable()
     {
         SaveSettings();
     }
 
+    /// <summary>Draws input, preset, progress, and diagnostic controls.</summary>
     private void OnGUI()
     {
         scroll = EditorGUILayout.BeginScrollView(scroll);
@@ -247,6 +251,7 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         EditorGUILayout.EndScrollView();
     }
 
+    /// <summary>Validates current inputs and reports a concise result.</summary>
     private void ValidateAndReport()
     {
         try
@@ -268,6 +273,10 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         }
     }
 
+    /// <summary>
+    /// Validates on the main thread and runs encoding asynchronously so the
+    /// editor window can continue repainting and accept cancellation.
+    /// </summary>
     private async void StartEncoding()
     {
         EncodingInputs inputs;
@@ -316,6 +325,10 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         }
     }
 
+    /// <summary>
+    /// Executes the complete image/video, OBJ/Draco, packaging, and verification
+    /// pipeline on a worker thread.
+    /// </summary>
     private void Encode(EncodingInputs inputs, CancellationToken token)
     {
         EncodingSettings settings = GetEncodingSettings();
@@ -429,6 +442,7 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         }
     }
 
+    /// <summary>Builds deterministic FFmpeg arguments for the selected preset.</summary>
     private List<string> BuildFFmpegArguments(
         EncodingInputs inputs,
         string mediaPath,
@@ -501,6 +515,10 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         return arguments;
     }
 
+    /// <summary>
+    /// Resolves files, verifies sequence alignment, and returns immutable
+    /// inputs suitable for the worker thread.
+    /// </summary>
     private EncodingInputs ValidateInputs()
     {
         RequireDirectory(imageDirectory, "Image sequence");
@@ -547,6 +565,9 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         return new EncodingInputs(images, geometry);
     }
 
+    /// <summary>
+    /// Finds files whose stem is an integer and returns them in frame order.
+    /// </summary>
     private static List<NumberedPath> DiscoverNumberedFiles(
         string directory,
         IReadOnlyCollection<string> extensions,
@@ -580,6 +601,7 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         return files;
     }
 
+    /// <summary>Rejects a numbered sequence containing missing frame numbers.</summary>
     private static void EnsureContiguous(IReadOnlyList<NumberedPath> files)
     {
         for (int index = 1; index < files.Count; ++index)
@@ -593,6 +615,9 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         }
     }
 
+    /// <summary>
+    /// Ensures image and geometry sequences use matching start/count numbering.
+    /// </summary>
     private static void EnsureUniformNaming(
         IReadOnlyList<NumberedPath> files,
         string label)
@@ -608,6 +633,10 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         }
     }
 
+    /// <summary>
+    /// Runs a child process, streams its diagnostics into the window log, and
+    /// converts cancellation or non-zero exit into a useful exception.
+    /// </summary>
     private void RunProcess(
         string executable,
         IEnumerable<string> arguments,
@@ -662,6 +691,7 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         }
     }
 
+    /// <summary>Appends one thread-safe line to the bounded UI log.</summary>
     private void AppendLog(string message)
     {
         lock (log)
@@ -670,6 +700,7 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         }
     }
 
+    /// <summary>Returns a thread-safe snapshot of the current UI log.</summary>
     private string GetLogText()
     {
         lock (log)
@@ -678,6 +709,7 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         }
     }
 
+    /// <summary>Quotes one process argument without invoking a shell.</summary>
     private static string QuoteArgument(string value)
     {
         if (String.IsNullOrEmpty(value)) return "\"\"";
@@ -689,6 +721,7 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         return "\"" + value.Replace("\"", "\\\"") + "\"";
     }
 
+    /// <summary>Throws a validation error unless path is an existing directory.</summary>
     private static void RequireDirectory(string path, string label)
     {
         if (!Directory.Exists(path))
@@ -697,6 +730,7 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         }
     }
 
+    /// <summary>Throws a validation error unless path is an executable file.</summary>
     private static void RequireExecutable(string path, string label)
     {
         if (String.IsNullOrWhiteSpace(path) || !File.Exists(path))
@@ -706,6 +740,7 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         }
     }
 
+    /// <summary>Draws a text field with an adjacent directory picker.</summary>
     private static string DirectoryField(string label, string value)
     {
         EditorGUILayout.BeginHorizontal();
@@ -719,6 +754,7 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         return value;
     }
 
+    /// <summary>Draws an optional file picker that accepts an empty value.</summary>
     private static string OptionalFileField(
         string label,
         string value,
@@ -728,6 +764,7 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         return FileField(label, value, title, extension, true);
     }
 
+    /// <summary>Draws a file path field and native open-file picker.</summary>
     private static string FileField(
         string label,
         string value,
@@ -753,6 +790,7 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         return value;
     }
 
+    /// <summary>Draws an MP4 destination field and save-file picker.</summary>
     private static string SaveFileField(string label, string value)
     {
         EditorGUILayout.BeginHorizontal();
@@ -770,6 +808,7 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         return value;
     }
 
+    /// <summary>Returns the initial OpenVol output path within the project.</summary>
     private static string DefaultOutputPath()
     {
         return Path.Combine(
@@ -778,6 +817,7 @@ public sealed class OpenVolEncoderWindow : EditorWindow
             "openvol.mp4");
     }
 
+    /// <summary>Searches PATH and common locations for an external executable.</summary>
     private static string FindExecutable(string name)
     {
         string path = Environment.GetEnvironmentVariable("PATH") ?? "";
@@ -792,11 +832,13 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         return "";
     }
 
+    /// <summary>Loads one editor preference or returns fallback.</summary>
     private static string Load(string key, string fallback)
     {
         return EditorPrefs.GetString(PreferencePrefix + key, fallback ?? "");
     }
 
+    /// <summary>Persists user-selected paths between editor sessions.</summary>
     private void SaveSettings()
     {
         EditorPrefs.SetString(PreferencePrefix + "Images", imageDirectory);
@@ -806,6 +848,7 @@ public sealed class OpenVolEncoderWindow : EditorWindow
         EditorPrefs.SetString(PreferencePrefix + "FFmpeg", ffmpegPath);
     }
 
+    /// <summary>Maps the selected platform preset to concrete codec settings.</summary>
     private EncodingSettings GetEncodingSettings()
     {
         switch(encodingPreset)

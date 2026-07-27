@@ -11,7 +11,10 @@ public class ScheduledStart : MonoBehaviour
     public double startTimeDSP;
 
 
-    // Start is called before the first frame update
+    /// <summary>
+    /// Schedules every OpenVol player in the scene against one shared future
+    /// DSP timestamp so multiple instances begin together.
+    /// </summary>
     void Start()
     {
         //

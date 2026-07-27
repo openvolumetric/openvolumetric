@@ -13,11 +13,16 @@ using UnityEngine.XR.OpenXR;
 [InitializeOnLoad]
 internal static class QuestProjectSettings
 {
+    /// <summary>Schedules settings enforcement after Unity finishes loading.</summary>
     static QuestProjectSettings()
     {
         EditorApplication.delayCall += Apply;
     }
 
+    /// <summary>
+    /// Applies the Android architecture, Vulkan, input, and Quest application
+    /// entry-point requirements used by the sample project.
+    /// </summary>
     private static void Apply()
     {
         PlayerSettings.Android.applicationEntry =

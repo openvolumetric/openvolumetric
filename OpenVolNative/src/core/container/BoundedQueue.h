@@ -24,11 +24,15 @@ template<typename T>
 class BoundedQueue
 {
 public:
+	/// Creates an empty queue that rejects pushes after capacity items.
 	explicit BoundedQueue(std::size_t capacity)
 		: m_capacity(capacity), m_state(QueueState::Open)
 	{
 	}
 
+	/// Moves value into the queue when it is open and has capacity.
+	///
+	/// This method never blocks; callers implement backpressure by retrying.
 	bool try_push(T value)
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
@@ -38,6 +42,10 @@ public:
 		return true;
 	}
 
+	/// Runs function while holding the queue lock.
+	///
+	/// Use this for atomic timestamp matching that may inspect and remove
+	/// several elements. References must not escape the callback.
 	template<typename Function>
 	decltype(auto) access(Function function)
 	{
@@ -45,6 +53,7 @@ public:
 		return function(m_items);
 	}
 
+	/// Removes every item, invoking cleanup before resetting terminal state.
 	template<typename Cleanup>
 	void clear(Cleanup cleanup)
 	{
@@ -56,23 +65,27 @@ public:
 		m_error.clear();
 	}
 
+	/// Removes every item and returns the queue to its open state.
 	void clear()
 	{
 		clear([](T&) {});
 	}
 
+	/// Returns whether another push would exceed the configured capacity.
 	bool full() const
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
 		return m_items.size() >= m_capacity;
 	}
 
+	/// Returns a thread-safe snapshot of the queued item count.
 	std::size_t size() const
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
 		return m_items.size();
 	}
 
+	/// Prevents further pushes and tells consumers no more items will arrive.
 	void mark_end_of_stream()
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
@@ -80,6 +93,7 @@ public:
 			m_state = QueueState::EndOfStream;
 	}
 
+	/// Stores a terminal error and prevents further pushes.
 	void set_error(std::string message)
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
@@ -87,12 +101,14 @@ public:
 		m_error = std::move(message);
 	}
 
+	/// Returns a thread-safe snapshot of the terminal/open state.
 	QueueState state() const
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
 		return m_state;
 	}
 
+	/// Returns the terminal error text, or an empty string when none is set.
 	std::string error() const
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);

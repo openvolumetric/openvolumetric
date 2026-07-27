@@ -6,50 +6,30 @@
 #include <Mesh.h>
 
 
+/// Copies decoded meshes into Unity-owned D3D11 buffers.
 class MeshBufferD3D11: public IMeshBuffer
 {
-
 public:
-
-	//----------------------------------
-	//
-	//----------------------------------
+	/// Constructs an unattached uploader.
 	MeshBufferD3D11();
 	
-	
-	//----------------------------------
-	//
-	//----------------------------------
-	virtual ~MeshBufferD3D11();
+	/// Releases retained D3D11 references.
+	~MeshBufferD3D11() override;
 
+	/// Retains the D3D11 device and validates Unity buffer capacity/stride.
+	bool init(void* handler, void* index_buffer_handle, int index_buffer_size, void* vertex_buffer_handle, int vertex_buffer_size) override;
 
-	//----------------------------------
-	//
-	//----------------------------------
-	bool init(void* handler, void* index_buffer_handle, int index_buffer_size, void* vertex_buffer_handle, int vertex_buffer_size);
+	/// Updates both destination buffers with one decoded mesh.
+	bool update(Mesh* mesh) override;
 
-
-	//----------------------------------
-	//
-	//----------------------------------
-	bool update(Mesh* mesh);
-
-
-	//----------------------------------
-	//
-	//----------------------------------
-	void destroy();
+	/// Releases retained COM references without destroying Unity resources.
+	void destroy() override;
 
 protected:
-	
-	//----------------------------------
-	//
-	//----------------------------------
+	/// Returns the D3D11 byte width of a Unity buffer handle.
 	int get_buffer_size(void* bufferHandle);
 
-	//----------------------------------
-	//
-	//----------------------------------
+	/// Derives per-element stride from buffer byte width and element count.
 	int compute_stride(void* bufferHandle, int count);
 
 

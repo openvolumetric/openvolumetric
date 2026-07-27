@@ -25,6 +25,7 @@ public sealed class VolumetricVideoDeveloperOverlay : MonoBehaviour
     private float m_smoothedDelta;
     private float m_nextTextUpdate;
 
+    /// <summary>Adds one overlay to player unless it already has one.</summary>
     public static void Attach(VolumetricVideo player)
     {
         if(player == null ||
@@ -38,27 +39,32 @@ public sealed class VolumetricVideoDeveloperOverlay : MonoBehaviour
         overlay.m_player = player;
     }
 
+    /// <summary>Captures the colocated player component.</summary>
     private void Awake()
     {
         m_player = m_player != null ? m_player : GetComponent<VolumetricVideo>();
         CreateActions();
     }
 
+    /// <summary>Creates controller actions and the camera-attached display.</summary>
     private void Start()
     {
         CreateDisplay();
     }
 
+    /// <summary>Enables controller input while the overlay is active.</summary>
     private void OnEnable()
     {
         SetActionsEnabled(true);
     }
 
+    /// <summary>Disables controller input without destroying bindings.</summary>
     private void OnDisable()
     {
         SetActionsEnabled(false);
     }
 
+    /// <summary>Disposes runtime-created InputActions.</summary>
     private void OnDestroy()
     {
         m_togglePlayback?.Dispose();
@@ -68,6 +74,9 @@ public sealed class VolumetricVideoDeveloperOverlay : MonoBehaviour
         m_toggleOverlay?.Dispose();
     }
 
+    /// <summary>
+    /// Handles button edges and periodically refreshes playback diagnostics.
+    /// </summary>
     private void Update()
     {
         if(m_player == null)
@@ -111,6 +120,7 @@ public sealed class VolumetricVideoDeveloperOverlay : MonoBehaviour
         }
     }
 
+    /// <summary>Creates lightweight actions using direct XR control paths.</summary>
     private void CreateActions()
     {
         m_togglePlayback = ButtonAction(
@@ -125,12 +135,14 @@ public sealed class VolumetricVideoDeveloperOverlay : MonoBehaviour
             "Overlay", "<XRController>{LeftHand}/menuButton");
     }
 
+    /// <summary>Creates one button action with a single binding.</summary>
     private static InputAction ButtonAction(string name, string binding)
     {
         return new InputAction(
             name, InputActionType.Button, binding, interactions: "Press");
     }
 
+    /// <summary>Enables or disables every overlay action as a group.</summary>
     private void SetActionsEnabled(bool enabled)
     {
         SetEnabled(m_togglePlayback, enabled);
@@ -140,6 +152,7 @@ public sealed class VolumetricVideoDeveloperOverlay : MonoBehaviour
         SetEnabled(m_toggleOverlay, enabled);
     }
 
+    /// <summary>Changes one optional action's enabled state.</summary>
     private static void SetEnabled(InputAction action, bool enabled)
     {
         if(action == null)
@@ -156,6 +169,9 @@ public sealed class VolumetricVideoDeveloperOverlay : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Creates a world-space TextMesh parented to the main camera.
+    /// </summary>
     private void CreateDisplay()
     {
         Camera camera = Camera.main;
@@ -182,6 +198,7 @@ public sealed class VolumetricVideoDeveloperOverlay : MonoBehaviour
         UpdateText();
     }
 
+    /// <summary>Formats current playback and device performance information.</summary>
     private void UpdateText()
     {
         float fps = m_smoothedDelta > 0.0F ? 1.0F / m_smoothedDelta : 0.0F;

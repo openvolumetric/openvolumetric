@@ -5,34 +5,27 @@
 #include <d3d11.h>
 
 
+/// Owns three D3D11 single-channel textures exposed to Unity.
 class TextureD3D11 : public ITexture
 {
-
 public:
-
-	//----------------------------------
-	//
+	/// Constructs an empty texture set.
 	TextureD3D11();	
 	
-	//----------------------------------
-	//
-	virtual ~TextureD3D11();
+	/// Releases D3D11 texture and view resources.
+	~TextureD3D11() override;
 
-	//----------------------------------
-	//
-	int init(void* handler, unsigned int width, unsigned int height);
+	/// Allocates luma and half-resolution chroma textures.
+	int init(void* handler, unsigned int width, unsigned int height) override;
 
-	//----------------------------------
-	//
-	void getResourcePointers(void*& ptry, void*& ptru, void*& ptrv);
+	/// Returns shader-resource views for Unity external texture wrapping.
+	void getResourcePointers(void*& ptry, void*& ptru, void*& ptrv) override;
 	
-	//----------------------------------
-	//	
-	void upload(unsigned char* ych, unsigned char* uch, unsigned char* vch);
+	/// Updates the three texture planes with one decoded YUV420P frame.
+	void upload(unsigned char* ych, unsigned char* uch, unsigned char* vch) override;
 	
-	//----------------------------------
-	//	
-	void destroy();
+	/// Releases all COM resources owned by the uploader.
+	void destroy() override;
 
 private:
 

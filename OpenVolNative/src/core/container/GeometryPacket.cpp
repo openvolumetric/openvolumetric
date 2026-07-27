@@ -7,12 +7,14 @@ namespace openvol
 namespace
 {
 
+/// Writes a 16-bit integer in the format's canonical little-endian order.
 void write_u16(std::uint8_t* output, std::uint16_t value)
 {
 	output[0] = static_cast<std::uint8_t>(value >> 8);
 	output[1] = static_cast<std::uint8_t>(value);
 }
 
+/// Writes a 32-bit integer in the format's canonical little-endian order.
 void write_u32(std::uint8_t* output, std::uint32_t value)
 {
 	output[0] = static_cast<std::uint8_t>(value >> 24);
@@ -21,6 +23,7 @@ void write_u32(std::uint8_t* output, std::uint32_t value)
 	output[3] = static_cast<std::uint8_t>(value);
 }
 
+/// Reads a little-endian 16-bit field without alignment assumptions.
 std::uint16_t read_u16(const std::uint8_t* input)
 {
 	return static_cast<std::uint16_t>(
@@ -28,6 +31,7 @@ std::uint16_t read_u16(const std::uint8_t* input)
 		static_cast<std::uint16_t>(input[1]));
 }
 
+/// Reads a little-endian 32-bit field without alignment assumptions.
 std::uint32_t read_u32(const std::uint8_t* input)
 {
 	return

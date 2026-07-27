@@ -189,6 +189,10 @@ public class VolumetricVideoDecoder : IDisposable
     //---------------------------------------------
     // Constructor
     //---------------------------------------------
+    /// <summary>
+    /// Creates one native decoder instance and optionally opens its diagnostic
+    /// console. Graphics and media resources are initialized separately.
+    /// </summary>
     public VolumetricVideoDecoder(bool debug)
     {
         // Set state to uninitialised 
@@ -217,6 +221,10 @@ public class VolumetricVideoDecoder : IDisposable
     /// <summary>
     /// Releases native decoder and graphics resources while Unity's graphics
     /// device is still alive. This must be called from the main thread.
+    /// </summary>
+    /// <summary>
+    /// Releases Unity objects and destroys the matching native instance.
+    /// Safe to call repeatedly.
     /// </summary>
     public void Dispose()
     {
@@ -261,6 +269,7 @@ public class VolumetricVideoDecoder : IDisposable
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
     struct Vertex
     {
+        /// <summary>Constructs one interleaved native-compatible vertex.</summary>
         public Vertex(float x, float y, float z, float nx, float ny, float nz, float u, float v)
         {
             pos     = new Vector3(x, y, z);
@@ -275,6 +284,10 @@ public class VolumetricVideoDecoder : IDisposable
     //----------------------------------------------------------
     // Start the decoder
     //----------------------------------------------------------
+    /// <summary>
+    /// Allocates a fixed-capacity dynamic Unity mesh and registers its native
+    /// index and vertex buffers with the plugin.
+    /// </summary>
     public bool init_mesh()
     {
         // Check for init
@@ -346,6 +359,10 @@ public class VolumetricVideoDecoder : IDisposable
     // Function to init the volumetric video decoder
     // Requires a reference to the MeshRenderer from the parent class
     //---------------------------------------------
+    /// <summary>
+    /// Opens the combined MP4 and creates the material and external YUV
+    /// textures used by the selected graphics backend.
+    /// </summary>
     public bool init_texture(ref  MeshRenderer mesh_renderer, string video_file)
     {
         //
@@ -384,6 +401,9 @@ public class VolumetricVideoDecoder : IDisposable
     //---------------------------------------------
     // Load video and return important properties
     //---------------------------------------------
+    /// <summary>
+    /// Opens the native container and retrieves dimensions, rate, and duration.
+    /// </summary>
     private bool load_video(string filepath,  ref int video_width, ref int video_height, ref double video_fps, ref double video_duration )
     {
         // Load Video
@@ -416,6 +436,10 @@ public class VolumetricVideoDecoder : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Creates a streaming AudioClip whose callback pulls synchronized PCM
+    /// directly from the native decoder.
+    /// </summary>
     public bool init_audio()
     {
         int sampleRate = 0;
@@ -448,6 +472,7 @@ public class VolumetricVideoDecoder : IDisposable
         return m_audio_clip != null;
     }
 
+    /// <summary>Fills Unity's audio request from the native PCM ring.</summary>
     private void read_audio(float[] samples)
     {
         int read = openvol_read_audio(
@@ -462,6 +487,10 @@ public class VolumetricVideoDecoder : IDisposable
     //---------------------------------------------
     // Function to create texture pointers which are then created by the native plugin
     //---------------------------------------------
+    /// <summary>
+    /// Creates plane textures and completes the backend-specific native handle
+    /// handshake required for render-thread uploads.
+    /// </summary>
     private bool init_textures(ref  MeshRenderer mesh_renderer, int width, int height)
     {
         // Find shader
@@ -527,6 +556,7 @@ public class VolumetricVideoDecoder : IDisposable
     //----------------------------------------------------------
     // Start the decoder
     //----------------------------------------------------------
+    /// <summary>Starts the native demux and geometry worker threads.</summary>
     public bool start_decoding()
     {
         // Check decoder has started before attempting to stop
@@ -553,6 +583,7 @@ public class VolumetricVideoDecoder : IDisposable
     //----------------------------------------------------------
     // Stop the decoder
     //----------------------------------------------------------
+    /// <summary>Stops native workers while retaining initialized resources.</summary>
     public bool stop_decoding()
     {
         // If decoder has stopped - then nothing to do
@@ -582,6 +613,7 @@ public class VolumetricVideoDecoder : IDisposable
         return true;
     }
 
+    /// <summary>Seeks the unified native pipeline to a time in seconds.</summary>
     public bool seek(double time)
     {
         if (m_decoder_state != DecoderState.STARTED ||
@@ -604,6 +636,7 @@ public class VolumetricVideoDecoder : IDisposable
         return true;
     }
 
+    /// <summary>Clears the managed end-of-content latch for a new loop pass.</summary>
     public void reset_loop_flag()
     {
         m_loop = false;
@@ -614,6 +647,10 @@ public class VolumetricVideoDecoder : IDisposable
     // Function to set the frame counter - this should be a time within the volumetric sequence e.g. 5 secs
     // This is then normalised within the sequence
     //----------------------------------------------------------
+    /// <summary>
+    /// Supplies the desired presentation time and queues a render-thread plugin
+    /// event that uploads matching texture and geometry.
+    /// </summary>
     public void update(double time)
     {
         double presentation_time = time % video_duration;
@@ -659,6 +696,7 @@ public class VolumetricVideoDecoder : IDisposable
     //----------------------------------------------------------
     //
     //----------------------------------------------------------
+    /// <summary>Updates the YUV conversion material's correction parameters.</summary>
     public void set_colour_correction_values(float luminaceCorrection, float blueProjectionCorrection, float redProjectionCorrection)
     {
         if(m_decoder_state >= DecoderState.INITIALIZED)
