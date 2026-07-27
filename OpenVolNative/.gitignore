@@ -362,3 +362,33 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+
+
+
+# -----------------------------------------------------------------------------
+# Native CMake and vcpkg output
+# -----------------------------------------------------------------------------
+/build/
+/vcpkg_installed/
+CMakeUserPresets.json
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+.ninja_deps
+.ninja_log
+build.ninja
+
+# Visual Studio native build output (scoped to the native project so Unity
+# plugin directories such as Assets/Plugins/VolumetricVideo/x64 stay tracked).
+Debug/
+Release/
+x64/
+x86/
+ARM/
+ARM64/
+*.dir/
+*.log
+*.tlog/
+*.lastbuildstate
