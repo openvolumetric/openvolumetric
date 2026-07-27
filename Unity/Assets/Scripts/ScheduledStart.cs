@@ -1,5 +1,11 @@
 ﻿using UnityEngine;
+using UnityEngine.Scripting.APIUpdating;
 
+namespace OpenVol
+{
+
+[MovedFrom(true, sourceNamespace: "", sourceAssembly: "Assembly-CSharp",
+    sourceClassName: "ScheduledStart")]
 public class ScheduledStart : MonoBehaviour
 {
     public double startTimeDSP;
@@ -19,4 +25,6 @@ public class ScheduledStart : MonoBehaviour
             vv.set_scheduled_start(startTime);
         }
     }
+}
+
 }

@@ -22,34 +22,33 @@ Desktop.ini
 # -----------------------------------------------------------------------------
 # Native CMake and vcpkg output
 # -----------------------------------------------------------------------------
-NativePlugin/build/
-NativePlugin/vcpkg_installed/
-NativePlugin/CMakeUserPresets.json
-NativePlugin/CMakeFiles/
-NativePlugin/CMakeCache.txt
-NativePlugin/cmake_install.cmake
-NativePlugin/compile_commands.json
-NativePlugin/.ninja_deps
-NativePlugin/.ninja_log
-NativePlugin/build.ninja
+OpenVolNative/build/
+OpenVolNative/vcpkg_installed/
+OpenVolNative/CMakeUserPresets.json
+OpenVolNative/CMakeFiles/
+OpenVolNative/CMakeCache.txt
+OpenVolNative/cmake_install.cmake
+OpenVolNative/compile_commands.json
+OpenVolNative/.ninja_deps
+OpenVolNative/.ninja_log
+OpenVolNative/build.ninja
 
 # Visual Studio native build output (scoped to the native project so Unity
 # plugin directories such as Assets/Plugins/VolumetricVideo/x64 stay tracked).
-NativePlugin/Debug/
-NativePlugin/Release/
-NativePlugin/x64/
-NativePlugin/x86/
-NativePlugin/ARM/
-NativePlugin/ARM64/
-NativePlugin/*.dir/
-NativePlugin/*.log
-NativePlugin/*.tlog/
-NativePlugin/*.lastbuildstate
+OpenVolNative/Debug/
+OpenVolNative/Release/
+OpenVolNative/x64/
+OpenVolNative/x86/
+OpenVolNative/ARM/
+OpenVolNative/ARM64/
+OpenVolNative/*.dir/
+OpenVolNative/*.log
+OpenVolNative/*.tlog/
+OpenVolNative/*.lastbuildstate
 
 # Locally built macOS native plugin artifacts. Keep their Unity .meta files
 # tracked so importer settings remain stable after rebuilding.
 *.dylib
-*.dylib.meta
 *.so
 # -----------------------------------------------------------------------------
 # Unity-generated directories
@@ -86,4 +85,3 @@ Unity/[Cc]rash*/
 
 .tmp*
 .utmp*
-Unity/Assets/Plugins/Android/arm64-v8a/libVolumetricVideoNativePlugin.so.meta

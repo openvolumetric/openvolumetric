@@ -1,7 +1,8 @@
-# unity-volumetric-video
+# Open Volumetric (OpenVol)
 
-This project enables the playback of volumetric video in unity game engine.
-This is implemented as a native C++ plugin
+Open Volumetric is an open, cross-platform volumetric-video playback and
+authoring project, known as OpenVol in code. It currently provides a native
+C++ core and Unity integration, with Unreal integration planned.
 
 The active development roadmap is tracked in [PLAN.md](PLAN.md).
 
@@ -11,7 +12,7 @@ The active development roadmap is tracked in [PLAN.md](PLAN.md).
 Runtime content is a single MP4 containing HEVC texture video, timed Draco
 geometry samples, and optional audio. For one-click authoring from raw
 numbered images and OBJ meshes, open
-**Tools > Volumetric Video > Encoder** in Unity. The Editor tool performs
+**Tools > OpenVol > Encoder** in Unity. The Editor tool performs
 Draco conversion, media encoding, packaging, and verification. See
 [`Unity/Assets/Editor/README.md`](Unity/Assets/Editor/README.md) for its input
 conventions and tool discovery.
@@ -41,7 +42,7 @@ The native source is divided into an engine-independent core and engine
 integrations:
 
 ```text
-NativePlugin/
+OpenVolNative/
 ├── src/
 │   ├── core/
 │   │   ├── decoding/
@@ -57,15 +58,15 @@ NativePlugin/
             └── rendering/
 ```
 
-`VolumetricVideoCore` contains the portable decoding and data model. The
-`VolumetricVideoNativePlugin` target is the Unity integration and links the
+`OpenVolCore` contains the portable decoding and data model. The
+`OpenVolUnityPlugin` target is the Unity integration and links the
 core to Unity's D3D11 or Metal rendering API. Future engine integrations, such
 as Unreal, can live beside `integrations/unity` and link the same core target.
-See [`NativePlugin/src/core/README.md`](NativePlugin/src/core/README.md) for
+See [`OpenVolNative/src/core/README.md`](OpenVolNative/src/core/README.md) for
 the runtime data flow, directory responsibilities, threading, and ownership.
 
-`VolumetricVideoAuthoringCore` contains MP4 packaging and verification.
-`VolumetricVideoAuthoring` exposes it to the Unity Editor without adding
+`OpenVolAuthoringCore` contains MP4 packaging and verification.
+`OpenVolAuthoring` exposes it to the Unity Editor without adding
 authoring code to player builds.
 
 #### VS Code development container
@@ -83,7 +84,7 @@ Docker-compatible runtime, VS Code, and the **Dev Containers** extension.
 The equivalent commands in the container terminal are:
 
 ```sh
-cd NativePlugin
+cd OpenVolNative
 cmake --preset vcpkg
 cmake --build --preset vcpkg
 ```
@@ -109,15 +110,15 @@ Prerequisites:
 Configure and build:
 
 ```sh
-cd NativePlugin
+cd OpenVolNative
 cmake --preset vcpkg
 cmake --build --preset vcpkg
 ```
 
-On Windows this builds and stages `VolumetricVideoNativePlugin.dll` in the
+On Windows this builds and stages `OpenVolUnityPlugin.dll` in the
 Unity plugin directory. On macOS it builds the Metal implementation and stages
-`VolumetricVideoNativePlugin.dylib` in
-`Unity/Assets/Plugins/VolumetricVideo/macOS`. Linux builds the portable decoder
+`OpenVolUnityPlugin.dylib` in
+`Unity/Assets/Plugins/OpenVol/macOS`. Linux builds the portable decoder
 core only.
 
 For Meta Quest, configure and build the Android ARM64 preset using Unity's
@@ -126,7 +127,7 @@ installed Android NDK:
 ```sh
 export ANDROID_NDK_ROOT=/path/to/Unity/PlaybackEngines/AndroidPlayer/NDK
 export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
-cd NativePlugin
+cd OpenVolNative
 cmake --preset vcpkg-android-arm64
 cmake --build --preset vcpkg-android-arm64
 ```

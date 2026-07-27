@@ -1,5 +1,5 @@
 {
-  "name": "Volumetric Video Native Build",
+  "name": "OpenVol Native Build",
   "build": {
     "dockerfile": "Dockerfile",
     "args": {
@@ -10,7 +10,7 @@
   "containerEnv": {
     "VCPKG_ROOT": "/opt/vcpkg",
     "VCPKG_DISABLE_METRICS": "1",
-    "VCPKG_DEFAULT_BINARY_CACHE": "${containerWorkspaceFolder}/NativePlugin/build/vcpkg-binary-cache"
+    "VCPKG_DEFAULT_BINARY_CACHE": "${containerWorkspaceFolder}/OpenVolNative/build/vcpkg-binary-cache"
   },
   "customizations": {
     "vscode": {
@@ -20,9 +20,9 @@
       ],
       "settings": {
         "cmake.useCMakePresets": "always",
-        "cmake.sourceDirectory": "${containerWorkspaceFolder}/NativePlugin"
+        "cmake.sourceDirectory": "${containerWorkspaceFolder}/OpenVolNative"
       }
     }
   },
-  "postCreateCommand": "mkdir -p NativePlugin/build/vcpkg-binary-cache"
+  "postCreateCommand": "mkdir -p OpenVolNative/build/vcpkg-binary-cache"
 }
