@@ -9,9 +9,13 @@ and verification entry points.
 - `OpenVolumetricAuthoringCore` is the reusable C++ authoring library.
 - `OpenVolumetricAuthoring` is the macOS/Windows shared library called by the
   Unity Editor window.
+- Unreal's `OpenVolumetricAuthoring` Editor module links
+  `OpenVolumetricAuthoringCore` directly.
 
-The Unity Editor calls `pack_volumetric_video()` through the authoring C API,
-so MP4 construction and verification have one implementation.
+Unity calls `openvolumetric_authoring_pack()` through the authoring C API;
+Unreal calls `openvolumetric::authoring::pack_openvolumetric()` through its
+C++ module. MP4 construction and verification therefore have one
+implementation.
 
 ## Geometry timing
 
@@ -29,14 +33,14 @@ payload identity, and performs a middle-sample seek.
 ## Current boundary
 
 The packer accepts an already encoded video/audio MP4 and a directory of
-numbered Draco frames. The Unity Editor uses the same authoring library's
-linked Draco API to convert each OBJ to a temporary `.drc` frame, invokes
+numbered Draco frames. The Unity and Unreal Editor integrations use the same
+linked Draco encoder to convert each OBJ to a temporary `.drc` frame, invoke
 FFmpeg separately for HEVC or H.264 video and optional AAC audio encoding,
-then passes those artifacts to the packer.
+then pass those artifacts to the packer.
 
 ## Platform presets
 
-The Unity Editor encoder provides four content profiles:
+Both Editor encoders provide four content profiles:
 
 - **Desktop Quality** uses HEVC CRF 20, three reference frames, and balanced
   Draco encode/decode speed. It prioritises quality and compression.

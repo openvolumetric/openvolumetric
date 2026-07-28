@@ -2,14 +2,14 @@
 
 `OpenVolumetricCore` contains the engine-independent playback pipeline. It
 knows how to demux and decode the combined volumetric MP4, but it does not
-include Unity or platform graphics headers.
+include Unity, Unreal, or platform graphics headers.
 
 All public and internal runtime types in this library use the `openvolumetric`
 namespace. Source subdirectories organize responsibilities but do not create
 additional namespace levels.
 
-The source-level contract for Unity and future engine adapters is documented
-in [ENGINE_INTEGRATION.md](../../../docs/ENGINE_INTEGRATION.md).
+The source-level contract implemented by Unity and Unreal is documented in
+[ENGINE_INTEGRATION.md](ENGINE_INTEGRATION.md).
 
 ## Runtime data flow
 
@@ -30,13 +30,12 @@ AVDecoderFFMPEG (one demux thread)
                        decoded-mesh queue
 ```
 
-The engine integration requests a presentation frame from
-`IVolumetricVideo` using Unity's DSP-clock time. The media decoder selects a
-video sample by PTS, then the geometry decoder matches its mesh against that
-video PTS. A presentation is uploaded only when both are available. Unity owns
-the destination texture and mesh
-resources; the Metal or D3D11 integration copies decoded data into those
-resources during Unity's render callback.
+The engine integration requests a presentation using its monotonic playback
+clock. The media decoder selects a video sample by PTS, then the geometry
+decoder matches its mesh against that video PTS. A presentation is exposed
+only when both are available. Unity uploads it through its native render
+callback; Unreal converts the same engine-neutral presentation into its
+dynamic mesh and transient texture resources.
 
 ## Timestamp synchronization
 
@@ -53,8 +52,8 @@ resources during Unity's render callback.
   the same way instead of waiting forever.
 - `SYNC` log messages report dropped video or geometry, duplicate timestamps,
   and unmatchable video/geometry pairs.
-- Unity schedules audio and requests visual presentation from the same DSP
-  clock. The same clock boundary submits the native loop seek.
+- Each engine schedules audio and visual presentation from one playback-clock
+  origin. The same clock boundary submits the unified loop seek.
 
 ## Directory responsibilities
 
@@ -91,15 +90,15 @@ resources during Unity's render callback.
 - Video and geometry queues have fixed capacities and thread-safe
   open/end-of-stream/error states. Queue access is protected by the queue's
   mutex.
-- The Unity render thread consumes matching video and mesh frames and performs
-  graphics uploads.
+- The engine adapter consumes matching video and mesh frames and transfers
+  them into host graphics resources.
 - `destroy()` must stop worker threads before releasing their queues or codec
   state.
 - Every seek or loop advances a playback generation. Compressed and decoded
   geometry carry that generation, allowing a Draco result that completed
   during a reset to be discarded instead of appearing in the next loop.
 - At natural end-of-stream, queued tail frames remain available to consumers.
-  The Unity playback clock explicitly seeks all native streams at its loop
+  The engine playback clock explicitly seeks all native streams at its loop
   boundary, clearing old video, geometry, and audio state together.
 
 ## Container validation
@@ -108,9 +107,9 @@ Opening a runtime MP4 requires exactly one video track and exactly one data
 track tagged `vvge`. Audio is optional, but only one audio track is supported.
 Missing or duplicated tracks fail before decoder initialization. During
 demuxing, malformed `VVGF` samples, missing geometry timestamps, read failures,
-and queue overflow move the affected queue into its error state. The Unity API
-exposes the most recent message so load failures include the specific reason in
-the Unity Console.
+and queue overflow move the affected queue into its error state. Both engine
+adapters expose the most recent message through their normal error and logging
+interfaces.
 
 ## File-format boundary
 
@@ -120,5 +119,5 @@ Runtime input is one MP4 containing:
 - a project-specific `vvge` data track containing `VVGF` geometry packets;
 - an optional audio track.
 
-Numbered `.drc` files exist only as temporary inputs inside the Unity
-authoring workflow. The runtime has no split-file compatibility path.
+Numbered `.drc` files exist only as temporary authoring inputs. The runtime
+has no split-file compatibility path.

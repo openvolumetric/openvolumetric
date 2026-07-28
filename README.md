@@ -1,174 +1,92 @@
-# Open Volumetric (OpenVolumetric)
+# Open Volumetric
 
-Open Volumetric is an open, cross-platform volumetric-video playback and
-authoring project, known as OpenVolumetric in code. It currently provides a native
-C++ core and Unity integration, with Unreal integration planned.
+OpenVolumetric is an open, cross-platform volumetric-video authoring and
+playback project. It stores texture video, time-varying Draco geometry, and
+optional audio in one conventional MP4 and decodes the same file through
+Unity and Unreal Engine integrations.
 
-The active development roadmap is tracked in
-[docs/PLAN.md](docs/PLAN.md).
+## Current status
 
+| Host/platform | Status |
+| --- | --- |
+| Unity 6 on macOS/Metal | Implemented and validated |
+| Unity 6 on Meta Quest/Android ARM64/Vulkan | Implemented and validated on Quest 2 |
+| Unity on Windows/D3D11 | Implemented; clean validation outstanding |
+| Unreal Engine 5.8 on macOS | Runtime playback and authoring implemented and validated in the Editor |
+| Unreal packaged applications | Packaging validation outstanding |
+| Linux | Portable native core build |
 
-### Encoding Content
+Both engine integrations play the same OpenVolumetric MP4 without format
+conversion.
 
-Runtime content is a single MP4 containing HEVC texture video, timed Draco
-geometry samples, and optional audio. For one-click authoring from raw
-numbered images and OBJ meshes, open
-**Tools > OpenVolumetric > Encoder** in Unity. The Editor tool performs
-Draco conversion, media encoding, packaging, and verification. See
-[`Unity/Assets/Editor/OpenVolumetric/README.md`](Unity/Assets/Editor/OpenVolumetric/README.md) for its input
-conventions and tool discovery.
+## Format
 
-If the media file also contains an audio stream, the native plugin decodes it
-to interleaved stereo floating-point PCM. Unity plays it through a streaming
-`AudioClip` scheduled from the same DSP timestamp as the geometry and texture
-streams. Media without audio continues to play normally.
+An OpenVolumetric MP4 contains:
 
+- an HEVC or H.264 texture-video track;
+- a timed `vvge` track containing versioned Draco geometry packets; and
+- an optional conventional audio track.
 
-### Contributors:
+Ordinary media players ignore the geometry track and continue to play the
+video and audio. OpenVolumetric matches texture and geometry using MP4
+presentation timestamps.
 
-- Marco Volino - m.volino@surrey.ac.uk
+## Unity
 
+The Unity 6 project contains:
 
+- the `OpenVolumetric.OpenVolumetric` playback component;
+- Metal, D3D11, and Vulkan native rendering paths;
+- synchronized streaming audio;
+- a Quest controller-operated developer overlay; and
+- **Tools > OpenVolumetric > Encoder** for authoring.
 
-### Limitations
+See the [Unity authoring guide](docs/UNITY_AUTHORING.md) and
+[Quest platform baseline](docs/QUEST_BASELINE.md).
 
-- **Mesh Size**: Meshes can consist of up to 65,535 verticies and 100,000 triangles. This can be changed in the __VolumetricVideoDecoder.cs__ file.
+## Unreal Engine
 
-### Building the native plugin
+The Unreal Engine 5.8 plug-in contains:
 
-The native build uses CMake and vcpkg manifest mode. FFmpeg and Draco are
-downloaded and built by vcpkg.
+- `UOpenVolumetricComponent` for C++ and Blueprint playback;
+- dynamic mesh, unlit texture, and procedural audio output;
+- **Tools > OpenVolumetric Encoder** for authoring; and
+- the `/Game/OpenVolumetricSample` example level.
 
-The native source is divided into an engine-independent core and engine
-integrations:
+See the [Unreal integration guide](docs/UNREAL_INTEGRATION.md).
+
+## Repository layout
 
 ```text
-OpenVolumetricNative/
-├── src/
-│   ├── core/
-│   │   ├── decoding/
-│   │   ├── geometry/
-│   │   ├── media/
-│   │   └── support/
-│   └── authoring/
-└── integrations/
-    └── unity/
-        ├── include/Unity/
-        └── src/
-            ├── api/
-            └── rendering/
+OpenVolumetricNative/   Engine-independent runtime and authoring C++ libraries
+Unity/                  Unity project and integration
+Unreal/                 Unreal project and plug-in
+docs/                   Architecture, build, platform, and roadmap documents
+data/                   Local sample content
 ```
 
-`OpenVolumetricCore` contains the portable decoding and data model. The
-`OpenVolumetricUnityPlugin` target is the Unity integration and links the
-core to Unity's D3D11 or Metal rendering API. Future engine integrations, such
-as Unreal, can live beside `integrations/unity` and link the same core target.
-See [`OpenVolumetricNative/src/core/README.md`](OpenVolumetricNative/src/core/README.md) for
-the runtime data flow, directory responsibilities, threading, and ownership.
+## Documentation
 
-`OpenVolumetricAuthoringCore` contains MP4 packaging and verification.
-`OpenVolumetricAuthoring` exposes it to the Unity Editor without adding
-authoring code to player builds.
+- [Building](docs/BUILDING.md)
+- [Technical overview](docs/TECHNICAL_OVERVIEW.md)
+- [Native core](docs/CORE.md)
+- [Authoring architecture](docs/AUTHORING.md)
+- [Engine integration boundary](docs/ENGINE_INTEGRATION.md)
+- [Unity authoring guide](docs/UNITY_AUTHORING.md)
+- [Unreal integration guide](docs/UNREAL_INTEGRATION.md)
+- [Quest platform baseline](docs/QUEST_BASELINE.md)
+- [Development plan](docs/PLAN.md)
 
-#### VS Code development container
+## Current limitations
 
-The preferred Linux development environment captures CMake, Ninja, Clang,
-pkg-config, and a pinned vcpkg checkout in Docker. The host only needs a
-Docker-compatible runtime, VS Code, and the **Dev Containers** extension.
+- Geometry frames are independently Draco-compressed and do not yet exploit
+  shared topology or temporal prediction.
+- Playback requires a complete local or cached MP4.
+- The format is project-specific and has not yet been standardized.
+- Quest video decoding is software-based.
+- Windows, Quest 3S, and Unreal packaged-build validation remain outstanding.
+- Automated conformance and performance testing is still limited.
 
-1. Open the repository in VS Code.
-2. Run **Dev Containers: Reopen in Container** from the command palette.
-3. Wait for the development container image to finish building.
-4. Run **CMake: Configure**, select the `vcpkg` preset, then run
-   **CMake: Build**.
+## Contributors
 
-The equivalent commands in the container terminal are:
-
-```sh
-cd OpenVolumetricNative
-cmake --preset vcpkg
-cmake --build --preset vcpkg
-```
-
-The ignored, per-platform build tree preserves installed dependencies and a
-vcpkg binary cache across container rebuilds. The first FFmpeg build can still
-take several minutes.
-
-This container builds the portable Linux decoder core. Windows D3D11 plugin
-artifacts still require a Windows/MSVC build, and macOS Metal plugin artifacts
-require macOS and Apple's native SDK.
-
-#### Native host build
-
-Use this only when producing or testing a native platform artifact.
-
-Prerequisites:
-
-- CMake 3.20 or newer
-- Ninja
-- vcpkg, with `VCPKG_ROOT` set to its checkout directory
-
-Configure and build:
-
-```sh
-cd OpenVolumetricNative
-cmake --preset vcpkg
-cmake --build --preset vcpkg
-```
-
-On Windows this builds and stages `OpenVolumetricUnityPlugin.dll` in the
-Unity plugin directory. On macOS it builds the Metal implementation and stages
-`OpenVolumetricUnityPlugin.dylib` in
-`Unity/Assets/Plugins/OpenVolumetric/macOS`. Linux builds the portable decoder
-core only.
-
-For Meta Quest, configure and build the Android ARM64 preset using Unity's
-installed Android NDK:
-
-```sh
-export ANDROID_NDK_ROOT=/path/to/Unity/PlaybackEngines/AndroidPlayer/NDK
-export ANDROID_NDK_HOME="$ANDROID_NDK_ROOT"
-cd OpenVolumetricNative
-cmake --preset vcpkg-android-arm64
-cmake --build --preset vcpkg-android-arm64
-```
-
-The Android build stages the Vulkan plugin in
-`Unity/Assets/Plugins/OpenVolumetric/Android/arm64-v8a`. Quest builds optionally create a
-camera-attached developer overlay when `Enable Developer Overlay` is selected
-on the `VolumetricVideo` component:
-
-- A / right primary: play or pause
-- B / right secondary: toggle looping
-- X / left primary: seek backward 10 seconds
-- Y / left secondary: seek forward 10 seconds
-- Left menu: show or hide the overlay
-
-The normal macOS preset builds for the host architecture. This repository
-currently targets Unity 2019.4, whose macOS editor requires an Intel plugin.
-On an Apple Silicon Mac, build that version explicitly with:
-
-```sh
-cmake --preset vcpkg-macos-x64
-cmake --build --preset vcpkg-macos-x64
-```
-
-Use Metal as the Unity player's graphics API. The plugin has no separately
-installed FFmpeg runtime dependency; vcpkg links its FFmpeg libraries into the
-native plugin.
-
-The first FFmpeg build can take a significant amount of time. Subsequent builds
-reuse vcpkg's installed tree; CI should additionally configure a vcpkg binary
-cache.
-
-### Future development
-
-- Replace the macOS backend's per-frame Metal staging-buffer allocations with
-  a reusable ring sized for the maximum number of frames in flight. Preserve
-  the current command-buffer ordering so texture and mesh memory is never
-  overwritten while the GPU is reading it. Consider representing this as a
-  cross-platform upload abstraction: Metal and future Vulkan backends would
-  manage an explicit ring and synchronization, while D3D11 can continue using
-  its driver-managed `D3D11_MAP_WRITE_DISCARD` buffer renaming. Validate the
-  change with frame-time and allocation profiling and confirm that texture
-  flicker does not return.
+- Marco Volino — m.volino@surrey.ac.uk

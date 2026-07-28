@@ -2,8 +2,8 @@
 
 This document defines the source-level boundary between
 `OpenVolumetricCore` and an engine adapter. It describes the contract
-implemented by the Unity integration and required by a future Unreal
-integration. It is not yet a stable binary ABI.
+implemented by the Unity and Unreal integrations. It is not yet a stable
+binary ABI.
 
 ## Boundary
 
@@ -25,8 +25,10 @@ An engine adapter owns:
 - file deployment and conversion to a readable local path;
 - scheduling work onto the engine's game, render, and audio threads.
 
-Unity and Unreal headers or types must not be added to `src/core`. Engine
-integrations live below `OpenVolumetricNative/integrations/<engine>`.
+Unity and Unreal headers or types must not be added to `src/core`. Unity's
+native graphics integration lives below
+`OpenVolumetricNative/integrations/unity`; Unreal-facing code lives in
+`Unreal/Plugins/OpenVolumetric` and links the same core.
 
 ## C++ namespaces
 
@@ -37,13 +39,15 @@ subdirectories:
   `OpenVolumetricCore`, including container, decoding, geometry, media, and support
   classes;
 - `openvolumetric::authoring` contains reusable authoring and packaging types;
-- `openvolumetric::unity` contains Unity-specific coordinators and graphics upload
-  backends;
+- `openvolumetric::unity` contains Unity-specific coordinators and graphics
+  upload backends;
 - exported `extern "C"` entry points remain in the global namespace so the
-  stable `openvolumetric_*` plugin ABI is directly consumable by C# and other engines.
+  `openvolumetric_*` Unity plug-in ABI is directly consumable by C#.
 
-Future Unreal-specific adapter types should follow the same pattern under
-`openvolumetric::unreal`.
+The current Unreal adapter is implemented with Unreal-facing `F` and `U`
+types inside the Unreal plug-in module. It consumes the public
+`openvolumetric::OpenVolumetricPlayer` façade and does not place Unreal types
+or headers in the native core.
 
 ## Current core interfaces
 
@@ -56,10 +60,10 @@ Future Unreal-specific adapter types should follow the same pattern under
 | `IMeshBuffer` | Engine/platform implementation that uploads one engine-neutral mesh. |
 | `Mesh` | CPU-side indices, positions, normals, and UVs with no engine dependency. |
 
-The current adapters construct `AVDecoderFFMPEG` and
-`GeometryDecoderDraco` directly. A future public façade/factory can hide those
-concrete types, but an engine integration must not call FFmpeg or Draco APIs
-itself.
+The engine-neutral `OpenVolumetricPlayer` façade owns the concrete FFmpeg and
+Draco implementation. Engine integrations use this façade rather than calling
+FFmpeg or Draco APIs themselves. The older Unity upload coordinator still
+implements its native graphics bridge behind the exported C ABI.
 
 ## Lifecycle
 
@@ -156,27 +160,36 @@ failure rather than continuing with stale pointers.
 Structured counters are a future API improvement. Engine integrations should
 not parse log text as a data interface.
 
-## Unreal mapping
+## Unreal implementation
 
-The initial Unreal adapter should contain:
+The implemented Unreal Engine 5.8 plug-in contains:
 
-- a runtime module that stages and loads `OpenVolumetricCore` dependencies;
-- a UObject/component that owns one coordinator and exposes open, play, stop,
-  loop, seek, status, and error operations;
-- an RHI-specific texture uploader implementing the role of `ITexture`;
-- a dynamic mesh uploader implementing the role of `IMeshBuffer`;
-- a procedural audio source that pulls PCM from `read_audio()`;
-- render commands that consume one complete timestamp-matched presentation on
-  the Unreal render/RHI thread.
+- `OpenVolumetricRuntime`, a runtime module linked to
+  `OpenVolumetricCore`;
+- `FOpenVolumetricPlayerAdapter`, a private translation layer between Unreal
+  containers/types and `openvolumetric::OpenVolumetricPlayer`;
+- `UOpenVolumetricComponent`, a Blueprint-facing component exposing source
+  selection, open, play, pause, seek, loop, status, and error state;
+- `UDynamicMeshComponent` output with coordinate, normal-overlay, and
+  UV-overlay conversion;
+- a transient `UTexture2D` and two-sided unlit dynamic material;
+- `USoundWaveProcedural` and `UAudioComponent` output for decoded PCM;
+- `OpenVolumetricAuthoring`, an Editor-only module exposing the same OBJ,
+  image, audio, preset, packaging, and verification workflow as Unity; and
+- `/Game/OpenVolumetricSample`, a minimal sample level.
 
-The Unreal game thread supplies presentation time. It may enqueue rendering,
-but it must not retain decoder-owned YUV pointers beyond the render operation.
-The procedural audio callback must remain independent of render readiness and
-use the same playback-clock origin.
+The current macOS implementation polls one complete timestamp-matched
+presentation on the Unreal game thread, converts planar YUV420 data to BGRA,
+updates the dynamic mesh, and enqueues a transient texture-region upload.
+Audio is drained into a procedural sound wave with approximately 250 ms of
+queued PCM. This is intentionally an initial engine adapter rather than a
+final RHI-optimized path: a future implementation can move YUV conversion and
+mesh/texture transfer onto render/RHI resources without changing the
+container or core player contract.
 
-Start with one desktop RHI and packaged-build target. Android/Quest support
-should reuse the same core contract only after the desktop adapter establishes
-correct lifecycle and thread scheduling.
+Editor playback on macOS is implemented and manually validated. Packaged
+build staging, Windows and additional RHI implementations, lifecycle stress
+tests, and Unreal Android/Quest support remain outstanding.
 
 ## Public-boundary improvement backlog
 
