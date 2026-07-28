@@ -33,6 +33,16 @@ operations are also available to Blueprints:
 Status, duration, current time, and the last error are exposed as component
 properties.
 
+The component's **Texture** section also exposes the same normalized
+correction controls as Unity:
+
+- **Luminance Correction** offsets the Y channel;
+- **Blue Projection Correction** offsets the U channel; and
+- **Red Projection Correction** offsets the V channel.
+
+Each control ranges from -0.2 to 0.2 and is applied before BT.601 RGB
+conversion.
+
 The supplied material is two-sided and unlit. The component disables shadows,
 emissive-light-source behavior, and dynamic indirect-light contribution so
 the captured texture is displayed without scene relighting.

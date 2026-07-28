@@ -278,6 +278,10 @@ Unity namespaces were renamed to OpenVolumetric.
 
 ## Milestone 10: Topology-aware geometry format
 
+The detailed proposed representation, fallback behavior, decoding cache,
+seeking rules, validation matrix, and phased implementation are recorded in
+[TOPOLOGY_COMPRESSION.md](TOPOLOGY_COMPRESSION.md).
+
 - [ ] Define a stable topology fingerprint covering vertex/index counts,
       index order, attribute presence, and attribute mapping.
 - [ ] Analyse representative sequences and report runs where topology is
@@ -337,6 +341,71 @@ Unity namespaces were renamed to OpenVolumetric.
 - Representative content is materially smaller than independent-frame Draco
   without violating playback performance budgets.
 
+## Milestone 12: Streamable input and fragmented packaging
+
+The complete progressive-download, fragmented-MP4, adaptive-selection,
+threading, recovery, authoring, and validation design is recorded in
+[STREAMING_AND_ADAPTATION.md](STREAMING_AND_ADAPTATION.md).
+
+- [ ] Add an engine-independent byte/segment source beneath the MP4
+      container while retaining local-file input.
+- [ ] Add cancellable HTTP byte-range input and bounded caching.
+- [ ] Author fast-start MP4 files for progressive playback.
+- [ ] Connect FFmpeg custom I/O to the network byte source.
+- [ ] Validate progressive startup and seeking without downloading the whole
+      asset.
+- [ ] Author initialization segments and aligned fragmented-MP4 media
+      segments for a single fixed-quality representation.
+- [ ] Add a bounded segment scheduler/cache with explicit opening, buffering,
+      playing, rebuffering, ended, and error states.
+- [ ] Ensure video and geometry random-access points align with every
+      independently addressable segment.
+- [ ] Align topology keyframes with segment boundaries when temporal geometry
+      coding is used.
+- [ ] Expose URL input and buffer diagnostics through the core API, Unity, and
+      Unreal without placing transport logic in either engine adapter.
+
+### Milestone 12 exit criteria
+
+- Local-file playback remains unchanged.
+- Playback can start and seek over HTTP without first caching the complete
+  conventional MP4.
+- A fixed fragmented representation plays across every segment boundary with
+  synchronized texture, geometry, and optional audio.
+- Network cancellation, retries, cache limits, seeking, looping, and corrupt
+  segment handling pass controlled tests.
+
+## Milestone 13: Adaptive volumetric streaming
+
+- [ ] Define a versioned manifest/profile describing representations,
+      compatibility groups, segment timelines, codecs, decoder requirements,
+      and geometry precision.
+- [ ] Author at least two aligned quality representations from one source.
+- [ ] Evaluate MPEG-DASH as the initial manifest/delivery model and document
+      custom `vvge` signaling and interoperability limits.
+- [ ] Implement manual representation selection and a maximum-quality cap.
+- [ ] Implement conservative throughput-based automatic selection constrained
+      by device and measured decode capability.
+- [ ] Switch compatible texture and geometry atomically at aligned segment
+      boundaries while preserving the audio clock.
+- [ ] Cancel and isolate stale in-flight downloads using playback generations.
+- [ ] Add Unity and Unreal buffer/quality controls and developer diagnostics.
+- [ ] Test bandwidth ramps, latency, jitter, outages, failed upgrades,
+      repeated switching, seeking, looping, and long playback.
+- [ ] Measure startup delay, rebuffering, quality, wasted bytes, memory,
+      synchronization error, and decode cost on desktop and Quest hardware.
+
+### Milestone 13 exit criteria
+
+- Quality changes do not produce mixed incompatible texture/geometry
+  presentations or synchronization discontinuities.
+- The player steps down and recovers under constrained or interrupted
+  bandwidth without deadlock or unbounded memory growth.
+- The authoring verifier validates all segment and representation switch
+  boundaries.
+- Local, progressive, fixed-fragmented, and adaptive inputs share the same
+  core decoding and presentation architecture.
+
 ## Test matrix
 
 - [x] MP4 with HEVC, AAC, and geometry.
@@ -359,11 +428,16 @@ Unity namespaces were renamed to OpenVolumetric.
 - [ ] Windowed same-topology geometry seeks from every keyframe boundary.
 - [ ] Whole-sequence topology reuse survives long playback and looping.
 - [ ] Corrupt dependent geometry recovers at the next keyframe.
+- [ ] Progressive HTTP startup and byte-range seeking.
+- [ ] Fragmented MP4 playback across every segment boundary.
+- [ ] Adaptive switching under controlled bandwidth, latency, and outages.
+- [ ] Texture and geometry remain compatible and synchronized after every
+      representation change.
 
 ## Later work
 
 - Consider optional checksums for geometry samples.
-- Consider fragmented MP4 and network streaming after local-file playback is
+- Consider low-latency live ingest after adaptive on-demand playback is
   stable.
 - Formalize the metadata MIME type and sample format if files need to
   interoperate with software outside this project.

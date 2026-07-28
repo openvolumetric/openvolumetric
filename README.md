@@ -77,6 +77,8 @@ data/                   Local sample content
 - [Unreal integration guide](docs/UNREAL_INTEGRATION.md)
 - [Quest platform baseline](docs/QUEST_BASELINE.md)
 - [Development plan](docs/PLAN.md)
+- [Shared-topology compression design](docs/TOPOLOGY_COMPRESSION.md)
+- [Streaming and adaptive delivery design](docs/STREAMING_AND_ADAPTATION.md)
 
 ## Current limitations
 
