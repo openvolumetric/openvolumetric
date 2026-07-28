@@ -68,6 +68,7 @@ data/                   Local sample content
 ## Documentation
 
 - [Building](docs/BUILDING.md)
+- [Licensing and distribution](docs/LICENSING.md)
 - [Technical overview](docs/TECHNICAL_OVERVIEW.md)
 - [Native core](docs/CORE.md)
 - [Authoring architecture](docs/AUTHORING.md)
@@ -90,3 +91,10 @@ data/                   Local sample content
 ## Contributors
 
 - Marco Volino — m.volino@surrey.ac.uk
+
+## License
+
+OpenVolumetric is licensed under the
+[Apache License 2.0](LICENSE). Third-party components retain their own
+licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and the
+[licensing guide](docs/LICENSING.md).
