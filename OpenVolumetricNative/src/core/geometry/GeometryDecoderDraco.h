@@ -37,7 +37,7 @@ public:
 	bool submit_encoded_frame(
 		std::uint64_t generation,
 		double presentation_time,
-		std::vector<std::uint8_t> payload) override;
+		GeometryPacket packet) override;
 
 	/// Reports input capacity without consuming a media-side sample.
 	bool can_accept_encoded_frame() const override;
@@ -81,6 +81,11 @@ protected:
 	/// Decodes one independently decodable Draco payload into mesh_out.
 	bool convert_draco_to_mesh(DracoData & data, Mesh& mesh_out);
 
+	/// Applies one validated position update to the active topology.
+	bool convert_draco_update_to_mesh(
+		const GeometryPacket& packet,
+		Mesh& mesh_out);
+
 	/// Clears compressed and decoded queues while preserving current generation.
 	void flush_buffer();
 
@@ -90,8 +95,7 @@ private:
 	{
 		/// Seek/loop pass that owns this work item.
 		std::uint64_t generation = 0;
-		// Complete independently decodable Draco bitstream.
-		DracoData data;
+		GeometryPacket packet;
 		double presentation_time = 0.0;
 	};
 
@@ -112,6 +116,12 @@ private:
 	std::atomic<std::uint64_t> m_generation;
 	std::atomic<std::uint64_t> m_end_of_stream_generation;
 	std::atomic<bool> m_decode_active;
+
+	/// Active topology cached exclusively on the Draco worker thread.
+	Mesh m_topology_mesh;
+	std::uint64_t m_topology_id = 0;
+	std::uint32_t m_topology_keyframe = 0;
+	std::uint64_t m_topology_generation = 0;
 
 
 	/// Single worker that exclusively invokes the Draco decoder.

@@ -49,7 +49,7 @@ authoring should follow only after segmented VOD is stable.
   geometry from another.
 - Align all representation boundaries and random-access points.
 - Bound network, compressed-packet, decoded-frame, and topology-cache memory.
-- Retain local-file playback and version-1 independent geometry compatibility.
+- Retain local-file playback and independent geometry coding.
 - Make representation changes deterministic and observable.
 - Recover from slow, missing, or corrupt segments without blocking an engine
   thread.

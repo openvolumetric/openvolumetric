@@ -10,6 +10,7 @@
 #include "Misc/Paths.h"
 #include "VolumetricVideoPacker.h"
 #include "Widgets/Input/SButton.h"
+#include "Widgets/Input/SCheckBox.h"
 #include "Widgets/Input/SComboBox.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
@@ -290,6 +291,7 @@ public:
 	TSharedPtr<SEditableTextBox> FFmpeg;
 	TSharedPtr<SEditableTextBox> FrameRate;
 	bool bOverwrite = false;
+	bool bGeometryCompression = true;
 
 	FImpl()
 	{
@@ -317,6 +319,11 @@ public:
 			FPaths::ProjectContentDir() / TEXT("openvolumetric.mp4"))));
 		FFmpeg->SetText(FText::FromString(LoadValue(
 			TEXT("FFmpeg"), FindFFmpeg())));
+		GConfig->GetBool(
+			SettingsSection,
+			TEXT("GeometryCompression"),
+			bGeometryCompression,
+			GEditorPerProjectIni);
 	}
 
 	void Save() const
@@ -336,6 +343,11 @@ public:
 		GConfig->SetString(
 			SettingsSection, TEXT("FFmpeg"),
 			*FFmpeg->GetText().ToString(), GEditorPerProjectIni);
+		GConfig->SetBool(
+			SettingsSection,
+			TEXT("GeometryCompression"),
+			bGeometryCompression,
+			GEditorPerProjectIni);
 		GConfig->Flush(false, GEditorPerProjectIni);
 	}
 
@@ -449,6 +461,7 @@ public:
 			FCString::Atod(*FrameRate->GetText().ToString());
 		const FEncodingSettings Settings = GetPreset(Preset);
 		const bool bReplace = bOverwrite;
+		const bool bCompressGeometry = bGeometryCompression;
 		const TSharedRef<FAuthoringState, ESPMode::ThreadSafe> Job = State;
 
 		Job->bCancel.Store(false);
@@ -462,7 +475,8 @@ public:
 
 		Async(EAsyncExecution::ThreadPool,
 			[Job, Inputs = MoveTemp(Inputs), ImageDirectory, AudioFile,
-			 OutputFile, FFmpegPath, FPS, Settings, bReplace]
+			 OutputFile, FFmpegPath, FPS, Settings, bReplace,
+			 bCompressGeometry]
 			{
 				const FString TempDirectory =
 					FPaths::ProjectIntermediateDir() /
@@ -496,6 +510,7 @@ public:
 					Options.texture_quantization = Settings.UVBits;
 					Options.encode_speed = Settings.EncodeSpeed;
 					Options.decode_speed = Settings.DecodeSpeed;
+					Options.preserve_point_order = bCompressGeometry;
 					std::string NativeError;
 					if (!openvolumetric::authoring::encode_obj_to_draco(
 						std::filesystem::path(
@@ -595,12 +610,60 @@ public:
 						TCHAR_TO_UTF8(*MediaPath));
 					Options.geometry_directory = std::filesystem::path(
 						TCHAR_TO_UTF8(*DracoDirectory));
+					Options.source_geometry_directory =
+						std::filesystem::path(
+							TCHAR_TO_UTF8(
+								*FPaths::GetPath(Inputs.Geometry[0].Path)));
 					Options.output_path = std::filesystem::path(
 						TCHAR_TO_UTF8(*PackagedPath));
-					if (!openvolumetric::authoring::pack_openvolumetric(Options))
+					Options.enable_topology_compression =
+						bCompressGeometry;
+					Options.draco_options.position_quantization =
+						Settings.PositionBits;
+					Options.draco_options.normal_quantization =
+						Settings.NormalBits;
+					Options.draco_options.texture_quantization =
+						Settings.UVBits;
+					Options.draco_options.encode_speed =
+						Settings.EncodeSpeed;
+					Options.draco_options.decode_speed =
+						Settings.DecodeSpeed;
+					openvolumetric::authoring::PackStatistics Statistics;
+					if (!openvolumetric::authoring::pack_openvolumetric(
+						Options, &Statistics))
 					{
 						Failure =
 							TEXT("Native packaging or verification failed.");
+					}
+					else
+					{
+						const double Reduction =
+							Statistics.independent_payload_bytes == 0
+								? 0.0
+								: 100.0 * (1.0 -
+									static_cast<double>(
+										Statistics.authored_payload_bytes) /
+									static_cast<double>(
+										Statistics.independent_payload_bytes));
+						Job->Append(FString::Printf(
+							TEXT("Geometry statistics: %llu frames, %llu ")
+							TEXT("independent mesh keyframes, %llu position ")
+							TEXT("updates.\nGeometry payload: %llu bytes + ")
+							TEXT("%llu bytes packet headers; independent ")
+							TEXT("baseline %llu bytes; %.2f%% payload reduction."),
+							static_cast<unsigned long long>(
+								Statistics.frame_count),
+							static_cast<unsigned long long>(
+								Statistics.independent_mesh_count),
+							static_cast<unsigned long long>(
+								Statistics.position_update_count),
+							static_cast<unsigned long long>(
+								Statistics.authored_payload_bytes),
+							static_cast<unsigned long long>(
+								Statistics.packet_header_bytes),
+							static_cast<unsigned long long>(
+								Statistics.independent_payload_bytes),
+							Reduction));
 					}
 				}
 
@@ -805,6 +868,34 @@ void SOpenVolumetricEncoderWindow::Construct(const FArguments&)
 					})
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 3)
+			[
+				SNew(SCheckBox)
+					.IsChecked_Lambda(
+						[this]
+						{
+							return Impl->bGeometryCompression
+								? ECheckBoxState::Checked
+								: ECheckBoxState::Unchecked;
+						})
+					.ToolTipText(NSLOCTEXT(
+						"OpenVolumetricAuthoring",
+						"GeometryCompressionTooltip",
+						"Reuse matching topology with position-only Draco updates. Disable to encode every packet as an independent Draco mesh."))
+					.OnCheckStateChanged_Lambda(
+						[this](ECheckBoxState State)
+						{
+							Impl->bGeometryCompression =
+								State == ECheckBoxState::Checked;
+						})
+					[
+						SNew(STextBlock)
+							.Text(NSLOCTEXT(
+								"OpenVolumetricAuthoring",
+								"GeometryCompression",
+								"Geometry Compression"))
+					]
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)
 			[
 				SNew(SButton)
 					.Text_Lambda(

@@ -160,7 +160,8 @@ inter-frame dependency preroll.
 - [x] Extract packaging and verification into `OpenVolumetricAuthoringCore`.
 - [x] Expose packaging to the Unity Editor through a separate authoring
       library rather than the runtime player plugin.
-- [x] Use Unity as the sole user-facing authoring interface.
+- [x] Provide the user-facing authoring workflow through the Unity Editor;
+      the same authoring core is now also exposed through Unreal Editor.
 - [x] Accept numbered images and OBJ meshes plus optional audio.
 - [x] Encode OBJ meshes to temporary Draco frames automatically.
 - [x] Encode OBJ meshes through the linked Editor-only Draco library without
@@ -264,6 +265,8 @@ Unity namespaces were renamed to OpenVolumetric.
 - [x] Add an Unreal sample actor and level demonstrating synchronized
       geometry, texture, and audio playback.
 - [x] Add the OpenVolumetric authoring workflow to the Unreal Editor.
+- [x] Validate a complete 3,627-frame OBJ, JPEG, and MP3 authoring run through
+      the Unreal Editor on macOS ARM64.
 - [x] Validate basic synchronized playback in Unreal Editor 5.8 on macOS.
 - [ ] Validate packaged builds, repeated lifecycle creation and destruction,
       looping, seeking, and missing/corrupt input handling.
@@ -282,25 +285,25 @@ The detailed proposed representation, fallback behavior, decoding cache,
 seeking rules, validation matrix, and phased implementation are recorded in
 [TOPOLOGY_COMPRESSION.md](TOPOLOGY_COMPRESSION.md).
 
-- [ ] Define a stable topology fingerprint covering vertex/index counts,
+- [x] Define a stable topology fingerprint covering vertex/index counts,
       index order, attribute presence, and attribute mapping.
 - [ ] Analyse representative sequences and report runs where topology is
       constant, including whole-sequence and short-window distributions.
-- [ ] Define three geometry coding modes: independent mesh, window keyframe
+- [x] Define three geometry coding strategies: independent mesh, window keyframe
       plus dependent frames, and one topology shared by an entire sequence.
-- [ ] Extend the versioned geometry sample header with coding mode,
+- [x] Propose a versioned geometry sample header with coding mode,
       dependency/keyframe information, topology identifier, and decoded-size
-      validation while retaining version-1 playback compatibility.
-- [ ] Define how positions, normals, UVs, and any future attributes are
+      validation.
+- [x] Define how positions, normals, UVs, and any future attributes are
       quantized and predicted when topology is reused.
-- [ ] Select a delta/residual compression backend using measured compression
+- [x] Select a delta/residual compression backend using measured compression
       ratio, decode cost, memory use, implementation complexity, and licensing
       rather than assuming Draco is optimal for temporal residuals.
-- [ ] Define random-access rules and maximum dependency-window length so MP4
+- [x] Define random-access rules and maximum dependency-window length so MP4
       seeks can begin from a known geometry keyframe.
-- [ ] Define recovery behavior for missing, corrupt, or mismatched dependent
+- [x] Define recovery behavior for missing, corrupt, or mismatched dependent
       samples.
-- [ ] Build an offline comparison tool or internal test harness that reports
+- [x] Build an offline comparison tool or internal test harness that reports
       bytes per frame, compression ratio, encode/decode time, and geometric
       reconstruction error against independent Draco.
 
@@ -309,27 +312,27 @@ seeking rules, validation matrix, and phased implementation are recorded in
 - The format and dependency rules are documented before runtime integration.
 - Benchmarks identify when independent, windowed, and whole-sequence modes
   should be selected.
-- Existing version-1 files remain readable.
+- Independent and topology-reusing samples use the same packet format.
 
 ## Milestone 11: Temporal geometry encoding and playback
 
-- [ ] Add authoring analysis that automatically segments input into
+- [x] Add authoring analysis that automatically segments input into
       same-topology windows and selects independent, windowed, or
       whole-sequence coding.
-- [ ] Encode a full topology/keyframe at every required random-access point
+- [x] Encode a full topology/keyframe at every required random-access point
       and temporally compressed attribute updates for dependent samples.
-- [ ] Package dependency metadata and compressed payloads into the existing
+- [x] Package dependency metadata and compressed payloads into the existing
       timestamped `vvge` MP4 track.
-- [ ] Extend the core geometry decoder with topology caches and dependent-frame
+- [x] Extend the core geometry decoder with topology caches and dependent-frame
       reconstruction without adding Unity or Unreal dependencies.
-- [ ] Bound topology-cache, residual-buffer, and decoded-mesh memory.
-- [ ] Integrate seek preroll from the preceding geometry keyframe with the
+- [x] Bound topology-cache, residual-buffer, and decoded-mesh memory.
+- [x] Integrate seek preroll from the preceding geometry keyframe with the
       unified seek pipeline.
 - [ ] Preserve timestamp matching, EOS generations, corruption handling, and
       dropped-sample diagnostics for dependent geometry.
 - [ ] Add Unity authoring controls for automatic mode, maximum window size,
       quality/error target, and forced independent frames.
-- [ ] Verify independent fallback when topology changes unexpectedly.
+- [x] Verify independent fallback when topology changes unexpectedly.
 - [ ] Run visual, numeric, compression-ratio, long-playback, loop, and seek
       tests on desktop and Quest-class hardware.
 
@@ -423,8 +426,10 @@ threading, recovery, authoring, and validation design is recorded in
 - [x] Android ARM64 core and Unity native-plugin build.
 - [ ] Quest 3S Vulkan playback, looping, seeking, thermals, and sustained load.
 - [x] Unreal Editor playback on macOS.
+- [x] Unity Editor end-to-end authoring on macOS ARM64.
+- [x] Unreal Editor end-to-end authoring on macOS ARM64.
 - [ ] Unreal packaged-build playback on the selected first target.
-- [ ] Version-1 independent geometry remains backward compatible.
+- [x] Independent geometry uses the unified packet format.
 - [ ] Windowed same-topology geometry seeks from every keyframe boundary.
 - [ ] Whole-sequence topology reuse survives long playback and looping.
 - [ ] Corrupt dependent geometry recovers at the next keyframe.

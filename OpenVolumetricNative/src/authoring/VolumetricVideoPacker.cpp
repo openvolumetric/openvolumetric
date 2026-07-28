@@ -1,6 +1,13 @@
 #include "VolumetricVideoPacker.h"
 
+#include "DracoMeshEncoder.h"
+#include "DracoPointCloudEncoder.h"
+#include "TopologyAnalyzer.h"
+
 #include <GeometryPacket.h>
+
+#include <draco/compression/decode.h>
+#include <draco/core/decoder_buffer.h>
 
 extern "C"
 {
@@ -45,6 +52,7 @@ struct GeometryInput
 {
 	std::uint32_t frame_number;
 	fs::path path;
+	openvolumetric::GeometryPacket packet;
 };
 
 struct VideoSampleTiming
@@ -125,7 +133,8 @@ bool discover_geometry(
 
 		geometry.push_back({
 			static_cast<std::uint32_t>(parsed),
-			entry.path()
+			entry.path(),
+			{}
 		});
 	}
 
@@ -153,6 +162,276 @@ bool discover_geometry(
 		}
 	}
 
+	return true;
+}
+
+/// Builds one current-format packet for every source frame. Compression mode
+/// selects whether matching frames become position updates or remain
+/// independently decodable Draco meshes.
+bool validate_reused_keyframe(
+	const GeometryInput& input,
+	const CanonicalMesh& canonical,
+	const fs::path& obj_path)
+{
+	draco::DecoderBuffer buffer;
+	buffer.Init(
+		reinterpret_cast<const char*>(input.packet.payload.data()),
+		input.packet.payload.size());
+	draco::Decoder decoder;
+	auto decoded = decoder.DecodeMeshFromBuffer(&buffer);
+	if (!decoded.ok())
+	{
+		std::cerr << "Could not validate reused Draco keyframe: "
+			<< decoded.status().error_msg_string() << '\n';
+		return false;
+	}
+	const std::unique_ptr<draco::Mesh> mesh = std::move(decoded).value();
+	if (!mesh ||
+		static_cast<std::size_t>(mesh->num_points()) !=
+			canonical.vertex_count() ||
+		static_cast<std::size_t>(mesh->num_faces()) !=
+			canonical.triangle_count())
+	{
+		std::cerr << "Reused Draco keyframe geometry counts differ from OBJ "
+			<< obj_path << '\n';
+		return false;
+	}
+	for (draco::FaceIndex face(0); face < mesh->num_faces(); ++face)
+	{
+		const auto decoded_face = mesh->face(face);
+		for (int corner = 0; corner < 3; ++corner)
+		{
+			const std::size_t index =
+				static_cast<std::size_t>(face.value()) * 3 + corner;
+			if (static_cast<std::uint32_t>(
+					decoded_face[corner].value()) !=
+				canonical.triangle_indices[index])
+			{
+				std::cerr
+					<< "Reused Draco keyframe does not preserve canonical "
+					   "vertex/index order: "
+					<< input.path << '\n';
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+/// Records the point and face counts that the runtime will actually see after
+/// normal Draco mesh decoding. EdgeBreaker may split OBJ position vertices at
+/// UV or normal seams, so canonical OBJ counts are not valid packet metadata
+/// for an independently decoded mesh.
+bool update_decoded_mesh_counts(
+	GeometryInput& input,
+	const fs::path& obj_path)
+{
+	draco::DecoderBuffer buffer;
+	buffer.Init(
+		reinterpret_cast<const char*>(input.packet.payload.data()),
+		input.packet.payload.size());
+	draco::Decoder decoder;
+	auto decoded = decoder.DecodeMeshFromBuffer(&buffer);
+	if (!decoded.ok())
+	{
+		std::cerr << "Could not validate independent Draco mesh "
+			<< obj_path << ": "
+			<< decoded.status().error_msg_string() << '\n';
+		return false;
+	}
+	const std::unique_ptr<draco::Mesh> mesh = std::move(decoded).value();
+	if (!mesh || mesh->num_points() <= 0 || mesh->num_faces() <= 0 ||
+		static_cast<std::uint64_t>(mesh->num_points()) >
+			std::numeric_limits<std::uint32_t>::max() ||
+		static_cast<std::uint64_t>(mesh->num_faces()) >
+			std::numeric_limits<std::uint32_t>::max())
+	{
+		std::cerr << "Independent Draco mesh has invalid geometry counts: "
+			<< obj_path << '\n';
+		return false;
+	}
+	input.packet.vertex_count =
+		static_cast<std::uint32_t>(mesh->num_points());
+	input.packet.triangle_count =
+		static_cast<std::uint32_t>(mesh->num_faces());
+	return true;
+}
+
+bool prepare_geometry_packets(
+	const PackOptions& options,
+	std::vector<GeometryInput>& geometry,
+	PackStatistics& statistics)
+{
+	if (!fs::is_directory(options.source_geometry_directory))
+	{
+		std::cerr << "OBJ geometry directory does not exist: "
+			<< options.source_geometry_directory << '\n';
+		return false;
+	}
+
+	TopologyAnalysisOptions analysis_options;
+	CanonicalMesh previous;
+	bool has_previous = false;
+	std::uint32_t active_keyframe = 0;
+	GeometryInput* active_keyframe_input = nullptr;
+	fs::path active_keyframe_obj;
+	bool active_keyframe_has_updates = false;
+	bool active_keyframe_validated = false;
+	std::size_t keyframe_count = 0;
+
+	// A singleton topology does not require stable decoded point ordering.
+	// Re-encode it with Draco's normal mesh method, which is substantially
+	// smaller and faster to decode than the sequential method reserved for
+	// keyframes referenced by position-only updates.
+	auto finish_active_keyframe = [&]() -> bool
+	{
+		if (active_keyframe_input == nullptr ||
+			active_keyframe_has_updates)
+		{
+			return true;
+		}
+		DracoEncodeOptions encode_options = options.draco_options;
+		encode_options.preserve_point_order = false;
+		std::string encode_error;
+		if (!encode_obj_to_draco(
+			active_keyframe_obj,
+			encode_options,
+			active_keyframe_input->packet.payload,
+			encode_error))
+		{
+			std::cerr << "Could not encode independent mesh "
+				<< active_keyframe_obj << ": " << encode_error << '\n';
+			return false;
+		}
+		return update_decoded_mesh_counts(
+			*active_keyframe_input, active_keyframe_obj);
+	};
+
+	for (GeometryInput& input : geometry)
+	{
+		const fs::path obj_path =
+			options.source_geometry_directory /
+			(input.path.stem().string() + ".obj");
+		CanonicalMesh current;
+		std::string error;
+		if (!load_canonical_obj(
+			obj_path, analysis_options, current, error))
+		{
+			std::cerr << "Could not analyse OBJ frame "
+				<< obj_path << ": " << error << '\n';
+			return false;
+		}
+		if (current.vertex_count() >
+				std::numeric_limits<std::uint32_t>::max() ||
+			current.triangle_count() >
+				std::numeric_limits<std::uint32_t>::max())
+		{
+			std::cerr << "Geometry counts exceed the packet format limits\n";
+			return false;
+		}
+
+		const bool keyframe =
+			!options.enable_topology_compression ||
+			!has_previous ||
+			!topology_matches(previous, current);
+		input.packet.version = openvolumetric::kGeometryPacketVersion;
+		input.packet.frame_number = input.frame_number;
+		input.packet.topology_id = current.topology_id;
+		input.packet.vertex_count =
+			static_cast<std::uint32_t>(current.vertex_count());
+		input.packet.triangle_count =
+			static_cast<std::uint32_t>(current.triangle_count());
+		if (keyframe)
+		{
+			if (!finish_active_keyframe())
+				return false;
+			active_keyframe = input.frame_number;
+			active_keyframe_input = &input;
+			active_keyframe_obj = obj_path;
+			active_keyframe_has_updates = false;
+			active_keyframe_validated = false;
+			++keyframe_count;
+			input.packet.flags = openvolumetric::kGeometryPacketKeyframe;
+			input.packet.coding_mode =
+				openvolumetric::GeometryCodingMode::IndependentMesh;
+			input.packet.payload_codec =
+				openvolumetric::GeometryPayloadCodec::DracoMesh;
+		}
+		else
+		{
+			if (!active_keyframe_has_updates)
+			{
+				if (active_keyframe_input == nullptr ||
+					!read_file(
+						active_keyframe_input->path,
+						active_keyframe_input->packet.payload))
+				{
+					std::cerr << "Failed to read order-preserving Draco "
+						"keyframe\n";
+					return false;
+				}
+				active_keyframe_has_updates = true;
+			}
+			if (!active_keyframe_validated)
+			{
+				if (active_keyframe_input == nullptr ||
+					!validate_reused_keyframe(
+						*active_keyframe_input, current, obj_path))
+				{
+					return false;
+				}
+				active_keyframe_validated = true;
+			}
+			input.packet.flags = 0;
+			input.packet.coding_mode =
+				openvolumetric::GeometryCodingMode::PositionUpdate;
+			input.packet.payload_codec =
+				openvolumetric::GeometryPayloadCodec::DracoPointCloud;
+			if (!encode_positions_to_draco_point_cloud(
+				current.positions, 14, 5, 5, input.packet.payload, error))
+			{
+				std::cerr << "Could not encode position update "
+					<< obj_path << ": " << error << '\n';
+				return false;
+			}
+		}
+		input.packet.keyframe_frame_number = active_keyframe;
+		previous = std::move(current);
+		has_previous = true;
+	}
+	if (!finish_active_keyframe())
+		return false;
+
+	for (const GeometryInput& input : geometry)
+	{
+		statistics.authored_payload_bytes +=
+			static_cast<std::uint64_t>(input.packet.payload.size());
+		// The optimized independent packets are the meaningful no-temporal-
+		// reuse baseline, including singleton topology groups.
+		if (input.packet.coding_mode ==
+			openvolumetric::GeometryCodingMode::IndependentMesh)
+		{
+			statistics.independent_payload_bytes +=
+				static_cast<std::uint64_t>(input.packet.payload.size());
+		}
+		else
+		{
+			statistics.independent_payload_bytes +=
+				static_cast<std::uint64_t>(fs::file_size(input.path));
+		}
+	}
+
+	statistics.frame_count = geometry.size();
+	statistics.independent_mesh_count = keyframe_count;
+	statistics.position_update_count = geometry.size() - keyframe_count;
+	statistics.packet_header_bytes =
+		static_cast<std::uint64_t>(geometry.size()) *
+		static_cast<std::uint64_t>(
+			openvolumetric::kGeometryPacketHeaderSize);
+	std::cout << "Authored " << keyframe_count
+		<< " independent meshes and "
+		<< (geometry.size() - keyframe_count)
+		<< " position-only updates\n";
 	return true;
 }
 
@@ -233,16 +512,8 @@ bool write_geometry_sample(
 	const VideoSampleTiming& timing,
 	const GeometryInput& input)
 {
-	openvolumetric::GeometryPacket geometry_packet;
-	geometry_packet.frame_number = input.frame_number;
-	if (!read_file(input.path, geometry_packet.payload))
-	{
-		std::cerr << "Failed to read geometry frame: " << input.path << '\n';
-		return false;
-	}
-
 	const std::vector<std::uint8_t> bytes =
-		openvolumetric::serialize_geometry_packet(geometry_packet);
+		openvolumetric::serialize_geometry_packet(input.packet);
 	if (bytes.empty() ||
 		bytes.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()))
 	{
@@ -264,7 +535,10 @@ bool write_geometry_sample(
 		packet->pts = timing.pts;
 		packet->dts = timing.pts;
 		packet->duration = timing.duration;
-		packet->flags = AV_PKT_FLAG_KEY;
+		packet->flags =
+			(input.packet.flags & openvolumetric::kGeometryPacketKeyframe) != 0
+				? AV_PKT_FLAG_KEY
+				: 0;
 		av_packet_rescale_ts(packet, source_time_base, stream->time_base);
 		result = av_interleaved_write_frame(output, packet);
 	}
@@ -729,9 +1003,18 @@ bool verify_file(
 					goto cleanup;
 				}
 
-				std::vector<std::uint8_t> original;
-				if (!read_file(geometry[geometry_index].path, original) ||
-					decoded.payload != original)
+				const openvolumetric::GeometryPacket& expected =
+					geometry[geometry_index].packet;
+				if (decoded.version != expected.version ||
+					decoded.flags != expected.flags ||
+					decoded.coding_mode != expected.coding_mode ||
+					decoded.payload_codec != expected.payload_codec ||
+					decoded.topology_id != expected.topology_id ||
+					decoded.keyframe_frame_number !=
+						expected.keyframe_frame_number ||
+					decoded.vertex_count != expected.vertex_count ||
+					decoded.triangle_count != expected.triangle_count ||
+					decoded.payload != expected.payload)
 				{
 					std::cerr << "Geometry payload mismatch for frame "
 						<< decoded.frame_number << '\n';
@@ -772,55 +1055,83 @@ bool verify_file(
 		}
 
 		const GeometryInput& seek_input = geometry[geometry.size() / 2];
-		const std::int64_t seek_timestamp = av_rescale_q(
-			video_timing[geometry.size() / 2].pts,
-			video_time_base,
-			input->streams[geometry_stream_index]->time_base);
-		result = av_seek_frame(
-			input,
-			geometry_stream_index,
-			seek_timestamp,
-			AVSEEK_FLAG_BACKWARD);
-		if (result < 0)
+		const std::uint32_t expected_seek_frame =
+			seek_input.packet.keyframe_frame_number;
+		const auto seek_geometry_sample =
+			[&](std::size_t timing_index,
+				std::uint32_t expected_frame,
+				std::uint32_t expected_keyframe) -> bool
 		{
-			std::cerr << "Geometry seek failed: "
-				<< ffmpeg_error(result) << '\n';
+			const std::int64_t timestamp = av_rescale_q(
+				video_timing[timing_index].pts,
+				video_time_base,
+				input->streams[geometry_stream_index]->time_base);
+			int seek_result = av_seek_frame(
+				input,
+				geometry_stream_index,
+				timestamp,
+				AVSEEK_FLAG_BACKWARD);
+			if (seek_result < 0)
+			{
+				std::cerr << "Geometry seek failed: "
+					<< ffmpeg_error(seek_result) << '\n';
+				return false;
+			}
+			avformat_flush(input);
+			av_packet_unref(packet);
+			while ((seek_result = av_read_frame(input, packet)) >= 0)
+			{
+				if (packet->stream_index == geometry_stream_index)
+				{
+					openvolumetric::GeometryPacket decoded;
+					const bool valid =
+						openvolumetric::parse_geometry_packet(
+							packet->data,
+							static_cast<std::size_t>(packet->size),
+						decoded) &&
+						decoded.frame_number == expected_frame &&
+						decoded.keyframe_frame_number == expected_keyframe;
+					if (!valid)
+					{
+						std::cerr << "Geometry seek dependency mismatch\n";
+						return false;
+					}
+					return true;
+				}
+				av_packet_unref(packet);
+			}
+			std::cerr << "Geometry seek produced no geometry sample\n";
+			return false;
+		};
+
+		if (!seek_geometry_sample(
+			geometry.size() / 2,
+			seek_input.frame_number,
+			expected_seek_frame))
+		{
 			goto cleanup;
 		}
-		avformat_flush(input);
-
-		bool found_seek_sample = false;
-		av_packet_unref(packet);
-		while ((result = av_read_frame(input, packet)) >= 0)
-		{
-			if (packet->stream_index == geometry_stream_index)
+		const auto keyframe_iterator = std::find_if(
+			geometry.begin(),
+			geometry.end(),
+			[&](const GeometryInput& value)
 			{
-				openvolumetric::GeometryPacket decoded;
-				if (!openvolumetric::parse_geometry_packet(
-					packet->data,
-					static_cast<std::size_t>(packet->size),
-					decoded) ||
-					decoded.frame_number != seek_input.frame_number)
-				{
-					std::cerr << "Geometry seek returned frame "
-						<< decoded.frame_number << " instead of "
-						<< seek_input.frame_number << '\n';
-					goto cleanup;
-				}
-				found_seek_sample = true;
-				break;
-			}
-			av_packet_unref(packet);
-		}
-		if (!found_seek_sample)
+				return value.frame_number == expected_seek_frame;
+			});
+		if (keyframe_iterator == geometry.end() ||
+			!seek_geometry_sample(
+				static_cast<std::size_t>(
+					std::distance(geometry.begin(), keyframe_iterator)),
+				expected_seek_frame,
+				expected_seek_frame))
 		{
-			std::cerr << "Geometry seek produced no geometry sample\n";
 			goto cleanup;
 		}
 
 		std::cout << "Verified " << geometry_index
-			<< " geometry samples and seek to frame "
-			<< seek_input.frame_number << '\n';
+			<< " geometry samples and keyframe seek from frame "
+			<< seek_input.frame_number << " to frame "
+			<< expected_seek_frame << '\n';
 	}
 
 	success = true;
@@ -836,7 +1147,9 @@ cleanup:
 
 } // namespace
 
-bool pack_openvolumetric(const PackOptions& options)
+bool pack_openvolumetric(
+	const PackOptions& options,
+	PackStatistics* statistics)
 {
 	if (options.media_path.empty() ||
 		options.geometry_directory.empty() ||
@@ -864,6 +1177,11 @@ bool pack_openvolumetric(const PackOptions& options)
 	{
 		return false;
 	}
+	PackStatistics result_statistics;
+	if (!prepare_geometry_packets(options, geometry, result_statistics))
+	{
+		return false;
+	}
 
 	fs::path temporary_path = options.output_path;
 	temporary_path += ".authoring-tmp.mp4";
@@ -881,6 +1199,8 @@ bool pack_openvolumetric(const PackOptions& options)
 	}
 
 	fs::rename(temporary_path, options.output_path);
+	if (statistics != nullptr)
+		*statistics = result_statistics;
 	std::cout << "Verified volumetric MP4: "
 		<< options.output_path << '\n';
 	return true;

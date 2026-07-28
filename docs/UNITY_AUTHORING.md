@@ -26,6 +26,10 @@ geometry/000111.obj
 Frame numbers must be contiguous and the image and OBJ sets must match
 exactly. Padding and extensions must be consistent within each sequence.
 
+Enable **Geometry Compression** to detect shared topology and emit
+position-only updates. Clear it to use the same packet format with every
+sample encoded as an independently decodable Draco mesh.
+
 ## Pipeline
 
 One click performs the following stages:
@@ -53,6 +57,9 @@ OBJ meshes are encoded by the Draco library linked directly into the
 Editor-only `OpenVolumetricAuthoring` plugin; no `draco_encoder` executable
 or path setting is required. The window discovers FFmpeg through `PATH`, or a
 standalone executable can be selected without installing it system-wide.
+
+The complete Unity workflow was manually validated on macOS ARM64 on
+28 July 2026 with 3,627 matched OBJ/JPEG frames and MP3 audio.
 
 MP4 packaging is called directly through the Editor-only
 `OpenVolumetricAuthoring` native library. It is built and staged alongside

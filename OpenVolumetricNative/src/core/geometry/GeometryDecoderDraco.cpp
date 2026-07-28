@@ -1,5 +1,6 @@
 #include "GeometryDecoderDraco.h"
 
+#include "DracoPointCloudDecoder.h"
 
 #include <Logger.h>
 
@@ -7,6 +8,7 @@
 #include "draco/core/cycle_timer.h"
 
 #include <chrono>
+#include <cmath>
 #include <limits>
 
 namespace openvolumetric
@@ -20,7 +22,10 @@ GeometryDecoderDraco::GeometryDecoderDraco():
 	m_generation(0),
 	m_end_of_stream_generation(
 		std::numeric_limits<std::uint64_t>::max()),
-	m_decode_active(false)
+	m_decode_active(false),
+	m_topology_id(0),
+	m_topology_keyframe(0),
+	m_topology_generation(0)
 {
 
 }
@@ -62,15 +67,15 @@ bool GeometryDecoderDraco::init()
 bool GeometryDecoderDraco::submit_encoded_frame(
 	std::uint64_t generation,
 	double presentation_time,
-	std::vector<std::uint8_t> payload)
+	GeometryPacket packet)
 {
-	if (!m_initialised || payload.empty())
+	if (!m_initialised || packet.payload.empty())
 		return false;
 
 	EncodedMeshData encoded;
 	encoded.generation = generation;
 	encoded.presentation_time = presentation_time;
-	encoded.data.assign(payload.begin(), payload.end());
+	encoded.packet = std::move(packet);
 	if (!m_streamed_meshes.try_push(std::move(encoded)))
 	{
 		m_streamed_meshes.set_error("Compressed geometry queue is full.");
@@ -192,7 +197,56 @@ bool GeometryDecoderDraco::decode()
 
 		m_decode_active.store(true, std::memory_order_release);
 		Mesh mesh;
-		if (!convert_draco_to_mesh(encoded.data, mesh))
+		bool decoded = false;
+		if (encoded.packet.coding_mode ==
+				GeometryCodingMode::IndependentMesh)
+		{
+			DracoData data(
+				encoded.packet.payload.begin(),
+				encoded.packet.payload.end());
+			decoded = convert_draco_to_mesh(data, mesh);
+			if (decoded)
+			{
+				// A full Draco mesh is self-describing. Normal EdgeBreaker
+				// encoding may split source OBJ positions at UV/normal seams,
+				// so older authored packets can report canonical source counts
+				// that differ from the decoded point count. Accept the full
+				// mesh here; any following position update still validates its
+				// counts against this decoded topology before it is applied.
+				m_topology_mesh = mesh;
+				m_topology_id = encoded.packet.topology_id;
+				m_topology_keyframe =
+					encoded.packet.keyframe_frame_number;
+				m_topology_generation = encoded.generation;
+			}
+		}
+		else if (encoded.packet.coding_mode ==
+			GeometryCodingMode::PositionUpdate)
+		{
+			if (m_topology_generation != encoded.generation ||
+				m_topology_id != encoded.packet.topology_id ||
+				m_topology_keyframe !=
+					encoded.packet.keyframe_frame_number ||
+				m_topology_mesh.verts.size() !=
+					encoded.packet.vertex_count ||
+				m_topology_mesh.indexes.size() / 3 !=
+					encoded.packet.triangle_count)
+			{
+				// A seek or corrupt stream can expose a dependent sample before
+				// its topology. Drop it and recover at the next keyframe.
+				LOG(
+					"GeometryDecoderDraco::decode - missing topology for "
+					"frame=%u keyframe=%u",
+					encoded.packet.frame_number,
+					encoded.packet.keyframe_frame_number);
+				m_decode_active.store(false, std::memory_order_release);
+				return true;
+			}
+			decoded =
+				convert_draco_update_to_mesh(encoded.packet, mesh);
+		}
+
+		if (!decoded)
 		{
 			m_decode_active.store(false, std::memory_order_release);
 			m_decoded_meshes.set_error(
@@ -386,6 +440,83 @@ bool GeometryDecoderDraco::convert_draco_to_mesh(DracoData& draco_data, Mesh& me
 	}
 
 	//
+	return true;
+}
+
+bool GeometryDecoderDraco::convert_draco_update_to_mesh(
+	const GeometryPacket& packet,
+	Mesh& mesh_out)
+{
+	std::vector<float> positions;
+	std::string error;
+	if (!decode_draco_point_cloud_positions(
+		packet.payload.data(),
+		packet.payload.size(),
+		m_topology_mesh.verts.size(),
+		positions,
+		error))
+	{
+		LOG(
+			"GeometryDecoderDraco::convert_draco_update_to_mesh - %s",
+			error.c_str());
+		return false;
+	}
+
+	mesh_out = m_topology_mesh;
+	for (std::size_t vertex = 0; vertex < mesh_out.verts.size(); ++vertex)
+	{
+		for (int component = 0; component < 3; ++component)
+		{
+			mesh_out.verts[vertex].pos[component] =
+				positions[vertex * 3 + component];
+			mesh_out.verts[vertex].normal[component] = 0.0f;
+		}
+	}
+
+	// Area-weighted face normals provide stable normals without transmitting a
+	// second changing attribute in every dependent packet.
+	for (std::size_t index = 0; index + 2 < mesh_out.indexes.size(); index += 3)
+	{
+		const int i0 = mesh_out.indexes[index];
+		const int i1 = mesh_out.indexes[index + 1];
+		const int i2 = mesh_out.indexes[index + 2];
+		if (i0 < 0 || i1 < 0 || i2 < 0 ||
+			static_cast<std::size_t>(i0) >= mesh_out.verts.size() ||
+			static_cast<std::size_t>(i1) >= mesh_out.verts.size() ||
+			static_cast<std::size_t>(i2) >= mesh_out.verts.size())
+		{
+			return false;
+		}
+		const float* a = mesh_out.verts[static_cast<std::size_t>(i0)].pos;
+		const float* b = mesh_out.verts[static_cast<std::size_t>(i1)].pos;
+		const float* c = mesh_out.verts[static_cast<std::size_t>(i2)].pos;
+		const float ab[3]{b[0] - a[0], b[1] - a[1], b[2] - a[2]};
+		const float ac[3]{c[0] - a[0], c[1] - a[1], c[2] - a[2]};
+		const float normal[3]{
+			ab[1] * ac[2] - ab[2] * ac[1],
+			ab[2] * ac[0] - ab[0] * ac[2],
+			ab[0] * ac[1] - ab[1] * ac[0]
+		};
+		for (const int vertex_index : {i0, i1, i2})
+		{
+			for (int component = 0; component < 3; ++component)
+				mesh_out.verts[vertex_index].normal[component] +=
+					normal[component];
+		}
+	}
+	for (Vertex& vertex : mesh_out.verts)
+	{
+		const float length = std::sqrt(
+			vertex.normal[0] * vertex.normal[0] +
+			vertex.normal[1] * vertex.normal[1] +
+			vertex.normal[2] * vertex.normal[2]);
+		if (length > 1e-12f)
+		{
+			vertex.normal[0] /= length;
+			vertex.normal[1] /= length;
+			vertex.normal[2] /= length;
+		}
+	}
 	return true;
 }
 

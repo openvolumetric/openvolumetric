@@ -20,6 +20,7 @@ add_library(OpenVolumetricCore STATIC
   container/GeometryPacket.cpp
   decoding/IVolumetricVideo.cpp
   decoding/OpenVolumetricPlayer.cpp
+  geometry/DracoPointCloudDecoder.cpp
   geometry/GeometryDecoderDraco.cpp
   media/AVDecoderFFMPEG.cpp
   support/Logger.cpp

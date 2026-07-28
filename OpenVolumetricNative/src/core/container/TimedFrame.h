@@ -1,5 +1,7 @@
 #pragma once
 
+#include "GeometryPacket.h"
+
 #include <cstdint>
 #include <vector>
 
@@ -19,7 +21,7 @@ struct CompressedGeometryFrame
 	std::uint64_t generation = 0;
 	double presentation_time = 0.0;
 	std::uint32_t source_frame_number = 0;
-	std::vector<std::uint8_t> payload;
+	GeometryPacket packet;
 };
 
 } // namespace openvolumetric

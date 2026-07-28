@@ -30,13 +30,24 @@ Output verification independently reads the packaged video and geometry
 tracks, compares every PTS and duration after time-base conversion, verifies
 payload identity, and performs a middle-sample seek.
 
-## Current boundary
+## Geometry coding
 
 The packer accepts an already encoded video/audio MP4 and a directory of
-numbered Draco frames. The Unity and Unreal Editor integrations use the same
-linked Draco encoder to convert each OBJ to a temporary `.drc` frame, invoke
-FFmpeg separately for HEVC or H.264 video and optional AAC audio encoding,
-then pass those artifacts to the packer.
+numbered Draco frames. The Editor integrations also provide the matching OBJ
+directory so the shared packer can detect topology windows.
+
+When compression is enabled, temporary full meshes use Draco's sequential
+mesh mode, preserving canonical vertex and index ordering. The first frame of
+each topology window becomes a complete-mesh keyframe. Matching subsequent
+frames become sequential Draco point clouds containing positions only.
+
+The packer rejects a keyframe whose decoded indices differ from the canonical
+OBJ, preventing an order mismatch from corrupting dependent updates.
+
+Both Editor windows expose a **Geometry Compression** control. Enabled emits
+topology keyframes and position updates. Disabled uses default Draco mesh
+encoding and emits independently decodable geometry packets in the same
+format.
 
 ## Platform presets
 
@@ -63,3 +74,17 @@ entry points.
 
 Future work can move those encoding stages behind this authoring API without
 changing the playback core or the volumetric MP4 format.
+
+## Validation
+
+On 28 July 2026, the Unity and Unreal Editor authoring front ends were both
+validated on macOS ARM64 using the same complete source set:
+
+- 3,627 numbered OBJ meshes (`000110` through `003736`);
+- 3,627 matching 1024x1024 JPEG texture frames;
+- one MP3 audio source; and
+- the pinned FFmpeg 8.1.2 authoring executable with `libx264`, `libx265`, and
+  AAC encoding support.
+
+Both front ends completed OBJ-to-Draco encoding, texture/audio encoding, MP4
+packaging, and output verification through the shared authoring core.

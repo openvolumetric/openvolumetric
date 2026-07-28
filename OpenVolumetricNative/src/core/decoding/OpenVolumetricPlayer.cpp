@@ -149,7 +149,7 @@ bool OpenVolumetricPlayer::submit_geometry(double requested_time)
 		if (!m_impl->geometry.submit_encoded_frame(
 			encoded.generation,
 			encoded.presentation_time,
-			std::move(encoded.payload)))
+			std::move(encoded.packet)))
 			return false;
 	}
 	if (m_impl->media.geometry_end_of_stream())

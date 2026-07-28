@@ -4,6 +4,7 @@
 
 #include <Mesh.h>
 #include <TimedFrame.h>
+#include <GeometryPacket.h>
 
 #include <cstdint>
 #include <string>
@@ -40,7 +41,7 @@ public:
 	virtual bool submit_encoded_frame(
 		std::uint64_t generation,
 		double presentation_time,
-		std::vector<std::uint8_t> payload) = 0;
+		GeometryPacket packet) = 0;
 
 	/// True when the input queue can accept another compressed frame.
 	///

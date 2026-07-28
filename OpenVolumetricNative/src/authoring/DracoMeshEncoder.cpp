@@ -12,11 +12,12 @@ namespace openvolumetric::authoring
 
 bool encode_obj_to_draco(
 	const std::filesystem::path& input_path,
-	const std::filesystem::path& output_path,
 	const DracoEncodeOptions& options,
+	std::vector<std::uint8_t>& output,
 	std::string& error)
 {
 	error.clear();
+	output.clear();
 	if (!std::filesystem::is_regular_file(input_path))
 	{
 		error = "OBJ input does not exist: " + input_path.string();
@@ -81,6 +82,8 @@ bool encode_obj_to_draco(
 	encoder.SetAttributeQuantization(
 		draco::GeometryAttribute::TEX_COORD,
 		options.texture_quantization);
+	if (options.preserve_point_order)
+		encoder.SetEncodingMethod(draco::MESH_SEQUENTIAL_ENCODING);
 
 	draco::EncoderBuffer buffer;
 	const draco::Status encode_status =
@@ -92,11 +95,25 @@ bool encode_obj_to_draco(
 		return false;
 	}
 
+	output.assign(buffer.data(), buffer.data() + buffer.size());
+	return true;
+}
+
+bool encode_obj_to_draco(
+	const std::filesystem::path& input_path,
+	const std::filesystem::path& output_path,
+	const DracoEncodeOptions& options,
+	std::string& error)
+{
+	std::vector<std::uint8_t> encoded;
+	if (!encode_obj_to_draco(input_path, options, encoded, error))
+		return false;
+
 	std::ofstream output(output_path, std::ios::binary | std::ios::trunc);
 	if (!output ||
 		!output.write(
-			buffer.data(),
-			static_cast<std::streamsize>(buffer.size())))
+			reinterpret_cast<const char*>(encoded.data()),
+			static_cast<std::streamsize>(encoded.size())))
 	{
 		error = "Could not write Draco output: " + output_path.string();
 		return false;

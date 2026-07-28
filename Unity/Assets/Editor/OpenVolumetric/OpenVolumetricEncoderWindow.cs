@@ -34,7 +34,14 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
     private static extern int PackVolumetricVideo(
         [MarshalAs(UnmanagedType.LPUTF8Str)] string mediaPath,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string geometryDirectory,
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string outputPath);
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string sourceGeometryDirectory,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string outputPath,
+        int positionQuantization,
+        int normalQuantization,
+        int textureQuantization,
+        int encodeSpeed,
+        int decodeSpeed,
+        int enableTopologyCompression);
 
     [DllImport(
         AuthoringLibrary,
@@ -47,13 +54,20 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         int normalQuantization,
         int textureQuantization,
         int encodeSpeed,
-        int decodeSpeed);
+        int decodeSpeed,
+        int enableTopologyCompression);
 
     [DllImport(
         AuthoringLibrary,
         EntryPoint = "openvolumetric_authoring_last_error",
         CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr GetAuthoringError();
+
+    [DllImport(
+        AuthoringLibrary,
+        EntryPoint = "openvolumetric_authoring_last_report",
+        CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr GetAuthoringReport();
 
     private static readonly Regex NumberedFile =
         new Regex(@"^(?<frame>[0-9]+)$", RegexOptions.Compiled);
@@ -90,6 +104,7 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
     [SerializeField] private int dracoEncodeSpeed = 7;
     [SerializeField] private int dracoDecodeSpeed = 9;
     [SerializeField] private bool overwriteOutput;
+    [SerializeField] private bool geometryCompression = true;
     [SerializeField] private bool showAdvanced;
     [SerializeField] private string ffmpegPath = "";
 
@@ -117,6 +132,8 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         audioFile = Load("Audio", audioFile);
         outputFile = Load("Output", DefaultOutputPath());
         ffmpegPath = Load("FFmpeg", FindExecutable("ffmpeg"));
+        geometryCompression = EditorPrefs.GetBool(
+            PreferencePrefix + "GeometryCompression", true);
     }
 
     /// <summary>Persists current paths before the window is destroyed.</summary>
@@ -159,6 +176,11 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
                     "Source Frame Rate",
                     "Controls image-sequence encoding. Geometry timing is read back from the encoded video samples."),
                 frameRate);
+            geometryCompression = EditorGUILayout.Toggle(
+                new GUIContent(
+                    "Geometry Compression",
+                    "Reuse matching mesh topology and encode dependent frames as position-only Draco point clouds. Disable to encode every packet as an independent Draco mesh."),
+                geometryCompression);
 
             EncodingSettings effective = GetEncodingSettings();
             EditorGUILayout.HelpBox(
@@ -356,7 +378,8 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
                     settings.NormalQuantization,
                     settings.TextureQuantization,
                     settings.DracoEncodeSpeed,
-                    settings.DracoDecodeSpeed) != 1)
+                    settings.DracoDecodeSpeed,
+                    geometryCompression ? 1 : 0) != 1)
                 {
                     string error = Marshal.PtrToStringAnsi(GetAuthoringError());
                     throw new InvalidOperationException(
@@ -395,13 +418,25 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
                 if (PackVolumetricVideo(
                     mediaPath,
                     dracoDirectory,
-                    packagedOutput) != 1)
+                    geometryDirectory,
+                    packagedOutput,
+                    settings.PositionQuantization,
+                    settings.NormalQuantization,
+                    settings.TextureQuantization,
+                    settings.DracoEncodeSpeed,
+                    settings.DracoDecodeSpeed,
+                    geometryCompression ? 1 : 0) != 1)
                 {
                     string error = Marshal.PtrToStringAnsi(GetAuthoringError());
                     throw new InvalidOperationException(
                         String.IsNullOrEmpty(error)
                             ? "Native MP4 packaging failed."
                             : error);
+                }
+                string report = Marshal.PtrToStringAnsi(GetAuthoringReport());
+                if (!String.IsNullOrEmpty(report))
+                {
+                    AppendLog(report);
                 }
                 AppendLog("Native packaging and verification completed.");
                 token.ThrowIfCancellationRequested();
@@ -846,6 +881,8 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         EditorPrefs.SetString(PreferencePrefix + "Audio", audioFile);
         EditorPrefs.SetString(PreferencePrefix + "Output", outputFile);
         EditorPrefs.SetString(PreferencePrefix + "FFmpeg", ffmpegPath);
+        EditorPrefs.SetBool(
+            PreferencePrefix + "GeometryCompression", geometryCompression);
     }
 
     /// <summary>Maps the selected platform preset to concrete codec settings.</summary>

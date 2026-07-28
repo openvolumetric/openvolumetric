@@ -22,16 +22,28 @@ OPENVOLUMETRIC_AUTHORING_API int openvolumetric_authoring_encode_obj(
 	int normal_quantization,
 	int texture_quantization,
 	int encode_speed,
-	int decode_speed);
+	int decode_speed,
+	int enable_topology_compression);
 
-/// Packages an existing video/audio MP4 and numbered Draco directory.
+/// Packages an existing video/audio MP4 and numbered Draco directory. The
+/// matching OBJ directory enables automatic topology-aware packets.
 /// Returns 1 on success and -1 on failure.
 OPENVOLUMETRIC_AUTHORING_API int openvolumetric_authoring_pack(
 	const char* media_path,
 	const char* geometry_directory,
-	const char* output_path);
+	const char* source_geometry_directory,
+	const char* output_path,
+	int position_quantization,
+	int normal_quantization,
+	int texture_quantization,
+	int encode_speed,
+	int decode_speed,
+	int enable_topology_compression);
 
 /// Returns a short description of the most recent failure on this thread.
 OPENVOLUMETRIC_AUTHORING_API const char* openvolumetric_authoring_last_error();
+
+/// Returns the statistics summary from the most recent successful pack.
+OPENVOLUMETRIC_AUTHORING_API const char* openvolumetric_authoring_last_report();
 
 }

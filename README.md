@@ -78,6 +78,7 @@ data/                   Local sample content
 - [Quest platform baseline](docs/QUEST_BASELINE.md)
 - [Development plan](docs/PLAN.md)
 - [Shared-topology compression design](docs/TOPOLOGY_COMPRESSION.md)
+- [Geometry packet format](docs/GEOMETRY_PACKET.md)
 - [Streaming and adaptive delivery design](docs/STREAMING_AND_ADAPTATION.md)
 
 ## Current limitations

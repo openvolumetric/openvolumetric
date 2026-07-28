@@ -62,10 +62,17 @@ encoding require an external FFmpeg executable with the selected H.264/HEVC
 encoder and AAC support. Packaging and verification run through
 `OpenVolumetricAuthoringCore`.
 
+The **Geometry Compression** checkbox enables topology-aware position updates.
+Clearing it emits the same packet format with every sample encoded as an
+independently decodable Draco mesh.
+
 ## Current platform status
 
 Runtime geometry, texture, and audio playback and the authoring window are
 implemented and manually validated in Unreal Editor 5.8 on macOS ARM64.
+End-to-end authoring was validated on 28 July 2026 using 3,627 matched
+OBJ/JPEG frames and MP3 audio, including Draco encoding, HEVC/AAC encoding,
+MP4 packaging, and verification.
 
 Still outstanding:
 

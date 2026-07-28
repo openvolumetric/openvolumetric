@@ -666,7 +666,7 @@ bool AVDecoderFFMPEG::queue_geometry_packet()
 	}
 	m_last_geometry_packet_time = frame.presentation_time;
 	frame.source_frame_number = packet.frame_number;
-	frame.payload = std::move(packet.payload);
+	frame.packet = std::move(packet);
 
 	if (!m_geometry_frames.try_push(std::move(frame)))
 	{

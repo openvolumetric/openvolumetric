@@ -1,5 +1,7 @@
 add_library(OpenVolumetricAuthoringCore STATIC
   DracoMeshEncoder.cpp
+  DracoPointCloudEncoder.cpp
+  TopologyAnalyzer.cpp
   VolumetricVideoPacker.cpp
 )
 
