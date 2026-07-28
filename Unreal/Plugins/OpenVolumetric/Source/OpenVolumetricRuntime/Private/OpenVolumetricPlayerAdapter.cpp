@@ -70,6 +70,9 @@ FOpenVolumetricPlayerAdapter::GetMediaInfo() const
 openvolumetric::FrameMatchResult FOpenVolumetricPlayerAdapter::PollPresentation(
 	double TimeSeconds,
 	double GeometryScale,
+	float LuminanceCorrection,
+	float BlueProjectionCorrection,
+	float RedProjectionCorrection,
 	UE::Geometry::FDynamicMesh3& OutMesh,
 	TArray<FColor>& OutPixels,
 	int32& OutWidth,
@@ -163,14 +166,20 @@ openvolumetric::FrameMatchResult FOpenVolumetricPlayerAdapter::PollPresentation(
 			const int32 Pixel = Row * OutWidth + Column;
 			const int32 Chroma =
 				(Row / 2) * ((OutWidth + 1) / 2) + (Column / 2);
+			// Match Unity's YUV2RGBA shader controls exactly: the three
+			// user-facing corrections are offsets in normalized YUV space,
+			// applied before the existing BT.601 conversion.
 			const float Y =
-				static_cast<float>(Presentation.y[Pixel]) / 255.0f;
+				static_cast<float>(Presentation.y[Pixel]) / 255.0f +
+				LuminanceCorrection;
 			const float U =
 				static_cast<float>(Presentation.u[Chroma]) /
-					255.0f * 0.872f - 0.436f;
+					255.0f * 0.872f - 0.436f +
+				BlueProjectionCorrection;
 			const float V =
 				static_cast<float>(Presentation.v[Chroma]) /
-					255.0f * 1.230f - 0.615f;
+					255.0f * 1.230f - 0.615f +
+				RedProjectionCorrection;
 			const float R = FMath::Clamp(Y + 1.13983f * V, 0.0f, 1.0f);
 			const float G = FMath::Clamp(
 				Y - 0.39465f * U - 0.58060f * V, 0.0f, 1.0f);

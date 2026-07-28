@@ -26,6 +26,9 @@ public:
 	openvolumetric::FrameMatchResult PollPresentation(
 		double TimeSeconds,
 		double GeometryScale,
+		float LuminanceCorrection,
+		float BlueProjectionCorrection,
+		float RedProjectionCorrection,
 		UE::Geometry::FDynamicMesh3& OutMesh,
 		TArray<FColor>& OutPixels,
 		int32& OutWidth,

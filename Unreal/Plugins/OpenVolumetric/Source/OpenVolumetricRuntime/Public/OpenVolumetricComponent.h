@@ -66,6 +66,30 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OpenVolumetric|Texture")
 	TObjectPtr<UMaterialInterface> TextureMaterial;
 
+	/** Adds an offset to the decoded Y (luminance) channel before RGB conversion. */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "OpenVolumetric|Texture",
+		meta = (ClampMin = "-0.2", ClampMax = "0.2", UIMin = "-0.2", UIMax = "0.2"))
+	float LuminanceCorrection = 0.0f;
+
+	/** Adds an offset to the decoded U (blue projection) channel. */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "OpenVolumetric|Texture",
+		meta = (ClampMin = "-0.2", ClampMax = "0.2", UIMin = "-0.2", UIMax = "0.2"))
+	float BlueProjectionCorrection = 0.0f;
+
+	/** Adds an offset to the decoded V (red projection) channel. */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "OpenVolumetric|Texture",
+		meta = (ClampMin = "-0.2", ClampMax = "0.2", UIMin = "-0.2", UIMax = "0.2"))
+	float RedProjectionCorrection = 0.0f;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category = "OpenVolumetric|Texture")
 	TObjectPtr<UTexture2D> PresentationTexture;
 

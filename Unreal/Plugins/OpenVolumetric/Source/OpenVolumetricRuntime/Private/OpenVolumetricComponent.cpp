@@ -115,6 +115,9 @@ void UOpenVolumetricComponent::TickComponent(
 		Player->PollPresentation(
 			CurrentTimeSeconds,
 			GeometryScale,
+			LuminanceCorrection,
+			BlueProjectionCorrection,
+			RedProjectionCorrection,
 			Mesh,
 			Pixels,
 			TextureWidth,
