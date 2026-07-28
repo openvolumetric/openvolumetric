@@ -1,7 +1,7 @@
 ﻿using UnityEngine;
 using UnityEngine.Scripting.APIUpdating;
 
-namespace OpenVol
+namespace OpenVolumetric
 {
 
 [MovedFrom(true, sourceNamespace: "", sourceAssembly: "Assembly-CSharp",
@@ -12,7 +12,7 @@ public class ScheduledStart : MonoBehaviour
 
 
     /// <summary>
-    /// Schedules every OpenVol player in the scene against one shared future
+    /// Schedules every OpenVolumetric player in the scene against one shared future
     /// DSP timestamp so multiple instances begin together.
     /// </summary>
     void Start()

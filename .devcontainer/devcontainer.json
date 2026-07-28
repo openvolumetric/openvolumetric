@@ -1,5 +1,5 @@
 {
-  "name": "OpenVol Native Build",
+  "name": "OpenVolumetric Native Build",
   "build": {
     "dockerfile": "Dockerfile",
     "args": {
@@ -10,7 +10,7 @@
   "containerEnv": {
     "VCPKG_ROOT": "/opt/vcpkg",
     "VCPKG_DISABLE_METRICS": "1",
-    "VCPKG_DEFAULT_BINARY_CACHE": "${containerWorkspaceFolder}/OpenVolNative/build/vcpkg-binary-cache"
+    "VCPKG_DEFAULT_BINARY_CACHE": "${containerWorkspaceFolder}/OpenVolumetricNative/build/vcpkg-binary-cache"
   },
   "customizations": {
     "vscode": {
@@ -20,9 +20,9 @@
       ],
       "settings": {
         "cmake.useCMakePresets": "always",
-        "cmake.sourceDirectory": "${containerWorkspaceFolder}/OpenVolNative"
+        "cmake.sourceDirectory": "${containerWorkspaceFolder}/OpenVolumetricNative"
       }
     }
   },
-  "postCreateCommand": "mkdir -p OpenVolNative/build/vcpkg-binary-cache"
+  "postCreateCommand": "mkdir -p OpenVolumetricNative/build/vcpkg-binary-cache"
 }

@@ -38,7 +38,7 @@ PackagedBuilds/
 StagedBuilds/
 
 
-# OpenVol sample media is large and should be distributed separately or
+# OpenVolumetric sample media is large and should be distributed separately or
 # through an intentional Git LFS/dataset workflow, not normal Git history.
 Content/*.mp4
 Content/*.mov

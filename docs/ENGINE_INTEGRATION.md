@@ -1,13 +1,13 @@
 # Engine Integration Boundary
 
 This document defines the source-level boundary between
-`OpenVolCore` and an engine adapter. It describes the contract
+`OpenVolumetricCore` and an engine adapter. It describes the contract
 implemented by the Unity integration and required by a future Unreal
 integration. It is not yet a stable binary ABI.
 
 ## Boundary
 
-`OpenVolCore` owns:
+`OpenVolumetricCore` owns:
 
 - MP4 discovery, demuxing, and demux-thread-owned seeking;
 - FFmpeg video and audio codec state;
@@ -26,24 +26,24 @@ An engine adapter owns:
 - scheduling work onto the engine's game, render, and audio threads.
 
 Unity and Unreal headers or types must not be added to `src/core`. Engine
-integrations live below `OpenVolNative/integrations/<engine>`.
+integrations live below `OpenVolumetricNative/integrations/<engine>`.
 
 ## C++ namespaces
 
 Namespaces follow ownership boundaries rather than individual source
 subdirectories:
 
-- `openvol` contains every engine-independent runtime type from
-  `OpenVolCore`, including container, decoding, geometry, media, and support
+- `openvolumetric` contains every engine-independent runtime type from
+  `OpenVolumetricCore`, including container, decoding, geometry, media, and support
   classes;
-- `openvol::authoring` contains reusable authoring and packaging types;
-- `openvol::unity` contains Unity-specific coordinators and graphics upload
+- `openvolumetric::authoring` contains reusable authoring and packaging types;
+- `openvolumetric::unity` contains Unity-specific coordinators and graphics upload
   backends;
 - exported `extern "C"` entry points remain in the global namespace so the
-  stable `openvol_*` plugin ABI is directly consumable by C# and other engines.
+  stable `openvolumetric_*` plugin ABI is directly consumable by C# and other engines.
 
 Future Unreal-specific adapter types should follow the same pattern under
-`openvol::unreal`.
+`openvolumetric::unreal`.
 
 ## Current core interfaces
 
@@ -160,7 +160,7 @@ not parse log text as a data interface.
 
 The initial Unreal adapter should contain:
 
-- a runtime module that stages and loads `OpenVolCore` dependencies;
+- a runtime module that stages and loads `OpenVolumetricCore` dependencies;
 - a UObject/component that owns one coordinator and exposes open, play, stop,
   loop, seek, status, and error operations;
 - an RHI-specific texture uploader implementing the role of `ITexture`;

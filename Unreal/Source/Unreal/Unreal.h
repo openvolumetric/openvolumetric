@@ -4,4 +4,4 @@
 
 #include "CoreMinimal.h"
 
-/** Primary game module for the OpenVol Unreal sample project. */
+/** Primary game module for the OpenVolumetric Unreal sample project. */

@@ -1,0 +1,24 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1.0",
+	"FriendlyName": "Open Volumetric",
+	"Description": "OpenVolumetric volumetric-video playback for Unreal Engine.",
+	"Category": "Media",
+	"CreatedBy": "OpenVolumetric contributors",
+	"CanContainContent": true,
+	"IsBetaVersion": true,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "OpenVolumetricRuntime",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "OpenVolumetricAuthoring",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}
