@@ -19,6 +19,7 @@ add_library(OpenVolCore STATIC
   container/FFmpegMp4VolumetricContainer.cpp
   container/GeometryPacket.cpp
   decoding/IVolumetricVideo.cpp
+  decoding/OpenVolPlayer.cpp
   geometry/GeometryDecoderDraco.cpp
   media/AVDecoderFFMPEG.cpp
   support/Logger.cpp

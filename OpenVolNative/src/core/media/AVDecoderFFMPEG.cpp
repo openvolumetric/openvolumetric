@@ -1208,4 +1208,51 @@ openvol::FrameMatchResult AVDecoderFFMPEG::get_video_data(
 	return openvol::FrameMatchResult::Ready;
 }
 
+bool AVDecoderFFMPEG::copy_selected_video(
+	std::vector<std::uint8_t>& y,
+	std::vector<std::uint8_t>& u,
+	std::vector<std::uint8_t>& v)
+{
+	return m_video_frames.access([&](auto& frames)
+	{
+		if (frames.empty() || frames.front().data == nullptr)
+			return false;
+
+		const AVFrame* frame = frames.front().data;
+		const int widths[] = {
+			m_video_info.width,
+			(m_video_info.width + 1) / 2,
+			(m_video_info.width + 1) / 2
+		};
+		const int heights[] = {
+			m_video_info.height,
+			(m_video_info.height + 1) / 2,
+			(m_video_info.height + 1) / 2
+		};
+		std::vector<std::uint8_t>* outputs[] = {&y, &u, &v};
+		for (int plane = 0; plane < 3; ++plane)
+		{
+			if (frame->data[plane] == nullptr ||
+				frame->linesize[plane] == 0)
+				return false;
+			outputs[plane]->resize(
+				static_cast<std::size_t>(widths[plane]) *
+				static_cast<std::size_t>(heights[plane]));
+			for (int row = 0; row < heights[plane]; ++row)
+			{
+				const std::uint8_t* source =
+					frame->data[plane] +
+					static_cast<std::ptrdiff_t>(row) *
+						frame->linesize[plane];
+				std::copy_n(
+					source,
+					widths[plane],
+					outputs[plane]->data() +
+						static_cast<std::size_t>(row) * widths[plane]);
+			}
+		}
+		return true;
+	});
+}
+
 } // namespace openvol

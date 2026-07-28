@@ -12,6 +12,7 @@ Desktop.ini
 .vscode/
 .idea/
 .vs/
+.vcpkg/
 *.suo
 *.user
 *.userosscache

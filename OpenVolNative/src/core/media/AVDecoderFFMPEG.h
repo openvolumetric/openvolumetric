@@ -63,6 +63,11 @@ public:
 		uint8_t** outputU,
 		uint8_t** outputV) override;
 
+	bool copy_selected_video(
+		std::vector<std::uint8_t>& y,
+		std::vector<std::uint8_t>& u,
+		std::vector<std::uint8_t>& v) override;
+
 	/// Copies interleaved PCM from the single-producer/single-consumer ring.
 	int read_audio(float* output, int sample_count) override;
 

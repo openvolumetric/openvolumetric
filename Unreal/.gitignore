@@ -1,0 +1,48 @@
+# -----------------------------------------------------------------------------
+# Unreal Engine generated files
+# -----------------------------------------------------------------------------
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# Generated IDE and project-discovery files. The .uproject, Target.cs,
+# module Build.cs files, and source files are the reproducible inputs.
+.vs/
+.idea/
+.vscode/
+*.code-workspace
+*.sln
+*.xcworkspace/
+*.xcodeproj/
+
+# Per-user editor content and collections are local workspace state.
+Content/Collections/
+Content/Developers/
+
+# HLOD packages are derived from the source level and can be regenerated.
+Content/*_HLOD*.uasset
+Content/*.mp4
+Content/*.mov
+Content/*.mkv
+
+# Generated output belonging to plugins. Keep plugin descriptors, Source,
+# Config, Resources, and Content (including .uasset files) tracked.
+Plugins/**/Binaries/
+Plugins/**/DerivedDataCache/
+Plugins/**/Intermediate/
+Plugins/**/Saved/
+
+PackagedBuilds/
+StagedBuilds/
+
+
+# OpenVol sample media is large and should be distributed separately or
+# through an intentional Git LFS/dataset workflow, not normal Git history.
+Content/*.mp4
+Content/*.mov
+Content/*.mkv
+
+
+

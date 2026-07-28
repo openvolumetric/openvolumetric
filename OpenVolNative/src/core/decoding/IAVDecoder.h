@@ -78,6 +78,15 @@ public:
 		uint8_t** outputU,
 		uint8_t** outputV) = 0;
 
+	/// Copies the currently selected YUV420P frame into tightly packed planes.
+	///
+	/// This is the lifetime-safe path for host integrations that cannot upload
+	/// borrowed FFmpeg pointers immediately on the selecting thread.
+	virtual bool copy_selected_video(
+		std::vector<std::uint8_t>& y,
+		std::vector<std::uint8_t>& u,
+		std::vector<std::uint8_t>& v) = 0;
+
 	/// Copies interleaved floating-point PCM into output. Missing samples are
 	/// represented as silence by the implementation.
 	virtual int read_audio(float* output, int sample_count) = 0;
