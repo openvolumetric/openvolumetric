@@ -14,9 +14,9 @@ namespace OpenVolumetric
 /// presentation frame; the native render callback publishes its matching
 /// texture and geometry while the AudioClip pulls decoded PCM.
 /// </summary>
-[MovedFrom(true, sourceNamespace: "", sourceAssembly: "Assembly-CSharp",
-    sourceClassName: "VolumetricVideo")]
-public class VolumetricVideo : MonoBehaviour
+[MovedFrom(true, sourceNamespace: "OpenVolumetric",
+    sourceAssembly: "Assembly-CSharp", sourceClassName: "VolumetricVideo")]
+public class OpenVolumetric : MonoBehaviour
 {
     //----------------------------------------------------------
     // Public Member variables 
@@ -58,7 +58,7 @@ public class VolumetricVideo : MonoBehaviour
     //----------------------------------------------------------
 
     // Volumetric Video
-    private VolumetricVideoDecoder m_decoder;
+    private OpenVolumetricDecoder m_decoder;
     private AudioSource m_audio_source;
 
     // Start time
@@ -125,7 +125,7 @@ public class VolumetricVideo : MonoBehaviour
         MeshRenderer mesh_renderer = gameObject.AddComponent<MeshRenderer>();
 
         // create new volumetric video decoder
-        m_decoder = new VolumetricVideoDecoder(debug);
+        m_decoder = new OpenVolumetricDecoder(debug);
              
         // The MP4 contains texture, geometry, and optional audio.
         string filepath = null;
@@ -135,20 +135,20 @@ public class VolumetricVideo : MonoBehaviour
         if(string.IsNullOrEmpty(filepath))
         {
             Debug.LogError(
-                "VolumetricVideo::Start - Failed to prepare volumetric video input");
+                "OpenVolumetric::Start - Failed to prepare volumetric video input");
             m_playback_state = PlaybackState.INIT_FAIL;
             yield break;
         }
         if(!m_decoder.init_texture(ref mesh_renderer, filepath))
         {
-            Debug.LogError("VolumetricVideo::Start - Failed to init VolumetricVideoDecoder");
+            Debug.LogError("OpenVolumetric::Start - Failed to init OpenVolumetricDecoder");
             m_playback_state = PlaybackState.INIT_FAIL;
             yield break;
         }
 
         if(!m_decoder.init_mesh())
         {
-            Debug.LogError("VolumetricVideo::Start - Failed to init geometry");
+            Debug.LogError("OpenVolumetric::Start - Failed to init geometry");
             m_playback_state = PlaybackState.INIT_FAIL;
             yield break;
         }
@@ -158,7 +158,7 @@ public class VolumetricVideo : MonoBehaviour
 
         if(!m_decoder.init_audio())
         {
-            Debug.LogError("VolumetricVideo::Start - Failed to initialise audio");
+            Debug.LogError("OpenVolumetric::Start - Failed to initialise audio");
         }
         else if(m_decoder.HasAudio)
         {
@@ -176,7 +176,7 @@ public class VolumetricVideo : MonoBehaviour
 #if UNITY_ANDROID && !UNITY_EDITOR
         if(enableDeveloperOverlay)
         {
-            VolumetricVideoDeveloperOverlay.Attach(this);
+            OpenVolumetricDeveloperOverlay.Attach(this);
         }
 #endif
 
@@ -189,7 +189,7 @@ public class VolumetricVideo : MonoBehaviour
         // Start Decoder
         if(!m_decoder.start_decoding())
         {
-            Debug.LogError("VolumetricVideo::Start - Failed to start decoding");
+            Debug.LogError("OpenVolumetric::Start - Failed to start decoding");
         }
 
         m_playback_state = PlaybackState.INITIALISED;
@@ -229,7 +229,7 @@ public class VolumetricVideo : MonoBehaviour
                 m_has_last_dsp_time = true;
                 m_playback_state = PlaybackState.SCHEDULED;
                 schedule_audio();
-                Debug.Log("VolumetricVideo - synchronized recovery complete");
+                Debug.Log("OpenVolumetric - synchronized recovery complete");
             }
             return;
         }
@@ -324,7 +324,7 @@ public class VolumetricVideo : MonoBehaviour
         m_last_decoder_recovery = dspTime;
         m_decoder_lag_started = -1.0;
         Debug.LogWarning(string.Format(
-            "VolumetricVideo - decoder lagged by {0:F3}s; " +
+            "OpenVolumetric - decoder lagged by {0:F3}s; " +
             "pausing all streams to catch up at {1:F3}s",
             lag,
             target));
@@ -362,7 +362,7 @@ public class VolumetricVideo : MonoBehaviour
         if(m_decoder != null)
         {
             if(m_decoder.DecoderStatus ==
-                VolumetricVideoDecoder.DecoderState.STARTED)
+                OpenVolumetricDecoder.DecoderState.STARTED)
             {
                 m_decoder.stop_decoding();
             }

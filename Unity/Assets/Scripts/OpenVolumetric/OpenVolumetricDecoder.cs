@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 using Unity.Collections;
+using UnityEngine.Scripting.APIUpdating;
 
 using System.Runtime.InteropServices;
 using System;
@@ -19,7 +20,9 @@ namespace OpenVolumetric
 /// during GL.IssuePluginEvent. Audio is pulled through the streaming AudioClip
 /// callback.
 /// </summary>
-public class VolumetricVideoDecoder : IDisposable
+[MovedFrom(true, sourceNamespace: "OpenVolumetric",
+    sourceAssembly: "Assembly-CSharp", sourceClassName: "VolumetricVideoDecoder")]
+public class OpenVolumetricDecoder : IDisposable
 {
     //---------------------------------------------
     // DLL Interface
@@ -193,7 +196,7 @@ public class VolumetricVideoDecoder : IDisposable
     /// Creates one native decoder instance and optionally opens its diagnostic
     /// console. Graphics and media resources are initialized separately.
     /// </summary>
-    public VolumetricVideoDecoder(bool debug)
+    public OpenVolumetricDecoder(bool debug)
     {
         // Set state to uninitialised 
         m_decoder_state = DecoderState.UNINITIALIZED;
@@ -202,17 +205,17 @@ public class VolumetricVideoDecoder : IDisposable
         m_debug = debug;
         if (m_debug)
         {
-            Debug.Log("VolumetricVideoDecoder - Opening External Console");
+            Debug.Log("OpenVolumetricDecoder - Opening External Console");
             openvolumetric_open_external_console();
         }
 
         // Init Instance of Volumetric Video decoder
         if (openvolumetric_init(ref m_instance_id) == -1)
         {
-            Debug.LogError("VolumetricVideoDecoder::init - failed to init");
+            Debug.LogError("OpenVolumetricDecoder::init - failed to init");
             m_decoder_state = DecoderState.INIT_FAIL;
         }
-        Debug.Log(String.Format("VolumetricVideoDecoder::init - instance ID: {0}", m_instance_id));
+        Debug.Log(String.Format("OpenVolumetricDecoder::init - instance ID: {0}", m_instance_id));
 
         // decoder init
         m_decoder_state = DecoderState.INITIALIZED;
@@ -244,7 +247,7 @@ public class VolumetricVideoDecoder : IDisposable
         if(m_debug)
         {
             Debug.Log(String.Format(
-                "VolumetricVideoDecoder::Dispose - Closing External Console - id: {0}",
+                "OpenVolumetricDecoder::Dispose - Closing External Console - id: {0}",
                 m_instance_id));
             openvolumetric_close_external_console();
         }
@@ -253,7 +256,7 @@ public class VolumetricVideoDecoder : IDisposable
         if (m_instance_id >= 0)
         {
             Debug.Log(String.Format(
-                "VolumetricVideoDecoder::Dispose - id: {0}",
+                "OpenVolumetricDecoder::Dispose - id: {0}",
                 m_instance_id));
             openvolumetric_quit(m_instance_id);
             m_instance_id = -1;
@@ -293,7 +296,7 @@ public class VolumetricVideoDecoder : IDisposable
         // Check for init
         if (m_decoder_state != DecoderState.INITIALIZED)
         {
-            Debug.LogError("VolumetricVideoDecoder::init_mesh - failed to init");
+            Debug.LogError("OpenVolumetricDecoder::init_mesh - failed to init");
             return false;
         }
 
@@ -340,7 +343,7 @@ public class VolumetricVideoDecoder : IDisposable
         IntPtr index_buffer     = m_mesh.GetNativeIndexBufferPtr();
         IntPtr vertex_buffer    = m_mesh.GetNativeVertexBufferPtr(0);
 
-        Debug.Log(String.Format("VolumetricVideoDecoder::init_mesh - {0} {1}", index_buffer, vertex_buffer));
+        Debug.Log(String.Format("OpenVolumetricDecoder::init_mesh - {0} {1}", index_buffer, vertex_buffer));
 
         // Pass handles to Native Plugin
         if (openvolumetric_set_mesh_pointer(m_instance_id, index_buffer, index_count, vertex_buffer, vertex_count ) == -1)
@@ -350,7 +353,7 @@ public class VolumetricVideoDecoder : IDisposable
         }
 
         //
-        Debug.Log("VolumetricVideoDecoder::init_mesh - Done");
+        Debug.Log("OpenVolumetricDecoder::init_mesh - Done");
         return true;
     }
 
@@ -371,7 +374,7 @@ public class VolumetricVideoDecoder : IDisposable
         // Check for init
         if (m_decoder_state != DecoderState.INITIALIZED)
         {
-            Debug.LogError("VolumetricVideoDecoder::init_texture - failed to init");
+            Debug.LogError("OpenVolumetricDecoder::init_texture - failed to init");
             m_decoder_state = DecoderState.INIT_FAIL;
             return false;
         }
@@ -413,7 +416,7 @@ public class VolumetricVideoDecoder : IDisposable
             string detail = errorPointer == IntPtr.Zero
                 ? String.Empty
                 : Marshal.PtrToStringAnsi(errorPointer);
-            Debug.LogError("VolumetricVideoDecoder::init - failed to load video"
+            Debug.LogError("OpenVolumetricDecoder::init - failed to load video"
                 + (String.IsNullOrEmpty(detail) ? String.Empty : ": " + detail));
             m_decoder_state = DecoderState.INIT_FAIL;
             return false;
@@ -422,15 +425,15 @@ public class VolumetricVideoDecoder : IDisposable
         // Get Video Details
         if(openvolumetric_get_video_details(m_instance_id,  ref video_width, ref video_height, ref video_fps, ref video_duration) == -1)
         {
-            Debug.LogError("VolumetricVideoDecoder::init - failed to get video details");
+            Debug.LogError("OpenVolumetricDecoder::init - failed to get video details");
             m_decoder_state = DecoderState.INIT_FAIL;
             return false;
         }
 
         // Log some details
-        Debug.Log( String.Format("VolumetricVideoDecoder::init - file:  {0}", filepath));
-        Debug.Log( String.Format("VolumetricVideoDecoder::init - width: {0}  height:   {1}",video_width, video_height));
-        Debug.Log( String.Format("VolumetricVideoDecoder::init - fps:   {0}  duration: {1}",video_fps, video_duration));
+        Debug.Log( String.Format("OpenVolumetricDecoder::init - file:  {0}", filepath));
+        Debug.Log( String.Format("OpenVolumetricDecoder::init - width: {0}  height:   {1}",video_width, video_height));
+        Debug.Log( String.Format("OpenVolumetricDecoder::init - fps:   {0}  duration: {1}",video_fps, video_duration));
 
         //
         return true;
@@ -448,12 +451,12 @@ public class VolumetricVideoDecoder : IDisposable
             m_instance_id, ref sampleRate, ref channels);
         if (result == 0)
         {
-            Debug.Log("VolumetricVideoDecoder::init_audio - no audio stream");
+            Debug.Log("OpenVolumetricDecoder::init_audio - no audio stream");
             return true;
         }
         if (result < 0 || sampleRate <= 0 || channels <= 0)
         {
-            Debug.LogError("VolumetricVideoDecoder::init_audio - invalid audio stream");
+            Debug.LogError("OpenVolumetricDecoder::init_audio - invalid audio stream");
             return false;
         }
 
@@ -467,7 +470,7 @@ public class VolumetricVideoDecoder : IDisposable
             true,
             read_audio);
         Debug.Log(String.Format(
-            "VolumetricVideoDecoder::init_audio - {0} Hz, {1} channels",
+            "OpenVolumetricDecoder::init_audio - {0} Hz, {1} channels",
             sampleRate, channels));
         return m_audio_clip != null;
     }
@@ -500,7 +503,7 @@ public class VolumetricVideoDecoder : IDisposable
         }
         catch
         {
-            Debug.LogError("VolumetricVideoDecoder::init_textures - YUV2RGBA shader not found");
+            Debug.LogError("OpenVolumetricDecoder::init_textures - YUV2RGBA shader not found");
             m_decoder_state = DecoderState.INIT_FAIL;
             return false;
         }
@@ -513,7 +516,7 @@ public class VolumetricVideoDecoder : IDisposable
         // Get/Set texture pointers
         if(openvolumetric_get_texture_pointers(m_instance_id, ref Y, ref U, ref V) == -1)
         {
-            Debug.LogError("VolumetricVideoDecoder::init_textures - Error Creating Textures");
+            Debug.LogError("OpenVolumetricDecoder::init_textures - Error Creating Textures");
             m_decoder_state = DecoderState.INIT_FAIL;
             return false;
         }
@@ -537,7 +540,7 @@ public class VolumetricVideoDecoder : IDisposable
                 m_UTexture.GetNativeTexturePtr(),
                 m_VTexture.GetNativeTexturePtr()) == -1)
         {
-            Debug.LogError("VolumetricVideoDecoder::init_textures - Error Registering Vulkan Textures");
+            Debug.LogError("OpenVolumetricDecoder::init_textures - Error Registering Vulkan Textures");
             m_decoder_state = DecoderState.INIT_FAIL;
             return false;
         }
@@ -562,14 +565,14 @@ public class VolumetricVideoDecoder : IDisposable
         // Check decoder has started before attempting to stop
         if (m_decoder_state != DecoderState.INITIALIZED)
         {
-            Debug.LogError(String.Format("VolumetricVideoDecoder::start - Failed to start decoder for instance {0} - decoder not initialised", m_instance_id));
+            Debug.LogError(String.Format("OpenVolumetricDecoder::start - Failed to start decoder for instance {0} - decoder not initialised", m_instance_id));
             return false;
         }
 
         // Start Decoder
         if (openvolumetric_start_decoding(m_instance_id) == -1)
         {
-            Debug.LogError(String.Format("VolumetricVideoDecoder::start - Failed to start decoder for instance {0}",m_instance_id) );
+            Debug.LogError(String.Format("OpenVolumetricDecoder::start - Failed to start decoder for instance {0}",m_instance_id) );
             return false;
         }
 
@@ -595,14 +598,14 @@ public class VolumetricVideoDecoder : IDisposable
         // Check decoder has started before attempting to stop
         if(m_decoder_state != DecoderState.STARTED)
         {
-            Debug.LogError(String.Format("VolumetricVideoDecoder::stop - Failed to stop decoder for instance {0} - Decoder status has not started", m_instance_id));
+            Debug.LogError(String.Format("OpenVolumetricDecoder::stop - Failed to stop decoder for instance {0} - Decoder status has not started", m_instance_id));
             return false;
         }
 
         //
         if(openvolumetric_stop_decoding(m_instance_id) == -1)
         {
-            Debug.LogError(String.Format("VolumetricVideoDecoder::stop - Failed to start decoder for instance {0}",m_instance_id) );
+            Debug.LogError(String.Format("OpenVolumetricDecoder::stop - Failed to start decoder for instance {0}",m_instance_id) );
             return false;
         }
 
@@ -626,7 +629,7 @@ public class VolumetricVideoDecoder : IDisposable
         if (openvolumetric_seek(m_instance_id, target) == -1)
         {
             Debug.LogError(String.Format(
-                "VolumetricVideoDecoder::seek - Failed to seek to {0:F3}",
+                "OpenVolumetricDecoder::seek - Failed to seek to {0:F3}",
                 target));
             return false;
         }
@@ -678,7 +681,7 @@ public class VolumetricVideoDecoder : IDisposable
                 m_loop = true;
                 if(openvolumetric_seek(m_instance_id, 0.0) == -1)
                 {
-                    Debug.LogError("VolumetricVideoDecoder::update - failed to reset decoder at loop boundary");
+                    Debug.LogError("OpenVolumetricDecoder::update - failed to reset decoder at loop boundary");
                     return;
                 }
             }

@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.Profiling;
+using UnityEngine.Scripting.APIUpdating;
 
 namespace OpenVolumetric
 {
@@ -10,11 +11,14 @@ namespace OpenVolumetric
 /// The overlay uses a camera-attached TextMesh and does not require a Canvas,
 /// EventSystem, controller rays, or scene setup.
 /// </summary>
-public sealed class VolumetricVideoDeveloperOverlay : MonoBehaviour
+[MovedFrom(true, sourceNamespace: "OpenVolumetric",
+    sourceAssembly: "Assembly-CSharp",
+    sourceClassName: "VolumetricVideoDeveloperOverlay")]
+public sealed class OpenVolumetricDeveloperOverlay : MonoBehaviour
 {
     private const float SeekSeconds = 10.0F;
 
-    private VolumetricVideo m_player;
+    private OpenVolumetric m_player;
     private TextMesh m_text;
     private InputAction m_togglePlayback;
     private InputAction m_toggleLoop;
@@ -26,23 +30,23 @@ public sealed class VolumetricVideoDeveloperOverlay : MonoBehaviour
     private float m_nextTextUpdate;
 
     /// <summary>Adds one overlay to player unless it already has one.</summary>
-    public static void Attach(VolumetricVideo player)
+    public static void Attach(OpenVolumetric player)
     {
         if(player == null ||
-            player.GetComponent<VolumetricVideoDeveloperOverlay>() != null)
+            player.GetComponent<OpenVolumetricDeveloperOverlay>() != null)
         {
             return;
         }
 
-        VolumetricVideoDeveloperOverlay overlay =
-            player.gameObject.AddComponent<VolumetricVideoDeveloperOverlay>();
+        OpenVolumetricDeveloperOverlay overlay =
+            player.gameObject.AddComponent<OpenVolumetricDeveloperOverlay>();
         overlay.m_player = player;
     }
 
     /// <summary>Captures the colocated player component.</summary>
     private void Awake()
     {
-        m_player = m_player != null ? m_player : GetComponent<VolumetricVideo>();
+        m_player = m_player != null ? m_player : GetComponent<OpenVolumetric>();
         CreateActions();
     }
 
@@ -178,7 +182,7 @@ public sealed class VolumetricVideoDeveloperOverlay : MonoBehaviour
         if(camera == null)
         {
             Debug.LogWarning(
-                "VolumetricVideoDeveloperOverlay - no MainCamera found");
+                "OpenVolumetricDeveloperOverlay - no MainCamera found");
             enabled = false;
             return;
         }

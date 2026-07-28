@@ -15,7 +15,7 @@ geometry samples, and optional audio. For one-click authoring from raw
 numbered images and OBJ meshes, open
 **Tools > OpenVolumetric > Encoder** in Unity. The Editor tool performs
 Draco conversion, media encoding, packaging, and verification. See
-[`Unity/Assets/Editor/README.md`](Unity/Assets/Editor/README.md) for its input
+[`Unity/Assets/Editor/OpenVolumetric/README.md`](Unity/Assets/Editor/OpenVolumetric/README.md) for its input
 conventions and tool discovery.
 
 If the media file also contains an audio stream, the native plugin decodes it
@@ -134,7 +134,7 @@ cmake --build --preset vcpkg-android-arm64
 ```
 
 The Android build stages the Vulkan plugin in
-`Unity/Assets/Plugins/Android/arm64-v8a`. Quest builds optionally create a
+`Unity/Assets/Plugins/OpenVolumetric/Android/arm64-v8a`. Quest builds optionally create a
 camera-attached developer overlay when `Enable Developer Overlay` is selected
 on the `VolumetricVideo` component:
 

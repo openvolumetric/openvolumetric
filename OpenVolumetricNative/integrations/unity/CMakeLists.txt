@@ -113,7 +113,7 @@ elseif(ANDROID)
   set_target_properties(OpenVolumetricUnityPlugin PROPERTIES
     OUTPUT_NAME "OpenVolumetricUnityPlugin"
     LIBRARY_OUTPUT_DIRECTORY
-      "${PROJECT_SOURCE_DIR}/../Unity/Assets/Plugins/Android/arm64-v8a"
+      "${PROJECT_SOURCE_DIR}/../Unity/Assets/Plugins/OpenVolumetric/Android/arm64-v8a"
   )
 
   add_custom_command(TARGET OpenVolumetricUnityPlugin POST_BUILD
