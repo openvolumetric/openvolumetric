@@ -60,6 +60,12 @@ void UOpenVolComponent::CreateDynamicMeshComponent()
 	DynamicMeshComponent->SetCollisionEnabled(
 		ECollisionEnabled::NoCollision);
 	DynamicMeshComponent->SetCastShadow(false);
+	// The video texture is routed through an unlit emissive material so its
+	// captured colour is not relit by the host scene. It is display content,
+	// not an area light: exclude it from Lumen's dynamic indirect lighting to
+	// prevent bright frames from illuminating the surrounding level.
+	DynamicMeshComponent->SetEmissiveLightSource(false);
+	DynamicMeshComponent->SetAffectDynamicIndirectLighting(false);
 	DynamicMeshComponent->RegisterComponent();
 }
 

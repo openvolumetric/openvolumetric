@@ -29,10 +29,35 @@ def create_material():
     # disappearing when viewed from their back face.
     material.set_editor_property("two_sided", True)
 
-    # The existing asset already contains this graph. UE 5.8 protects direct
-    # Python access to Material.Expressions, so only construct the graph when
-    # creating a new material.
-    if not material_exists:
+    # Find the existing texture sample. A previous version placed an
+    # EyeAdaptationInverse node between it and Emissive; reconnecting the
+    # sample directly is safer than deleting rooted graph nodes in UE 5.8.
+    emissive_input = unreal.MaterialEditingLibrary.get_material_property_input_node(
+        material,
+        unreal.MaterialProperty.MP_EMISSIVE_COLOR,
+    )
+    sample = emissive_input
+    if isinstance(
+        emissive_input, unreal.MaterialExpressionEyeAdaptationInverse
+    ):
+        inputs = unreal.MaterialEditingLibrary.get_inputs_for_material_expression(
+            material,
+            emissive_input,
+        )
+        sample = next(
+            (
+                node
+                for node in inputs
+                if isinstance(
+                    node,
+                    unreal.MaterialExpressionTextureSampleParameter2D,
+                )
+            ),
+            None,
+        )
+    if not isinstance(
+        sample, unreal.MaterialExpressionTextureSampleParameter2D
+    ):
         sample = unreal.MaterialEditingLibrary.create_material_expression(
             material,
             unreal.MaterialExpressionTextureSampleParameter2D,
@@ -40,11 +65,11 @@ def create_material():
             0,
         )
         sample.set_editor_property("parameter_name", "OpenVolTexture")
-        unreal.MaterialEditingLibrary.connect_material_property(
-            sample,
-            "RGB",
-            unreal.MaterialProperty.MP_EMISSIVE_COLOR,
-        )
+    unreal.MaterialEditingLibrary.connect_material_property(
+        sample,
+        "RGB",
+        unreal.MaterialProperty.MP_EMISSIVE_COLOR,
+    )
     unreal.MaterialEditingLibrary.recompile_material(material)
     unreal.EditorAssetLibrary.save_loaded_asset(material)
     unreal.log("Created or updated two-sided OpenVol texture material.")
