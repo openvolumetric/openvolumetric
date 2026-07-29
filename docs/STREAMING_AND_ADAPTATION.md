@@ -99,8 +99,8 @@ A segment must begin with everything required to decode and present it without
 loading an earlier media segment:
 
 - an independently decodable video access point;
-- an independent Draco geometry packet in the current format; or
-- a topology keyframe when topology-aware compression is enabled; and
+- a complete `IndependentMesh` geometry packet that establishes the segment's
+  active topology; and
 - sufficient audio preroll or an explicitly documented audio boundary.
 
 This rule intentionally connects adaptive streaming with topology compression:
@@ -122,7 +122,7 @@ ladder may vary:
 - geometry quantization precision;
 - independent versus topology-reused geometry;
 - topology-keyframe interval;
-- geometry residual compression level; and
+- Draco geometry quantization and encode-speed settings; and
 - possibly geometry frame rate.
 
 The first adaptive implementation should switch a **coupled presentation

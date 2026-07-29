@@ -17,7 +17,8 @@ The current implementation consists of:
 - Graphics upload backends for D3D11, Metal, and Vulkan.
 - Unity and Unreal Editor authoring interfaces accepting numbered image and
   OBJ sequences.
-- A custom MP4 geometry track containing independently decodable Draco meshes.
+- A custom MP4 geometry track containing complete Draco topology keyframes
+  and optional Draco position-only updates.
 
 The Unity integration has been exercised on macOS using Metal and on Meta
 Quest using Android/Vulkan. The Unreal integration has been exercised in
@@ -36,7 +37,7 @@ Authoring
 =========
 numbered images --> FFmpeg --> HEVC/H.264 texture video --+
 optional audio ---> FFmpeg --> AAC audio -----------------+
-numbered OBJ -----> Draco ---> independent .drc frames ---+
+numbered OBJ -----> Draco + topology analysis ------------+
                                                           |
                                                           v
                                               OpenVolumetric MP4 packer
@@ -144,31 +145,37 @@ tested against a broad set of MP4 implementations.
 
 ### 3.3 Geometry packet format
 
-Each geometry sample contains a 16-byte `VVGF` header followed by a complete
-Draco bitstream:
+Each geometry sample contains the current 40-byte, big-endian `VVGF` version
+2 header followed by a Draco payload:
 
 | Offset | Size | Field |
 | ---: | ---: | --- |
 | 0 | 4 bytes | Magic: `VVGF` |
-| 4 | 2 bytes | Format version |
-| 6 | 2 bytes | Flags |
-| 8 | 4 bytes | Source frame number |
-| 12 | 4 bytes | Draco payload size |
-| 16 | variable | Draco bitstream |
+| 4 | 2 bytes | Version (`2`) |
+| 6 | 2 bytes | Header size (`40`) |
+| 8 | 1 byte | Coding mode |
+| 9 | 1 byte | Payload codec |
+| 10 | 2 bytes | Flags |
+| 12 | 4 bytes | Source frame number |
+| 16 | 8 bytes | Topology identifier |
+| 24 | 4 bytes | Referenced keyframe frame number |
+| 28 | 4 bytes | Vertex count |
+| 32 | 4 bytes | Triangle count |
+| 36 | 4 bytes | Payload size |
+| 40 | variable | Draco mesh or point-cloud payload |
 
-Version 1 currently marks every sample as a keyframe. Each sample is
-independently decodable and has no dependency on preceding geometry.
+`IndependentMesh` packets contain a complete Draco mesh and establish a
+random-access topology keyframe. `PositionUpdate` packets contain an
+order-preserving Draco point cloud with absolute positions and reference the
+active preceding topology keyframe. They are not deltas from the preceding
+frame, so losing one update does not prevent decoding a later update.
 
 The MP4 sample timestamp, not the source frame number, is authoritative for
 synchronization. The frame number exists for validation and diagnostics.
 
-One implementation detail requiring correction or clarification in the format
-specification is byte order: comments currently describe the fields as
-little-endian, while the serializer shifts the most significant byte first.
-The actual implementation therefore behaves as big-endian/network order.
-Because the same code writes and reads the packets, current files round-trip
-correctly, but the published format should define this unambiguously before
-external adoption.
+Multi-byte fields are explicitly serialized in big-endian/network order. The
+complete normative description is in
+[GEOMETRY_PACKET.md](GEOMETRY_PACKET.md).
 
 ### 3.4 Timing model
 
@@ -183,9 +190,9 @@ This preserves:
 - Variable sample durations.
 - Direct correspondence between video and geometry presentations.
 
-Geometry packets currently use their video sample's presentation timestamp for
-both PTS and DTS, because each geometry sample is independent and requires no
-reordering.
+Geometry packets use their video sample's presentation timestamp for both PTS
+and DTS. Position updates depend on a topology keyframe but do not require
+sample reordering.
 
 ## 4. Authoring and encoding pipeline
 
@@ -222,13 +229,26 @@ The author can control:
 - Texture-coordinate quantization.
 - Draco encoding speed.
 - Draco decoding speed.
+- Whether shared topology is reused.
+- An optional maximum number of geometry frames between complete Draco
+  reference meshes.
 
 The temporary output is a numbered `.drc` sequence. Those files are an
 intermediate authoring representation and are not accepted by the runtime
 player.
 
-Each frame remains an independent Draco mesh. No topology reuse, temporal
-prediction, or geometry delta coding is presently performed.
+With geometry compression enabled, the packer canonicalizes each OBJ,
+fingerprints indices, winding, UV mapping, and attribute layout, and segments
+consecutive frames with matching topology. The first sample in a reusable
+window is an order-preserving complete Draco mesh; later samples are
+order-preserving Draco point clouds containing positions only. Topology
+changes fall back automatically to a complete mesh.
+
+The optional geometry keyframe limit bounds a window even when topology
+remains unchanged. A value of `N` permits one complete reference mesh plus at
+most `N - 1` position updates. Disabling the limit permits reuse until the
+topology changes. Singleton/independent meshes use Draco's normal mesh method
+for lower size and decode cost.
 
 ### 4.3 Texture and audio encoding
 
@@ -284,7 +304,7 @@ Temporary files are then removed.
 Verification checks:
 
 - Geometry sample count.
-- Every geometry payload against its source `.drc`.
+- Every serialized geometry packet against the packet prepared by the packer.
 - Geometry PTS and duration against the corresponding video sample.
 - Stream identity.
 - A representative seek near the middle of the sequence.
@@ -379,16 +399,20 @@ position and cause unsigned counter underflow.
 Geometry samples are parsed to remove and validate their `VVGF` framing. The
 remaining Draco payload and its PTS are placed in a bounded compressed queue.
 
-A separate `GeometryDecoderDraco` worker decodes the payload to an
-engine-neutral mesh containing:
+A separate `GeometryDecoderDraco` worker handles both coding modes. A complete
+mesh replaces the active topology cache. A position update must match the
+cache's playback generation, topology ID, keyframe number, vertex count, and
+triangle count; it then replaces positions, reuses indices and UVs, and
+recalculates area-weighted normals. Both paths publish an engine-neutral mesh
+containing:
 
 - 32-bit triangle indices.
 - Three-component positions.
 - Three-component normals.
 - Two-component texture coordinates.
 
-The Draco decoder currently requires all three vertex attributes: position,
-normal, and texture coordinate. Missing attributes cause decoding to fail.
+Complete source meshes require position, normal, and texture-coordinate
+attributes. Position-update payloads intentionally contain only positions.
 
 Queue capacities are:
 
@@ -895,19 +919,15 @@ factory APIs would improve practical replaceability.
 
 ### 14.3 Container evolution
 
-The `VVGF` header is versioned and contains flags, leaving room for:
+The version 2 `VVGF` header already identifies complete topology keyframes,
+dependent position updates, topology IDs, referenced keyframes, decoded
+vertex/triangle counts, and the payload codec. Its header-size and flags
+fields leave room for compatible extensions.
 
-- Shared-topology modes.
-- Geometry keyframes and dependent frames.
-- Topology identifiers.
-- Attribute masks.
-- Decoded-size checks.
-- Alternative payload codecs.
-- Dependency-window metadata.
-
-The planned topology-aware format would permit a key mesh followed by position
-or attribute residuals over a short window or entire constant-topology
-sequence.
+Future versions could add attribute masks, alternative geometry codecs,
+normal or other attribute updates, stronger topology identifiers, and
+streaming-segment dependency metadata. Unknown versions and unsupported
+codec/mode combinations must continue to fail explicitly.
 
 ### 14.4 Offline applications
 
@@ -950,6 +970,10 @@ around their composition and the resulting abstraction.
 7. **Compatibility with ordinary media players.** Unknown geometry data is
    ignored while conventional video and audio remain playable, providing
    graceful degradation and straightforward preview behavior.
+8. **Bounded topology reuse within the timed geometry track.** Complete Draco
+   reference meshes and absolute position-only updates share one packet
+   format, while author-controlled keyframe intervals bound dependency and
+   future streaming seek cost.
 
 These should be presented as design contributions subject to comparison with
 related volumetric container and engine-integration systems, rather than
@@ -980,10 +1004,12 @@ novelty claims:
 The most significant limitations of the current system are:
 
 - The `vvge` MP4 representation is project-specific and provisional.
-- Packet byte order is inconsistently documented.
-- Geometry uses independent Draco frames and cannot exploit temporal or
-  shared-topology redundancy.
-- Every decoded mesh must contain positions, normals, and UVs.
+- Temporal geometry compression currently recognizes only exact canonical
+  topology/UV correspondence; reordered but equivalent meshes do not match.
+- Position updates reconstruct normals rather than preserving authored normal
+  attributes, and broader visual/angular-error evaluation remains outstanding.
+- Geometry keyframe-limit defaults and streaming-segment alignment have not
+  yet been selected from broad content/device measurements.
 - The managed Unity mesh has fixed vertex and triangle capacities.
 - Only planar 8-bit YUV420 video output is supported by the rendering path.
 - Audio is normalized to stereo float PCM; richer channel layouts are not

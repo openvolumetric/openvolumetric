@@ -1,20 +1,22 @@
 # Open Volumetric Development Plan
 
-Last updated: 28 July 2026
+Last updated: 29 July 2026
 
 ## Current objective
 
 Stabilize and validate the implemented Unity and Unreal integrations around
-the shared MP4/core architecture, complete the remaining cross-platform and
-packaged-build tests, and develop topology-aware temporal geometry
-compression.
+the shared MP4/core architecture, finish Milestone 11 temporal-geometry
+validation, and complete the remaining cross-platform and packaged-build
+tests before streamable input work begins.
 
 ## Decisions
 
 - Use MP4 as the delivery container.
 - Keep HEVC for the texture video.
 - Keep audio as a normal MP4 audio track.
-- Store one Draco frame per timed MP4 metadata sample.
+- Store one versioned geometry packet per timed MP4 metadata sample, using
+  either a complete Draco mesh or a Draco position-only update referencing a
+  preceding topology keyframe.
 - Identify the geometry track with the project-specific `vvge` metadata
   sample entry rather than mislabeling it with GoPro's `gpmd` identifier.
 - Synchronize decoded texture and geometry by presentation timestamp, not by
@@ -50,20 +52,15 @@ representation remains provisional until interoperability testing is complete.
 
 ## Geometry sample format
 
-Every metadata sample contains one complete, independently decodable Draco
-frame:
+Every metadata sample contains the current 40-byte, big-endian `VVGF` version
+2 header followed by either a complete Draco mesh or a sequential Draco point
+cloud containing updated positions. The header records coding mode, payload
+codec, topology ID, source and referenced-keyframe frame numbers, vertex and
+triangle counts, flags, and payload size.
 
-| Field | Type | Purpose |
-| --- | --- | --- |
-| Magic | 4 bytes (`VVGF`) | Detect the volumetric geometry format |
-| Version | `uint16` | Permit future format changes |
-| Flags | `uint16` | Keyframe and future feature flags |
-| Frame number | `uint32` | Validation and diagnostics |
-| Payload size | `uint32` | Validate the sample before decoding |
-| Payload | byte array | Existing `.drc` file contents |
-
-The MP4 sample supplies the presentation timestamp and duration. Frame number
-is not the primary synchronization mechanism.
+The MP4 sample supplies the authoritative presentation timestamp and duration.
+Frame numbers are used only for validation, dependencies, and diagnostics.
+See [GEOMETRY_PACKET.md](GEOMETRY_PACKET.md) for the normative field layout.
 
 ## Milestone 1: MP4 metadata proof of concept
 
@@ -281,7 +278,7 @@ Unity namespaces were renamed to OpenVolumetric.
 
 ## Milestone 10: Topology-aware geometry format
 
-The detailed proposed representation, fallback behavior, decoding cache,
+The detailed representation, fallback behavior, decoding cache,
 seeking rules, validation matrix, and phased implementation are recorded in
 [TOPOLOGY_COMPRESSION.md](TOPOLOGY_COMPRESSION.md).
 
@@ -330,13 +327,15 @@ seeking rules, validation matrix, and phased implementation are recorded in
       timestamped `vvge` MP4 track.
 - [x] Extend the core geometry decoder with topology caches and dependent-frame
       reconstruction without adding Unity or Unreal dependencies.
-- [x] Bound topology-cache, residual-buffer, and decoded-mesh memory.
+- [x] Bound topology-cache, compressed-update, and decoded-mesh memory.
 - [x] Integrate seek preroll from the preceding geometry keyframe with the
       unified seek pipeline.
 - [ ] Preserve timestamp matching, EOS generations, corruption handling, and
       dropped-sample diagnostics for dependent geometry.
-- [ ] Add Unity authoring controls for automatic mode, maximum window size,
-      quality/error target, and forced independent frames.
+- [x] Add Unity and Unreal controls for automatic topology reuse, an optional
+      maximum dependency window, and preset/custom Draco quantization.
+- [ ] Add an explicit quality/error target and forced-independent frame
+      markers if evaluation shows that authors need them.
 - [x] Verify independent fallback when topology changes unexpectedly.
 - [ ] Run visual, numeric, compression-ratio, long-playback, loop, and seek
       tests on desktop and Quest-class hardware.

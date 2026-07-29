@@ -81,8 +81,9 @@ Draco encoding is intentionally part of the Editor-only
 `OpenVolumetricAuthoring` target. Runtime players do not expose authoring
 entry points.
 
-Future work can move those encoding stages behind this authoring API without
-changing the playback core or the volumetric MP4 format.
+The remaining external stage is FFmpeg texture/audio encoding. It can move
+behind a future authoring API without changing the playback core or geometry
+packet format.
 
 ## Validation
 

@@ -67,6 +67,11 @@ filesystem path to FFmpeg.
 The first headset build must use Vulkan. The plug-in intentionally rejects
 other graphics APIs until an explicitly tested fallback is added.
 
+The Android ARM64 native plugin was rebuilt successfully from the renamed
+repository on 29 July 2026 using Unity `6000.3.17f1`'s bundled NDK. The staged
+output was confirmed as a stripped AArch64 shared object with only Android
+system/Vulkan dynamic dependencies.
+
 ## Device validation record
 
 For each physical Quest run, record:

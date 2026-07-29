@@ -30,6 +30,11 @@ Enable **Geometry Compression** to detect shared topology and emit
 position-only updates. Clear it to use the same packet format with every
 sample encoded as an independently decodable Draco mesh.
 
+Enable **Limit Geometry Keyframes** to bound a shared-topology window. The
+**Maximum Geometry Frames** value includes the complete Draco reference mesh;
+for example, `60` permits that keyframe plus at most 59 position updates.
+Leave the limit disabled to reuse matching topology until it changes.
+
 ## Pipeline
 
 One click performs the following stages:

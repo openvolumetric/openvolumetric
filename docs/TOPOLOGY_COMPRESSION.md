@@ -40,7 +40,7 @@ topology only when all of the following match:
 
 Positions and normals are excluded because they are expected to change.
 
-The authoring pipeline should build a canonical render mesh from each OBJ
+The authoring pipeline builds a canonical render mesh from each OBJ
 before fingerprinting it. OBJ corner tuples must map deterministically to
 render vertices so UV seams produce the same vertex expansion on every frame.
 
@@ -66,7 +66,7 @@ topology_id = hash(
 ```
 
 Hash equality is an index into a topology candidate, not the final proof.
-Before reuse, the encoder should compare the canonical topology data to avoid
+Before reuse, the encoder compares the canonical topology data to avoid
 depending solely on collision resistance.
 
 ## Geometry packet modes
@@ -99,38 +99,22 @@ Suggested header information:
 
 ## Position representation
 
-For each shared-topology window:
+For each shared-topology window, the authoring core emits a complete
+sequential Draco mesh followed by sequential Draco point clouds containing
+absolute vertex positions. Each update refers to the window's complete mesh
+and reuses its indices and UVs.
 
-1. Encode the first frame as a complete Draco topology keyframe.
-2. Select fixed position bounds and quantization for the window.
-3. Quantize each dependent frame's positions using those settings.
-4. Subtract the quantized topology-keyframe positions.
-5. Zigzag-encode the signed integer residuals.
-6. Compress the residual stream with the selected backend.
-
-Keyframe-relative residuals are recommended initially instead of
-previous-frame residuals:
-
-- reconstruction does not accumulate drift;
-- every dependent frame has one bounded dependency;
-- a corrupt dependent frame does not invalidate later dependent frames;
-- decoding can begin directly after loading the topology keyframe; and
-- dependent frames can be decoded independently or in parallel.
-
-Previous-frame prediction can be evaluated later if its compression gain
-justifies dependency chains and more complicated recovery.
-
-Zstandard is a practical initial compression candidate, but it should be
-benchmarked against raw packed residuals, LZ4, and a simple entropy-coded
-representation. The format should identify its payload codec rather than
-hard-coding an undocumented assumption.
+Updates are not deltas from either the keyframe or previous frame. This avoids
+accumulated drift and permits any dependent packet to decode once its topology
+keyframe is cached. Quantized residuals with LZ4 and Zstandard were evaluated
+before the Draco point-cloud representation was selected; they are historical
+experiments and are not part of the implemented format or dependency set.
 
 ## Normal handling
 
-If dependent packets contain only positions, normals must be reconstructed.
-The first implementation should:
+Dependent packets contain only positions, so the core:
 
-1. Restore positions from the keyframe-relative residual.
+1. Decodes absolute positions from the Draco point cloud.
 2. Reuse cached triangle indices and UVs.
 3. Recalculate face normals.
 4. Accumulate and normalize vertex normals using a documented weighting
@@ -144,7 +128,7 @@ quantized normals when preserving authored/captured normals is important.
 
 ## Authoring analysis
 
-Before encoding geometry, the authoring pipeline should:
+Before encoding geometry, the authoring pipeline:
 
 ```text
 OBJ sequence
@@ -163,37 +147,25 @@ Segment consecutive matching fingerprints
     `-- reusable window --> topology keyframe + PositionUpdate packets
 ```
 
-Automatic mode should consider the total encoded result. A short matching
-window may not save enough space to justify new headers, quantization
-metadata, and keyframe constraints. The encoder may retain independent Draco
-when that is smaller or simpler.
+The current authoring controls expose a geometry-compression toggle and an
+optional maximum geometry keyframe interval measured in samples. Draco
+position quantization and encode-speed settings come from the selected
+platform preset. A disabled compression toggle emits only independent meshes;
+when enabled, topology changes still fall back automatically to independent
+meshes.
 
-Proposed authoring controls:
+Possible future controls include a minimum reusable-window length,
+error-target-based quantization, and force-independent frame markers.
 
-- mode: automatic, independent only, or topology reuse;
-- maximum geometry keyframe interval measured in samples;
-- minimum reusable-window length;
-- forced topology-keyframe interval;
-- position quantization precision or error target;
-- residual compression backend/level;
-- normal mode: recalculate or encode; and
-- force-independent frame markers for testing.
-
-If topology changes on every frame, automatic mode emits only independent
-Draco packets and preserves current behavior.
-
-`OpenVolumetricAuthoringCore` now contains the initial analysis implementation
+`OpenVolumetricAuthoringCore` contains the analysis and encoding implementation
 in `TopologyAnalyzer`. It canonicalizes OBJ position/UV corner tuples, creates
 a deterministic topology ID, performs an exact comparison after a hash match,
-segments consecutive matches, and estimates packed position bytes. It does
-not yet alter encoded output.
+segments consecutive matches, and emits complete meshes or position updates.
 
-The repository does not contain the original raw OBJ sequence, so only
-synthetic correctness fixtures can currently run from a clean checkout. The
-representative sequence analysis required by Milestone 10 must be run when the
-source OBJ dataset is available; packaged MP4 and independently encoded Draco
-files are not a substitute for validating authoring-time vertex
-correspondence.
+The original raw OBJ sequence and generated benchmark dataset are local
+development data and are not part of a clean checkout. The results below are
+therefore retained as a reproducible design record, while broader evaluation
+still requires suitable source sequences supplied by the developer.
 
 ### Reconstructed capture result
 
@@ -215,7 +187,7 @@ content when available.
 
 ### Initial controlled residual benchmark
 
-An optional internal benchmark now creates 119 dependent deformations from
+An internal development benchmark created 119 dependent deformations from
 the real `000110.obj` mesh (6,479 render vertices and 12,000 triangles). It
 quantizes each dependent frame against fixed window bounds, computes
 keyframe-relative signed residuals, verifies every codec round trip, and
@@ -236,12 +208,9 @@ approximately 5.27/4.05 ms on the development Mac, or about 0.044/0.034 ms
 per dependent frame. Zstandard level 3 saved less than one percent versus
 level 1 on raw 14-bit residuals while taking longer to encode.
 
-These results make zigzag varints plus Zstandard level 1 the leading initial
-candidate, with plain varints retained as a lower-complexity fallback. They
-do not freeze the format: the deformation is controlled rather than captured
-fixed-topology content, the baseline is uncompressed float positions rather
-than independently encoded Draco, and normal reconstruction is not included.
-Those gaps must be measured before the Milestone 10 codec decision is final.
+At this stage, these results made zigzag varints plus Zstandard level 1 the
+leading residual-codec candidate. The later Draco experiment below superseded
+that choice, so neither Zstandard nor LZ4 remains an implementation dependency.
 
 ### Draco position-only experiment
 
@@ -332,15 +301,16 @@ complete Unity or Unreal authoring pipeline to encode the fixture. Audio is
 optional; an existing test audio file can be supplied when audio
 synchronization also needs coverage.
 
-The analyzer verifies exactly five runs with lengths 10, 20, 30, 40, and 50,
-145 reusable frames, no empty files, and 12,000 triangles in every frame. The
-generated 150-frame dataset is approximately 178 MB and remains ignored by
-Git; the generator source and validation logic are versioned.
+Development analysis verified exactly five runs with lengths 10, 20, 30, 40,
+and 50, 145 reusable frames, no empty files, and 12,000 triangles in every
+frame. The generated 150-frame dataset is approximately 178 MB and remains
+ignored by Git. The temporary benchmark and test harnesses were removed after
+the format decision; the measured results are retained here.
 
 ## Core decoding and topology cache
 
-The geometry decoder should maintain a bounded cache entry for each active
-topology:
+The geometry decoder maintains one bounded active topology entry per playback
+generation:
 
 ```text
 TopologyCacheEntry
@@ -348,8 +318,6 @@ TopologyCacheEntry
 ├── Vertex and triangle counts
 ├── Indices
 ├── UVs and attribute mapping
-├── Keyframe quantized positions
-├── Quantization metadata
 └── Playback generation / last use
 ```
 
@@ -357,8 +325,8 @@ Decoding behavior:
 
 - `IndependentMesh`: decode through Draco, publish the full mesh, and populate
   or replace the topology cache entry.
-- `PositionUpdate`: find and validate the referenced topology, decompress and
-  reconstruct positions, recalculate normals, and publish a complete mesh.
+- `PositionUpdate`: find and validate the referenced topology, decode its
+  absolute positions, recalculate normals, and publish a complete mesh.
 - Missing topology: return a controlled error or require seek preroll; never
   apply an update to an unrelated cache entry.
 - Corrupt update: discard that presentation and recover at the next valid
@@ -377,11 +345,12 @@ The container and packet metadata must permit the runtime to:
 
 1. Find the preceding required video and topology keyframes.
 2. Decode/cache the topology keyframe.
-3. Decode the requested keyframe-relative position update.
+3. Decode the requested position update using that cached topology.
 4. Complete normal reconstruction.
 5. Present only when matching texture and geometry timestamps are ready.
 
-Because updates are keyframe-relative, intermediate geometry frames do not
+Because updates reference a topology keyframe but contain absolute positions,
+intermediate geometry frames do not
 need to be decoded solely to reconstruct the target. Periodic topology
 keyframes should bound seek cost even when topology remains constant for an
 entire sequence.
@@ -468,10 +437,12 @@ Compare the new mode with independent Draco using:
 - Unity and Unreal CPU/render-thread cost; and
 - sustained playback behavior on desktop and Quest-class hardware.
 
-Report cases where topology reuse is larger or slower and confirm that
-automatic mode selects independent Draco for them.
+Report cases where topology reuse is larger or slower. A future size-aware
+policy may choose independent Draco for short matching windows; the current
+policy reuses every consecutive matching-topology window when geometry
+compression is enabled.
 
-## Implementation phases
+## Historical implementation phases
 
 ### Phase 1: Analysis only
 
@@ -489,7 +460,7 @@ automatic mode selects independent Draco for them.
 
 - Segment matching-topology windows.
 - Emit periodic Draco topology keyframes.
-- Encode keyframe-relative quantized position residuals.
+- Encode sequential Draco position point clouds.
 - Add full round-trip verification and automatic fallback.
 
 ### Phase 4: Core decoding

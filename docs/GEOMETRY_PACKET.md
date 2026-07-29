@@ -133,9 +133,10 @@ canonical-data comparison during authoring. At runtime the ID selects a cache
 entry, but packet counts and decoded-size checks must also agree before an
 update is applied.
 
-The current analysis implementation uses stable FNV-1a encoding over explicit
-scalar bytes. A stronger identifier can replace it before version 2 ships if
-collision experiments justify the extra dependency or cost.
+The current implementation uses stable FNV-1a encoding over explicit scalar
+bytes. A stronger identifier may replace it before the format is stabilized
+for a public release if collision experiments justify the extra dependency or
+cost.
 
 ## Random access and dependency rules
 
@@ -154,8 +155,8 @@ collision experiments justify the extra dependency or cost.
   independently addressable media-segment boundary.
 - A missing or corrupt topology keyframe invalidates its dependent packets
   until the next random-access geometry packet.
-- A corrupt dependent packet is dropped without invalidating later
-  keyframe-relative updates.
+- A corrupt dependent packet is dropped without invalidating later updates
+  that reference the same valid topology keyframe.
 - Seek, loop, close, and reopen operations advance the playback generation so
   cached topology from older asynchronous work cannot be reused.
 

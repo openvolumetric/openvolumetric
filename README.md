@@ -83,8 +83,9 @@ data/                   Local sample content
 
 ## Current limitations
 
-- Geometry frames are independently Draco-compressed and do not yet exploit
-  shared topology or temporal prediction.
+- Geometry compression reuses matching topology through Draco position-only
+  updates, but its compression, reconstruction quality, and keyframe-interval
+  defaults still need broader evaluation.
 - Playback requires a complete local or cached MP4.
 - The format is project-specific and has not yet been standardized.
 - Quest video decoding is software-based.

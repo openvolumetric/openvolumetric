@@ -66,6 +66,11 @@ The **Geometry Compression** checkbox enables topology-aware position updates.
 Clearing it emits the same packet format with every sample encoded as an
 independently decodable Draco mesh.
 
+The optional **Limit Geometry Keyframes** checkbox and **Maximum Geometry
+Frames** value force periodic complete Draco reference meshes. The limit
+includes the reference frame itself and is separate from the video keyframe
+interval. Leave it disabled to reuse matching topology until it changes.
+
 ## Current platform status
 
 Runtime geometry, texture, and audio playback and the authoring window are
