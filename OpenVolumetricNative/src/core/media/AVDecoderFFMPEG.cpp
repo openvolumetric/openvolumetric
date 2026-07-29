@@ -10,10 +10,6 @@
 
 namespace openvolumetric
 {
-
-// --------------------------------------------------------------------------
-//
-// --------------------------------------------------------------------------
 AVDecoderFFMPEG::AVDecoderFFMPEG()
 	: IAVDecoder(),
 	  m_container(new openvolumetric::FFmpegMp4VolumetricContainer()),
@@ -23,70 +19,58 @@ AVDecoderFFMPEG::AVDecoderFFMPEG()
 {
 	// Video
 	m_video_stream_index	= -1;
-	m_video_stream			= NULL;
-	m_video_codec_ctx		= NULL;
-	m_video_codec			= NULL;
+	m_video_stream			= nullptr;
+	m_video_codec_ctx		= nullptr;
+	m_video_codec			= nullptr;
 
 	// Audio
 	m_audio_stream_index	= -1;
-	m_audio_stream			= NULL;
-	m_audio_codec_ctx		= NULL;
-	m_audio_codec			= NULL;
-	m_audio_resampler		= NULL;
+	m_audio_stream			= nullptr;
+	m_audio_codec_ctx		= nullptr;
+	m_audio_codec			= nullptr;
+	m_audio_resampler		= nullptr;
 	m_audio_read_position.store(0);
 	m_audio_write_position.store(0);
 
 	// Embedded geometry
 	m_geometry_stream_index = -1;
-	m_geometry_stream = NULL;
+	m_geometry_stream = nullptr;
 
 	// Initialise the packet without the removed av_init_packet API.
 	m_packet = {};
 }
-
-
-// --------------------------------------------------------------------------
-//
-// --------------------------------------------------------------------------
 AVDecoderFFMPEG::~AVDecoderFFMPEG()
 {
-	//
 	LOG("AVDecoderFFMPEG::~AVDecoderFFMPEG" );
 }
-
-
-// --------------------------------------------------------------------------
-//
-// --------------------------------------------------------------------------
 void AVDecoderFFMPEG::destroy()
 {
-	//
 	LOG("AVDecoderFFMPEG::destroy - start");
 
-	// Delete Buffer Data
+	// Join the demux worker before releasing any codec, queue, or packet state.
+	stop_decoding();
 	flush_buffers();
 
 	m_container->close();
 
 	//Video Variables
-	if (m_video_codec_ctx != NULL)
+	if (m_video_codec_ctx != nullptr)
 	{
 		avcodec_free_context(&m_video_codec_ctx);
 	}
-	//
-	m_video_codec = NULL;
-	m_video_stream = NULL;
+	m_video_codec = nullptr;
+	m_video_stream = nullptr;
 
-	if (m_audio_resampler != NULL)
+	if (m_audio_resampler != nullptr)
 	{
 		swr_free(&m_audio_resampler);
 	}
-	if (m_audio_codec_ctx != NULL)
+	if (m_audio_codec_ctx != nullptr)
 	{
 		avcodec_free_context(&m_audio_codec_ctx);
 	}
-	m_audio_codec = NULL;
-	m_audio_stream = NULL;
+	m_audio_codec = nullptr;
+	m_audio_stream = nullptr;
 	flush_audio();
 	m_audio_samples.clear();
 	m_geometry_frames.clear();
@@ -94,23 +78,19 @@ void AVDecoderFFMPEG::destroy()
 	m_pending_audio_packets.clear();
 	m_pending_geometry_packets.clear();
 	m_deferred_packet.reset();
-	m_geometry_stream = NULL;
+	m_geometry_stream = nullptr;
 	m_geometry_stream_index = -1;
 
-	//
 	av_packet_unref(&m_packet);
 
 	// Other Variables
-	this->m_decoder_state = STOP;
+	m_initialised = false;
+	m_decoder_state = UNINITIALIZED;
 
-	//
 	LOG("AVDecoderFFMPEG::destroy - stop");
 }
-
-// --------------------------------------------------------------------------
 // Initialise the optional audio stream and convert it to interleaved stereo
 // float samples suitable for Unity's streaming AudioClip callback.
-// --------------------------------------------------------------------------
 bool AVDecoderFFMPEG::init_audio_context()
 {
 	int stream = m_container->stream_index(
@@ -125,17 +105,17 @@ bool AVDecoderFFMPEG::init_audio_context()
 	m_audio_stream = m_container->native_stream(
 		openvolumetric::StreamKind::Audio);
 	m_audio_codec = avcodec_find_decoder(m_audio_stream->codecpar->codec_id);
-	if (m_audio_codec == NULL)
+	if (m_audio_codec == nullptr)
 	{
 		LOG("AVDecoderFFMPEG::init_audio_context - audio codec not available");
 		return false;
 	}
 
 	m_audio_codec_ctx = avcodec_alloc_context3(m_audio_codec);
-	if (m_audio_codec_ctx == NULL ||
+	if (m_audio_codec_ctx == nullptr ||
 		avcodec_parameters_to_context(
 			m_audio_codec_ctx, m_audio_stream->codecpar) < 0 ||
-		avcodec_open2(m_audio_codec_ctx, m_audio_codec, NULL) < 0)
+		avcodec_open2(m_audio_codec_ctx, m_audio_codec, nullptr) < 0)
 	{
 		LOG("AVDecoderFFMPEG::init_audio_context - could not open audio codec");
 		return false;
@@ -152,8 +132,8 @@ bool AVDecoderFFMPEG::init_audio_context()
 		m_audio_codec_ctx->sample_fmt,
 		sample_rate,
 		0,
-		NULL);
-	if (ret < 0 || m_audio_resampler == NULL ||
+		nullptr);
+	if (ret < 0 || m_audio_resampler == nullptr ||
 		swr_init(m_audio_resampler) < 0)
 	{
 		LOG("AVDecoderFFMPEG::init_audio_context - resampler init failed");
@@ -200,11 +180,6 @@ bool AVDecoderFFMPEG::init_geometry_context()
 		m_geometry_stream_index);
 	return true;
 }
-
-
-// --------------------------------------------------------------------------
-//
-// --------------------------------------------------------------------------
 bool AVDecoderFFMPEG::init_ffmpeg_context(const char* filepath)
 {
 	LOG("AVDecoderFFMPEG::init_ffmpeg_context - file: %s", filepath);
@@ -217,12 +192,6 @@ bool AVDecoderFFMPEG::init_ffmpeg_context(const char* filepath)
 	}
 	return true;
 }
-
-
-
-// --------------------------------------------------------------------------
-//
-// --------------------------------------------------------------------------
 bool AVDecoderFFMPEG::init_video_context()
 {
 	// Find Video Stream
@@ -244,7 +213,7 @@ bool AVDecoderFFMPEG::init_video_context()
 
 		//Get Video Codec
 		m_video_codec = avcodec_find_decoder(m_video_stream->codecpar->codec_id);
-		if (m_video_codec == NULL)
+		if (m_video_codec == nullptr)
 		{
 			LOG("AVDecoderFFMPEG::init_video_context - video codec not available");
 			return false;
@@ -252,7 +221,7 @@ bool AVDecoderFFMPEG::init_video_context()
 
 		//Get Video Codec Context
 		m_video_codec_ctx = avcodec_alloc_context3(m_video_codec);
-		if (m_video_codec_ctx == NULL)
+		if (m_video_codec_ctx == nullptr)
 		{
 			LOG("AVDecoderFFMPEG::init_video_context - could not allocate video codec context");
 			return false;
@@ -273,7 +242,7 @@ bool AVDecoderFFMPEG::init_video_context()
 			FF_THREAD_SLICE | FF_THREAD_FRAME;
 
 		// Ready to decode ?
-		if (avcodec_open2(m_video_codec_ctx, m_video_codec, NULL) < 0)
+		if (avcodec_open2(m_video_codec_ctx, m_video_codec, nullptr) < 0)
 		{
 			LOG("AVDecoderFFMPEG::init_video_context - could not open video codec");
 			return false;
@@ -317,12 +286,6 @@ bool AVDecoderFFMPEG::init_video_context()
 		return true;
 	}
 }
-
-
-
-// --------------------------------------------------------------------------
-//
-// --------------------------------------------------------------------------
 bool AVDecoderFFMPEG::init(const char* filepath)
 {
 	LOG("AVDecoderFFMPEG::init - file: %s", filepath);
@@ -335,9 +298,9 @@ bool AVDecoderFFMPEG::init(const char* filepath)
 	}
 
 	// check file path
-	if (filepath == NULL)
+	if (filepath == nullptr)
 	{
-		LOG("AVDecoderFFMPEG::init - filepath is NULL.");
+		LOG("AVDecoderFFMPEG::init - filepath is nullptr.");
 		return false;
 	}
 
@@ -367,14 +330,9 @@ bool AVDecoderFFMPEG::init(const char* filepath)
 	this->m_initialised = true;
 	m_decoder_state = INITIALIZED;
 
-	// Done
 	LOG("AVDecoderFFMPEG::init - end ");
 	return true;
 }
-
-// --------------------------------------------------------------------------
-// Start Decoding
-// --------------------------------------------------------------------------
 bool AVDecoderFFMPEG::start_decoding()
 {
 	if (!this->m_initialised)
@@ -443,19 +401,12 @@ bool AVDecoderFFMPEG::start_decoding()
 		LOG("AVDecoderFFMPEG::start_decoding - thread end");
 	});
 
-	//
 	return true;
 }
-
-// --------------------------------------------------------------------------
-// Stop Decoding
-// --------------------------------------------------------------------------
 bool AVDecoderFFMPEG::stop_decoding()
 {
-	//
 	LOG("AVDecoderFFMPEG::stop_decoding");
 
-	//
 	m_stop_requested.store(true, std::memory_order_release);
 	m_seek_condition.notify_all();
 
@@ -466,15 +417,8 @@ bool AVDecoderFFMPEG::stop_decoding()
 	}
 	m_decoder_state = STOP;
 
-	//
 	return true;
 }
-
-
-
-// --------------------------------------------------------------------------
-//
-// --------------------------------------------------------------------------
 bool AVDecoderFFMPEG::decode()
 {
 	if (!m_initialised)
@@ -715,10 +659,7 @@ std::string AVDecoderFFMPEG::get_last_error() const
 		return m_geometry_frames.error();
 	return {};
 }
-
-// --------------------------------------------------------------------------
 // Decode and resample one audio packet into the lock-free PCM ring.
-// --------------------------------------------------------------------------
 bool AVDecoderFFMPEG::decode_audio_frame()
 {
 	int ret = avcodec_send_packet(m_audio_codec_ctx, &m_packet);
@@ -735,7 +676,7 @@ bool AVDecoderFFMPEG::decode_audio_frame()
 	while (ret >= 0)
 	{
 		AVFrame* frame = av_frame_alloc();
-		if (frame == NULL)
+		if (frame == nullptr)
 			return false;
 
 		ret = avcodec_receive_frame(m_audio_codec_ctx, frame);
@@ -839,7 +780,7 @@ bool AVDecoderFFMPEG::decode_audio_frame()
 bool AVDecoderFFMPEG::push_audio(
 	const float* samples, size_t sample_count)
 {
-	if (samples == NULL || sample_count == 0 || m_audio_samples.empty())
+	if (samples == nullptr || sample_count == 0 || m_audio_samples.empty())
 		return true;
 
 	const uint64_t write =
@@ -858,7 +799,7 @@ bool AVDecoderFFMPEG::push_audio(
 
 bool AVDecoderFFMPEG::audio_can_accept_packet() const
 {
-	if (m_audio_codec_ctx == NULL || m_audio_samples.empty())
+	if (m_audio_codec_ctx == nullptr || m_audio_samples.empty())
 		return true;
 	const uint64_t write =
 		m_audio_write_position.load(std::memory_order_acquire);
@@ -876,7 +817,7 @@ bool AVDecoderFFMPEG::audio_can_accept_packet() const
 
 int AVDecoderFFMPEG::read_audio(float* output, int sample_count)
 {
-	if (output == NULL || sample_count <= 0)
+	if (output == nullptr || sample_count <= 0)
 		return 0;
 
 	const uint64_t read =
@@ -906,11 +847,6 @@ void AVDecoderFFMPEG::flush_audio()
 		m_audio_write_position.load(std::memory_order_acquire);
 	m_audio_read_position.store(write, std::memory_order_release);
 }
-
-
-// --------------------------------------------------------------------------
-//
-// --------------------------------------------------------------------------
 bool AVDecoderFFMPEG::decode_video_frame()
 {
 	auto receive_available_frames = [this]()
@@ -993,20 +929,10 @@ bool AVDecoderFFMPEG::decode_video_frame()
 
 	return receive_available_frames();
 }
-
-
-// --------------------------------------------------------------------------
-//
-// --------------------------------------------------------------------------
 void AVDecoderFFMPEG::clean_frame_data()
 {
 	free_front_frame();
 }
-
-
-// --------------------------------------------------------------------------
-//
-// --------------------------------------------------------------------------
 void AVDecoderFFMPEG::free_front_frame()
 {
 	m_video_frames.access([&](auto& frames)
@@ -1018,35 +944,20 @@ void AVDecoderFFMPEG::free_front_frame()
 		}
 	});
 }
-
-
-// --------------------------------------------------------------------------
 // Delete all data in the buffers
-// --------------------------------------------------------------------------
 void AVDecoderFFMPEG::flush_buffers()
 {
-	//
 	LOG(" AVDecoderFFMPEG::flush_buffers - start");
 
-	//
 	//std::lock_guard<std::mutex> lock(m_video_mutex);
 
-	//
 	m_video_frames.clear([](FrameData& frame)
 	{
 		av_frame_free(&frame.data);
 	});
 
-	//
 	LOG(" AVDecoderFFMPEG::flush_buffers - end");
 }
-
-
-
-
-// --------------------------------------------------------------------------
-//
-// --------------------------------------------------------------------------
 bool AVDecoderFFMPEG::seek(double time)
 {
 	//Check decoder is init
@@ -1103,7 +1014,7 @@ bool AVDecoderFFMPEG::perform_seek(double time)
 	}
 
 	avcodec_flush_buffers(m_video_codec_ctx);
-	if (m_audio_codec_ctx != NULL)
+	if (m_audio_codec_ctx != nullptr)
 	{
 		avcodec_flush_buffers(m_audio_codec_ctx);
 		swr_close(m_audio_resampler);
@@ -1129,7 +1040,6 @@ bool AVDecoderFFMPEG::perform_seek(double time)
 	m_last_geometry_packet_time = -1.0;
 	m_decoder_state = DECODING;
 
-	//
 	return true;
 }
 
@@ -1137,11 +1047,6 @@ std::uint64_t AVDecoderFFMPEG::playback_generation() const
 {
 	return m_playback_generation.load(std::memory_order_acquire);
 }
-
-
-// --------------------------------------------------------------------------
-// 
-// --------------------------------------------------------------------------
 openvolumetric::FrameMatchResult AVDecoderFFMPEG::get_video_data(
 	double presentation_time,
 	double tolerance,
@@ -1151,9 +1056,9 @@ openvolumetric::FrameMatchResult AVDecoderFFMPEG::get_video_data(
 	uint8_t** outputV)
 {
 //	LOG("DecoderFFMPEG::get_video_data - start");
-	*outputY = NULL;
-	*outputU = NULL;
-	*outputV = NULL;
+	*outputY = nullptr;
+	*outputU = nullptr;
+	*outputV = nullptr;
 	if (!m_initialised)
 	{
 		LOG("DecoderFFMPEG::get_video_data - decoder not initialized");
@@ -1176,7 +1081,7 @@ openvolumetric::FrameMatchResult AVDecoderFFMPEG::get_video_data(
 	});
 
 	// Check that frame has managed to be assigned 
-	if (frame == NULL)
+	if (frame == nullptr)
 	{
 		if (m_video_frames.state() == openvolumetric::QueueState::Error)
 			LOG("DecoderFFMPEG::get_video_data - %s",
@@ -1196,7 +1101,6 @@ openvolumetric::FrameMatchResult AVDecoderFFMPEG::get_video_data(
 	*outputU = frame->data[1];
 	*outputV = frame->data[2];
 
-	//
 	int64_t timeStamp				= frame->best_effort_timestamp;
 	double timeInSec				= av_q2d(m_video_stream->time_base) * timeStamp;
 	this->m_video_info.last_time	= timeInSec;
@@ -1204,7 +1108,6 @@ openvolumetric::FrameMatchResult AVDecoderFFMPEG::get_video_data(
 
 //	LOG("DecoderFFMPEG::get_video_data - time in sec(s): %f", timeInSec);
 
-	//
 	return openvolumetric::FrameMatchResult::Ready;
 }
 

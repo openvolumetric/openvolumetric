@@ -30,25 +30,20 @@ public:
 	void destroy() override;
 
 private:
+	/// Borrowed D3D11 device supplied by Unity.
+	ID3D11Device* m_device = nullptr;
 
-	//
-	ID3D11Device* mD3D11Device;
+	/// Source-plane dimensions and tightly packed byte counts.
+	unsigned int m_width_y = 0;
+	unsigned int m_height_y = 0;
+	unsigned int m_length_y = 0;
+	unsigned int m_width_uv = 0;
+	unsigned int m_height_uv = 0;
+	unsigned int m_length_uv = 0;
 
-	//
-	unsigned int mWidthY;
-	unsigned int mHeightY;
-	unsigned int mLengthY;
-
-	//
-	unsigned int mWidthUV;
-	unsigned int mHeightUV;
-	unsigned int mLengthUV;
-
-	//
-	ID3D11Texture2D* mTextures[TEXTURE_NUM];
-	ID3D11ShaderResourceView* mShaderResourceView[TEXTURE_NUM];
-
-
+	/// Plugin-owned textures and views released by destroy().
+	ID3D11Texture2D* m_textures[TEXTURE_NUM]{};
+	ID3D11ShaderResourceView* m_shader_resource_views[TEXTURE_NUM]{};
 };
 
 } // namespace openvolumetric::unity

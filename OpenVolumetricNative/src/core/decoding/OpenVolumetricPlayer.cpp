@@ -19,6 +19,8 @@ public:
 	std::uint64_t generation = 0;
 	bool open = false;
 	bool started = false;
+	bool has_pending_video = false;
+	double pending_video_time = 0.0;
 };
 
 OpenVolumetricPlayer::OpenVolumetricPlayer() : m_impl(std::make_unique<Impl>())
@@ -47,6 +49,7 @@ bool OpenVolumetricPlayer::open(const char* path)
 	if (!m_impl->geometry.init())
 	{
 		m_impl->error = m_impl->geometry.get_last_error();
+		m_impl->geometry.destroy();
 		m_impl->media.destroy();
 		return false;
 	}
@@ -76,6 +79,7 @@ bool OpenVolumetricPlayer::start()
 		!m_impl->geometry.start_decoding())
 	{
 		m_impl->error = "OpenVolumetric decoder workers could not start.";
+		m_impl->geometry.stop_decoding();
 		m_impl->media.stop_decoding();
 		return false;
 	}
@@ -97,14 +101,15 @@ void OpenVolumetricPlayer::close()
 	if (!m_impl)
 		return;
 	stop();
-	if (m_impl->open)
-	{
-		m_impl->geometry.destroy();
-		m_impl->media.destroy();
-	}
+	// Both destroy methods are deliberately idempotent so partial open and
+	// startup failures follow the same rollback path as normal shutdown.
+	m_impl->geometry.destroy();
+	m_impl->media.destroy();
 	m_impl->open = false;
 	m_impl->info = {};
 	m_impl->generation = 0;
+	m_impl->has_pending_video = false;
+	m_impl->pending_video_time = 0.0;
 }
 
 bool OpenVolumetricPlayer::seek(double time)
@@ -118,6 +123,7 @@ bool OpenVolumetricPlayer::seek(double time)
 	}
 	m_impl->generation = m_impl->media.playback_generation();
 	m_impl->geometry.reset(m_impl->generation);
+	m_impl->has_pending_video = false;
 	return true;
 }
 
@@ -171,10 +177,18 @@ FrameMatchResult OpenVolumetricPlayer::presentation(
 	std::uint8_t* u = nullptr;
 	std::uint8_t* v = nullptr;
 	double video_time = 0.0;
+	const double video_target = m_impl->has_pending_video
+		? m_impl->pending_video_time
+		: requested_time;
 	const FrameMatchResult video_result = m_impl->media.get_video_data(
-		requested_time, tolerance, video_time, &y, &u, &v);
+		video_target, tolerance, video_time, &y, &u, &v);
 	if (video_result != FrameMatchResult::Ready)
 		return video_result;
+	if (!m_impl->has_pending_video)
+	{
+		m_impl->has_pending_video = true;
+		m_impl->pending_video_time = video_time;
+	}
 
 	Mesh mesh;
 	double geometry_time = 0.0;
@@ -182,7 +196,10 @@ FrameMatchResult OpenVolumetricPlayer::presentation(
 		m_impl->geometry.get_mesh_data(
 			video_time, tolerance, geometry_time, mesh);
 	if (geometry_result == FrameMatchResult::Missing)
+	{
 		static_cast<IAVDecoder&>(m_impl->media).clean_frame_data();
+		m_impl->has_pending_video = false;
+	}
 	if (geometry_result != FrameMatchResult::Ready)
 		return geometry_result;
 
@@ -197,6 +214,7 @@ FrameMatchResult OpenVolumetricPlayer::presentation(
 
 	static_cast<IAVDecoder&>(m_impl->media).clean_frame_data();
 	m_impl->geometry.clear_frame_data();
+	m_impl->has_pending_video = false;
 	output = std::move(candidate);
 	return FrameMatchResult::Ready;
 }

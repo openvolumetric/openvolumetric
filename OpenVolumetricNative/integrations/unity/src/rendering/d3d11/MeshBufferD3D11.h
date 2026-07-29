@@ -9,7 +9,7 @@ namespace openvolumetric::unity
 {
 
 /// Copies decoded meshes into Unity-owned D3D11 buffers.
-class MeshBufferD3D11: public IMeshBuffer
+class MeshBufferD3D11 : public IMeshBuffer
 {
 public:
 	/// Constructs an unattached uploader.
@@ -19,7 +19,12 @@ public:
 	~MeshBufferD3D11() override;
 
 	/// Retains the D3D11 device and validates Unity buffer capacity/stride.
-	bool init(void* handler, void* index_buffer_handle, int index_buffer_size, void* vertex_buffer_handle, int vertex_buffer_size) override;
+	bool init(
+		void* handler,
+		void* index_buffer_handle,
+		int index_buffer_size,
+		void* vertex_buffer_handle,
+		int vertex_buffer_size) override;
 
 	/// Updates both destination buffers with one decoded mesh.
 	bool update(Mesh* mesh) override;
@@ -29,33 +34,22 @@ public:
 
 protected:
 	/// Returns the D3D11 byte width of a Unity buffer handle.
-	int get_buffer_size(void* bufferHandle);
-
-	/// Derives per-element stride from buffer byte width and element count.
-	int compute_stride(void* bufferHandle, int count);
-
+	int get_buffer_size(void* buffer_handle);
 
 private:
+	/// Borrowed device and Unity-owned buffers. Unity guarantees their lifetime
+	/// from registration until plugin teardown.
+	ID3D11Device* m_device = nullptr;
+	ID3D11Buffer* m_index_buffer_handle = nullptr;
+	ID3D11Buffer* m_vertex_buffer_handle = nullptr;
 
-	//----------------------------------
-	// Device
-	//----------------------------------
-	ID3D11Device* m_D3D11Device; 
+	/// Element capacities supplied by the managed mesh allocation.
+	int m_index_buffer_size = 0;
+	int m_vertex_buffer_size = 0;
 
-	//----------------------------------
-	// index information
-	//----------------------------------
-	ID3D11Buffer* m_index_buffer_handle;
-	int m_index_buffer_size;
-	int m_index_stride;
-
-	//----------------------------------
-	// Vertex information
-	//----------------------------------
-	ID3D11Buffer* m_vertex_buffer_handle;
-	int m_vertex_buffer_size;
-	int m_vertex_stride;
-
+	/// Byte distance between adjacent elements in the Unity buffers.
+	int m_index_stride = 0;
+	int m_vertex_stride = 0;
 };
 
 } // namespace openvolumetric::unity

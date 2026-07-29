@@ -6,11 +6,9 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
-#include <iomanip>
 #include <iterator>
 #include <limits>
 #include <map>
-#include <sstream>
 #include <tuple>
 #include <type_traits>
 
@@ -73,19 +71,13 @@ std::uint64_t calculate_topology_id(const CanonicalMesh& mesh)
 }
 
 bool validate_options(
-	const TopologyAnalysisOptions& options,
+	const TopologyOptions& options,
 	std::string& error)
 {
 	if (options.uv_quantization_bits < 0 ||
 		options.uv_quantization_bits > 30)
 	{
 		error = "UV topology quantization must be between 0 and 30 bits.";
-		return false;
-	}
-	if (options.position_quantization_bits < 1 ||
-		options.position_quantization_bits > 30)
-	{
-		error = "Position estimate quantization must be between 1 and 30 bits.";
 		return false;
 	}
 	return true;
@@ -137,22 +129,11 @@ bool read_obj(
 	return true;
 }
 
-std::uint64_t packed_position_bytes(
-	std::size_t vertex_count,
-	int bits_per_component)
-{
-	const std::uint64_t component_count =
-		static_cast<std::uint64_t>(vertex_count) * 3;
-	const std::uint64_t bit_count =
-		component_count * static_cast<std::uint64_t>(bits_per_component);
-	return (bit_count + 7) / 8;
-}
-
 } // namespace
 
 bool load_canonical_obj(
 	const std::filesystem::path& input_path,
-	const TopologyAnalysisOptions& options,
+	const TopologyOptions& options,
 	CanonicalMesh& output,
 	std::string& error)
 {
@@ -301,104 +282,6 @@ bool topology_matches(
 		left.has_normals == right.has_normals &&
 		left.triangle_indices == right.triangle_indices &&
 		left.quantized_uvs == right.quantized_uvs;
-}
-
-bool analyze_obj_sequence(
-	const std::vector<std::filesystem::path>& input_paths,
-	const TopologyAnalysisOptions& options,
-	TopologyAnalysisReport& report,
-	std::string& error)
-{
-	error.clear();
-	report = {};
-	if (!validate_options(options, error))
-		return false;
-	if (input_paths.empty())
-	{
-		error = "At least one OBJ is required for topology analysis.";
-		return false;
-	}
-
-	CanonicalMesh run_topology;
-	for (std::size_t frame = 0; frame < input_paths.size(); ++frame)
-	{
-		CanonicalMesh mesh;
-		if (!load_canonical_obj(input_paths[frame], options, mesh, error))
-			return false;
-
-		const std::uint64_t full_position_bytes =
-			static_cast<std::uint64_t>(mesh.vertex_count()) *
-			3 * sizeof(float);
-		const std::uint64_t reused_position_bytes =
-			packed_position_bytes(
-				mesh.vertex_count(),
-				options.position_quantization_bits);
-		report.independent_position_bytes += full_position_bytes;
-
-		if (report.runs.empty() ||
-			!topology_matches(run_topology, mesh))
-		{
-			run_topology = mesh;
-			TopologyRun run;
-			run.first_frame = frame;
-			run.frame_count = 1;
-			run.topology_id = mesh.topology_id;
-			run.vertex_count = mesh.vertex_count();
-			run.triangle_count = mesh.triangle_count();
-			run.independent_position_bytes = full_position_bytes;
-
-			// A new topology begins with a complete position keyframe.
-			run.estimated_reused_position_bytes = full_position_bytes;
-			report.runs.push_back(run);
-		}
-		else
-		{
-			TopologyRun& run = report.runs.back();
-			++run.frame_count;
-			run.independent_position_bytes += full_position_bytes;
-			run.estimated_reused_position_bytes += reused_position_bytes;
-			++report.reusable_frame_count;
-		}
-	}
-
-	report.frame_count = input_paths.size();
-	for (const TopologyRun& run : report.runs)
-	{
-		report.estimated_reused_position_bytes +=
-			run.estimated_reused_position_bytes;
-	}
-	return true;
-}
-
-std::string format_topology_analysis(const TopologyAnalysisReport& report)
-{
-	std::ostringstream output;
-	output << "Topology analysis: " << report.frame_count << " frames, "
-		<< report.runs.size() << " runs, "
-		<< report.reusable_frame_count << " reusable frames";
-	if (report.independent_position_bytes > 0)
-	{
-		const double ratio =
-			static_cast<double>(report.estimated_reused_position_bytes) /
-			static_cast<double>(report.independent_position_bytes);
-		output << ", estimated position payload "
-			<< report.estimated_reused_position_bytes << "/"
-			<< report.independent_position_bytes << " bytes ("
-			<< std::fixed << std::setprecision(1)
-			<< ratio * 100.0 << "%)";
-	}
-
-	for (const TopologyRun& run : report.runs)
-	{
-		output << "\n  frames " << run.first_frame << "-"
-			<< run.first_frame + run.frame_count - 1
-			<< ": " << run.frame_count << " frame(s), topology 0x"
-			<< std::hex << std::setw(16) << std::setfill('0')
-			<< run.topology_id << std::dec << std::setfill(' ')
-			<< ", " << run.vertex_count << " vertices, "
-			<< run.triangle_count << " triangles";
-	}
-	return output.str();
 }
 
 } // namespace openvolumetric::authoring

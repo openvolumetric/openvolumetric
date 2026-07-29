@@ -4,7 +4,6 @@
 #include <d3d11.h>
 #endif
 
-// Unity Interface
 #include <Unity/IUnityInterface.h>
 #include <Unity/IUnityGraphics.h>
 #if defined(_WIN32)
@@ -16,125 +15,89 @@
 #include <Unity/IUnityGraphicsVulkan.h>
 #endif
 
-// STL + C
-#include <assert.h>
-#include <list>
-#include <iostream>
+#include <memory>
+#include <mutex>
+#include <shared_mutex>
 #include <string>
+#include <unordered_map>
 
-//
 #if defined(_WIN32)
-#include <VolumetricVideoD3D11.h>
+#include <MeshBufferD3D11.h>
+#include <TextureD3D11.h>
 #elif defined(__APPLE__)
-#include <VolumetricVideoMetal.h>
+#include <MeshBufferMetal.h>
+#include <TextureMetal.h>
 #elif defined(__ANDROID__)
-#include <VolumetricVideoVulkan.h>
+#include <MeshBufferVulkan.h>
+#include <TextureVulkan.h>
 #endif
-#include <IVolumetricVideo.h>
+#include "UnityOpenVolumetricPlayer.h"
 #include <Logger.h>
 
-using openvolumetric::IVolumetricVideo;
-using openvolumetric::IAVDecoder;
 using openvolumetric::Logger;
+using openvolumetric::unity::UnityOpenVolumetricPlayer;
 #if defined(_WIN32)
-using openvolumetric::unity::VolumetricVideoD3D11;
+using openvolumetric::unity::MeshBufferD3D11;
+using openvolumetric::unity::TextureD3D11;
 #elif defined(__APPLE__)
-using openvolumetric::unity::VolumetricVideoMetal;
+using openvolumetric::unity::MeshBufferMetal;
+using openvolumetric::unity::TextureMetal;
 #elif defined(__ANDROID__)
-using openvolumetric::unity::VolumetricVideoVulkan;
+using openvolumetric::unity::MeshBufferVulkan;
+using openvolumetric::unity::TextureVulkan;
 #endif
-
-// --------------------------------------------------------------------------
-// Unity functions
-// --------------------------------------------------------------------------
-
-// --------------------------------------------------------------------------
-// Global variables for managing plugin instances
-//
-std::list<IVolumetricVideo*> vv_instances;
-typedef std::list<IVolumetricVideo*>::iterator VolumetricVideo_iter;
-
-// --------------------------------------------------------------------------
-// Function to manage the instances
-//
-bool get_vv_instance(int id, VolumetricVideo_iter* iter)
+namespace
 {
-	for (VolumetricVideo_iter it = vv_instances.begin(); it != vv_instances.end(); it++)
+/// Owns all live Unity players. Normal API/render calls retain a shared lock
+/// for the complete operation; destruction takes the exclusive lock, so a
+/// queued render event cannot use an instance while it is being deleted.
+std::unordered_map<int, std::unique_ptr<UnityOpenVolumetricPlayer>> g_instances;
+std::shared_mutex g_instances_mutex;
+
+class InstanceAccess
+{
+public:
+	explicit InstanceAccess(int id)
+		: m_lock(g_instances_mutex)
 	{
-		if ((*it)->get_id() == id)
-		{
-			*iter = it;
-			return true;
-		}
+		const auto iterator = g_instances.find(id);
+		if (iterator != g_instances.end())
+			m_instance = iterator->second.get();
 	}
 
-	// Cant find an instace
-	return false;
-}
+	explicit operator bool() const { return m_instance != nullptr; }
+	UnityOpenVolumetricPlayer* operator->() const { return m_instance; }
 
-
-// --------------------------------------------------------------------------
-// UnitySetInterface Functions
-// --------------------------------------------------------------------------
-
-
-// --------------------------------------------------------------------------
-//
-//
+private:
+	std::shared_lock<std::shared_mutex> m_lock;
+	UnityOpenVolumetricPlayer* m_instance = nullptr;
+};
+} // namespace
 static void UNITY_INTERFACE_API OnGraphicsDeviceEvent(UnityGfxDeviceEventType eventType);
-
-// --------------------------------------------------------------------------
-//
-//
-static IUnityInterfaces* s_UnityInterfaces = NULL;
-
-// --------------------------------------------------------------------------
-//
-//
-static IUnityGraphics* s_Graphics = NULL;
-
-// --------------------------------------------------------------------------
-//
-//
+static IUnityInterfaces* g_unity_interfaces = nullptr;
+static IUnityGraphics* g_unity_graphics = nullptr;
 extern "C" void	UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API UnityPluginLoad(IUnityInterfaces * unityInterfaces)
 {
-	s_UnityInterfaces	= unityInterfaces;
-	s_Graphics			= s_UnityInterfaces->Get<IUnityGraphics>();
-	s_Graphics->RegisterDeviceEventCallback(OnGraphicsDeviceEvent);
+	g_unity_interfaces	= unityInterfaces;
+	g_unity_graphics			= g_unity_interfaces->Get<IUnityGraphics>();
+	g_unity_graphics->RegisterDeviceEventCallback(OnGraphicsDeviceEvent);
 
-	// Run OnGraphicsDeviceEvent(initialize) manually on plugin load
+	// Unity does not guarantee a separate initialize notification after load.
 	OnGraphicsDeviceEvent(kUnityGfxDeviceEventInitialize);
 }
-
-// --------------------------------------------------------------------------
-//
-//
 extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API UnityPluginUnload()
 {
-	s_Graphics->UnregisterDeviceEventCallback(OnGraphicsDeviceEvent);
+	g_unity_graphics->UnregisterDeviceEventCallback(OnGraphicsDeviceEvent);
 }
-
-// --------------------------------------------------------------------------
-// GraphicsDeviceEvent
-//
-static UnityGfxRenderer s_DeviceType = kUnityGfxRendererNull;
-
-// --------------------------------------------------------------------------
-//
-//
-static void* g_GraphicsDevice = NULL;
-
-
-// --------------------------------------------------------------------------
-//
-//
+static UnityGfxRenderer g_device_type = kUnityGfxRendererNull;
+static void* g_graphics_device = nullptr;
 #if defined(_WIN32)
 static void DoEventGraphicsDeviceD3D11(UnityGfxDeviceEventType eventType)
 {
 	if (eventType == kUnityGfxDeviceEventInitialize)
 	{
-		IUnityGraphicsD3D11* d3d11 = s_UnityInterfaces->Get<IUnityGraphicsD3D11>();
-		g_GraphicsDevice = d3d11->GetDevice();
+		IUnityGraphicsD3D11* d3d11 = g_unity_interfaces->Get<IUnityGraphicsD3D11>();
+		g_graphics_device = d3d11->GetDevice();
 	}
 }
 #elif defined(__APPLE__)
@@ -142,8 +105,8 @@ static void DoEventGraphicsDeviceMetal(UnityGfxDeviceEventType eventType)
 {
 	if (eventType == kUnityGfxDeviceEventInitialize)
 	{
-		IUnityGraphicsMetal* metal = s_UnityInterfaces->Get<IUnityGraphicsMetal>();
-		g_GraphicsDevice = metal;
+		IUnityGraphicsMetal* metal = g_unity_interfaces->Get<IUnityGraphicsMetal>();
+		g_graphics_device = metal;
 	}
 }
 #elif defined(__ANDROID__)
@@ -151,32 +114,26 @@ static void DoEventGraphicsDeviceVulkan(UnityGfxDeviceEventType eventType)
 {
 	if (eventType == kUnityGfxDeviceEventInitialize)
 	{
-		g_GraphicsDevice =
-			s_UnityInterfaces->Get<IUnityGraphicsVulkan>();
+		g_graphics_device =
+			g_unity_interfaces->Get<IUnityGraphicsVulkan>();
 	}
 }
 #endif
-
-// --------------------------------------------------------------------------
-//
-//
 static void UNITY_INTERFACE_API OnGraphicsDeviceEvent(UnityGfxDeviceEventType eventType)
 {
-	//
-	UnityGfxRenderer currentDeviceType = s_DeviceType;
+	UnityGfxRenderer currentDeviceType = g_device_type;
 	
-	//
 	switch (eventType)
 	{
 		case kUnityGfxDeviceEventInitialize:
 		{
-			s_DeviceType = s_Graphics->GetRenderer();
-			currentDeviceType = s_DeviceType;
+			g_device_type = g_unity_graphics->GetRenderer();
+			currentDeviceType = g_device_type;
 			break;
 		}
 
 		case kUnityGfxDeviceEventShutdown:
-			s_DeviceType = kUnityGfxRendererNull;
+			g_device_type = kUnityGfxRendererNull;
 			break;
 
 		case kUnityGfxDeviceEventBeforeReset:
@@ -206,389 +163,276 @@ static void UNITY_INTERFACE_API OnGraphicsDeviceEvent(UnityGfxDeviceEventType ev
 	}
 
 	if (eventType == kUnityGfxDeviceEventShutdown)
-		g_GraphicsDevice = NULL;
+		g_graphics_device = nullptr;
 }
-
-
-
-// --------------------------------------------------------------------------
-// OnRenderEvent
-// This will be called for GL.IssuePluginEvent script calls; eventID will
-// be the integer passed to IssuePluginEvent. In this example, we just ignore
-// that value.
-//
+/// Unity invokes this on its render thread for GL.IssuePluginEvent. The event
+/// identifier selects the player whose complete presentation is uploaded.
 static void UNITY_INTERFACE_API OnRenderEvent(int eventID)
 {
-	// Unknown / unsupported graphics device type? Do nothing
-	if (s_DeviceType == kUnityGfxRendererNull)
+	if (g_device_type == kUnityGfxRendererNull)
 		return;
 
-	//
-	VolumetricVideo_iter iter;
-	if (!get_vv_instance(eventID, &iter))
+	InstanceAccess instance(eventID);
+	if (!instance)
 	{
-		LOG("openvolumetric_quit - cant find instance id: %d", eventID);
+		LOG("openvolumetric_quit - cannot find instance id: %d", eventID);
 		return;
 	}
 
-	//
-	(*iter)->render();
+	instance->render();
 }
-
-
-
-// --------------------------------------------------------------------------
-// GetRenderEventFunc, an example function we export which is used to get a rendering event callback function.
-//
+/// Returns the render-thread callback consumed by GL.IssuePluginEvent.
 extern "C" UnityRenderingEvent UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API GetRenderEventFunc()
 {
 	return OnRenderEvent;
 }
-
-
-// --------------------------------------------------------------------------
-// General functions
-// --------------------------------------------------------------------------
-
-
-
-// --------------------------------------------------------------------------
-// Open external console to see c++ debug  info
-//
 OPENVOLUMETRIC_API void	openvolumetric_open_external_console()
 {
 	Logger::instance()->open_external_console();
 }
-
-// --------------------------------------------------------------------------
-// Close external console to see c++ debug  info
-//
 OPENVOLUMETRIC_API void	openvolumetric_close_external_console()
 {
 	Logger::instance()->close_external_console();
 }
-
-
-// --------------------------------------------------------------------------
-// openvolumetric_init - init plugin - returns instance id to access other functions
-//
-OPENVOLUMETRIC_API int openvolumetric_init(int& ID)
+/// Creates one player and returns its registry identifier through `id`.
+OPENVOLUMETRIC_API int openvolumetric_init(int& id)
 {
 	LOG("openvolumetric_init - start");
 
-	// get instance id
-	ID = 0;
-	VolumetricVideo_iter iter;
-	while (get_vv_instance(ID, &iter))
-	{
-		ID++;
-	}
+	std::unique_lock<std::shared_mutex> lock(g_instances_mutex);
+	id = 0;
+	while (g_instances.find(id) != g_instances.end())
+		++id;
 	
-	// Report Instance ID
-	LOG("openvolumetric_init - id: %d", ID);
+	LOG("openvolumetric_init - id: %d", id);
 
-	IVolumetricVideo* vv = NULL;
+	std::unique_ptr<UnityOpenVolumetricPlayer> instance;
 #if defined(_WIN32)
-	if (s_DeviceType == kUnityGfxRendererD3D11)
-		vv = new VolumetricVideoD3D11(ID);
+	if (g_device_type == kUnityGfxRendererD3D11)
+		instance = std::make_unique<UnityOpenVolumetricPlayer>(
+			id,
+			std::make_unique<TextureD3D11>(),
+			std::make_unique<MeshBufferD3D11>());
 #elif defined(__APPLE__)
-	if (s_DeviceType == kUnityGfxRendererMetal)
-		vv = new VolumetricVideoMetal(ID);
+	if (g_device_type == kUnityGfxRendererMetal)
+		instance = std::make_unique<UnityOpenVolumetricPlayer>(
+			id,
+			std::make_unique<TextureMetal>(),
+			std::make_unique<MeshBufferMetal>());
 #elif defined(__ANDROID__)
-	if (s_DeviceType == kUnityGfxRendererVulkan)
-		vv = new VolumetricVideoVulkan(ID);
+	if (g_device_type == kUnityGfxRendererVulkan)
+		instance = std::make_unique<UnityOpenVolumetricPlayer>(
+			id,
+			std::make_unique<TextureVulkan>(),
+			std::make_unique<MeshBufferVulkan>());
 #endif
-	if (vv == NULL || g_GraphicsDevice == NULL)
+	if (!instance || g_graphics_device == nullptr)
 	{
-		delete vv;
-		LOG("openvolumetric_init - unsupported or unavailable graphics device: %d", s_DeviceType);
+		LOG("openvolumetric_init - unsupported or unavailable graphics device: %d", g_device_type);
 		return -1;
 	}
 
-	// Add to instance list
-	vv_instances.push_back(vv);
+	g_instances.emplace(id, std::move(instance));
 
-	// Complete
 	LOG("openvolumetric_init - end");
 
-	// Done :)	
 	return 1;
 }
-
-// --------------------------------------------------------------------------
-// Quit application
-//
-OPENVOLUMETRIC_API void	openvolumetric_quit(int ID)
+OPENVOLUMETRIC_API void	openvolumetric_quit(int id)
 {
-	LOG("openvolumetric_quit - id: %d",ID);
+	LOG("openvolumetric_quit - id: %d",id);
 
-	//
-	VolumetricVideo_iter iter;
-	if (!get_vv_instance(ID, &iter))
+	std::unique_lock<std::shared_mutex> lock(g_instances_mutex);
+	const auto iterator = g_instances.find(id);
+	if (iterator == g_instances.end())
 	{
-		LOG("openvolumetric_quit - cant find instance id: %d", ID);
+		LOG("openvolumetric_quit - cannot find instance id: %d", id);
 		return;
 	}
 
-	// Destroy volumetric video decoder - free up resources
-	(*iter)->destroy();
-
-	// delete contents of pointer and erase from list
-	delete (*iter);
-	vv_instances.erase(iter);
+	g_instances.erase(iterator);
 }
 
-
-// --------------------------------------------------------------------------
-// Set presentation target from the engine playback clock.
-// --------------------------------------------------------------------------
-OPENVOLUMETRIC_API void openvolumetric_set_time(int ID, double time)
+OPENVOLUMETRIC_API void openvolumetric_set_time(int id, double time)
 {
-	VolumetricVideo_iter iter;
-	if (!get_vv_instance(ID, &iter))
+	InstanceAccess instance(id);
+	if (!instance)
 	{
-		LOG("openvolumetric_set_time - cant find instance id: %d", ID);
+		LOG("openvolumetric_set_time - cannot find instance id: %d", id);
 		return;
 	}
 
-	(*iter)->set_presentation_time(time);
+	instance->set_presentation_time(time);
+}
+OPENVOLUMETRIC_API int	openvolumetric_start_decoding(int id)
+{
+	LOG("openvolumetric_start_decoding - id: %d", id);
+
+	InstanceAccess instance(id);
+	if (!instance)
+	{
+		LOG("openvolumetric_start_decoding - cannot find instance id: %d", id);
+		return -1;
+	}
+
+	return instance->start() ? 1 : -1;
 }
 
-
-
-
-// --------------------------------------------------------------------------
-// Decoder functions
-// --------------------------------------------------------------------------
-
-// --------------------------------------------------------------------------
-// Start decoder 
-// --------------------------------------------------------------------------
-
-OPENVOLUMETRIC_API int	openvolumetric_start_decoding(int ID)
+OPENVOLUMETRIC_API int	openvolumetric_stop_decoding(int id)
 {
-	LOG("openvolumetric_start_decoding - id: %d", ID);
+	LOG("openvolumetric_stop_decoding - id: %d", id);
 
-	//
-	VolumetricVideo_iter iter;
-	if (!get_vv_instance(ID, &iter))
+	InstanceAccess instance(id);
+	if (!instance)
 	{
-		LOG("openvolumetric_start_decoding - cant find instance id: %d", ID);
+		LOG("openvolumetric_stop_decoding - cannot find instance id: %d", id);
 		return -1;
 	}
 
-	// Start decoding
-	return (*iter)->start();
-}
-
-// --------------------------------------------------------------------------
-// Stop decoder 
-//
-OPENVOLUMETRIC_API int	openvolumetric_stop_decoding(int ID)
-{
-	LOG("openvolumetric_stop_decoding - id: %d", ID);
-
-	//
-	VolumetricVideo_iter iter;
-	if (!get_vv_instance(ID, &iter))
-	{
-		LOG("openvolumetric_stop_decoding - cant find instance id: %d", ID);
-		return -1;
-	}
-
-	// Stop decoding
-	return (*iter)->stop();
+	return instance->stop() ? 1 : -1;
 
 }
-
-
-// --------------------------------------------------------------------------
-// Set Frame to display
-//
-OPENVOLUMETRIC_API int	openvolumetric_seek(int ID, double time)
+OPENVOLUMETRIC_API int	openvolumetric_seek(int id, double time)
 {
-	LOG("openvolumetric_seek - id: %d - time: %f", ID, time);
+	LOG("openvolumetric_seek - id: %d - time: %f", id, time);
 
-	//
-	VolumetricVideo_iter iter;
-	if (!get_vv_instance(ID, &iter))
+	InstanceAccess instance(id);
+	if (!instance)
 	{
-		LOG("openvolumetric_seek - cant find instance id: %d", ID);
+		LOG("openvolumetric_seek - cannot find instance id: %d", id);
 		return -1;
 	}
 
-	//
-	return (*iter)->seek(time);
+	return instance->seek(time) ? 1 : -1;
 }
-
-
-
-// --------------------------------------------------------------------------
-// Video functions
-// --------------------------------------------------------------------------
-
-
-// --------------------------------------------------------------------------
-// Load Video Resources
-//
-OPENVOLUMETRIC_API int	openvolumetric_load_video(int ID, const char* filepath)
+OPENVOLUMETRIC_API int	openvolumetric_load_video(int id, const char* filepath)
 {
-	LOG("openvolumetric_load_video - id: %d", ID);
+	LOG("openvolumetric_load_video - id: %d", id);
 
-	// Get Instance
-	VolumetricVideo_iter iter;
-	if (!get_vv_instance(ID, &iter))
+	InstanceAccess instance(id);
+	if (!instance)
 	{
-		LOG("openvolumetric_load_video - cant find instance id: %d", ID);
-		return -1;
-	}
-
-	// Set Video
-	if (!(*iter)->get_avdecoder_ptr()->init(filepath))
-	{
-		// Error loading video
-		return -1;
-	}
-	if (!(*iter)->get_avdecoder_ptr()->has_embedded_geometry())
-	{
-		LOG("openvolumetric_load_video - MP4 has no vvge geometry stream");
-		return -1;
-	}
-	if (!(*iter)->get_geometrydecoder_ptr()->init())
-	{
-		LOG("openvolumetric_load_video - failed to initialise embedded geometry");
+		LOG("openvolumetric_load_video - cannot find instance id: %d", id);
 		return -1;
 	}
 
-	//
+	if (!instance->open(filepath))
+		return -1;
+
 	return 1;
 }
 
-OPENVOLUMETRIC_API const char* openvolumetric_get_last_error(int ID)
+OPENVOLUMETRIC_API const char* openvolumetric_get_last_error(int id)
 {
 	static thread_local std::string error;
-	VolumetricVideo_iter iter;
-	if (!get_vv_instance(ID, &iter))
+	InstanceAccess instance(id);
+	if (!instance)
 	{
 		error = "Volumetric video instance was not found.";
 		return error.c_str();
 	}
-	error = (*iter)->get_avdecoder_ptr()->get_last_error();
-	if (error.empty())
-		error = (*iter)->get_geometrydecoder_ptr()->get_last_error();
+	error = instance->error();
 	return error.c_str();
 }
 
-OPENVOLUMETRIC_API double openvolumetric_get_last_presented_time(int ID)
+OPENVOLUMETRIC_API double openvolumetric_get_last_presented_time(int id)
 {
-	VolumetricVideo_iter iter;
-	if (!get_vv_instance(ID, &iter))
+	InstanceAccess instance(id);
+	if (!instance)
 		return -1.0;
-	return (*iter)->get_last_presented_time();
+	return instance->last_presented_time();
 }
-
-
-// --------------------------------------------------------------------------
-// Load Video Resources
-//
-OPENVOLUMETRIC_API int	openvolumetric_get_video_details(int ID, int& width, int& height, double& fps, double& duration)
+OPENVOLUMETRIC_API int	openvolumetric_get_video_details(int id, int& width, int& height, double& fps, double& duration)
 {
-	LOG("openvolumetric_get_video_details - id: %d", ID);
+	LOG("openvolumetric_get_video_details - id: %d", id);
 
-	// Get Instance
-	VolumetricVideo_iter iter;
-	if (!get_vv_instance(ID, &iter))
+	InstanceAccess instance(id);
+	if (!instance)
 	{
-		LOG("openvolumetric_get_video_details - cant find instance id: %d", ID);
+		LOG("openvolumetric_get_video_details - cannot find instance id: %d", id);
 		return -1;
 	}
 
-	// Get Video properties
-	width		= (*iter)->get_avdecoder_ptr()->get_video_info().width;
-	height		= (*iter)->get_avdecoder_ptr()->get_video_info().height;
-	fps			= (*iter)->get_avdecoder_ptr()->get_video_info().fps;
-	duration	= (*iter)->get_avdecoder_ptr()->get_video_info().total_time;
+	const openvolumetric::OpenVolumetricMediaInfo& info =
+		instance->media_info();
+	width = info.width;
+	height = info.height;
+	fps = info.frame_rate;
+	duration = info.duration;
 
 	return 1;
 }
 
 OPENVOLUMETRIC_API int openvolumetric_get_audio_details(
-	int ID, int& sample_rate, int& channels)
+	int id, int& sample_rate, int& channels)
 {
-	VolumetricVideo_iter iter;
-	if (!get_vv_instance(ID, &iter))
+	InstanceAccess instance(id);
+	if (!instance)
 		return -1;
 
-	const IAVDecoder::AudioInfo info =
-		(*iter)->get_avdecoder_ptr()->get_audio_info();
-	if (!info.is_enabled)
+	const openvolumetric::OpenVolumetricMediaInfo& info =
+		instance->media_info();
+	if (!info.has_audio)
 	{
 		sample_rate = 0;
 		channels = 0;
 		return 0;
 	}
 
-	sample_rate = info.sample_rate;
-	channels = info.channels;
+	sample_rate = info.audio_sample_rate;
+	channels = info.audio_channels;
 	return 1;
 }
 
 OPENVOLUMETRIC_API int openvolumetric_read_audio(
-	int ID, float* samples, int sample_count)
+	int id, float* samples, int sample_count)
 {
-	VolumetricVideo_iter iter;
-	if (!get_vv_instance(ID, &iter) || samples == NULL || sample_count <= 0)
+	InstanceAccess instance(id);
+	if (!instance || samples == nullptr || sample_count <= 0)
 		return -1;
 
-	return (*iter)->get_avdecoder_ptr()->read_audio(samples, sample_count);
+	return instance->read_audio(samples, sample_count);
 }
-
-
-// --------------------------------------------------------------------------
-// Set unity DX11 Textures
-//
-OPENVOLUMETRIC_API int	openvolumetric_get_texture_pointers(int ID, void*& yPointer, void*& uPointer, void*& vPointer)
+OPENVOLUMETRIC_API int	openvolumetric_get_texture_pointers(int id, void*& yPointer, void*& uPointer, void*& vPointer)
 {
-	LOG("openvolumetric_set_texture_pointer - id: %d", ID);
+	LOG("openvolumetric_set_texture_pointer - id: %d", id);
 
-	// Get Instance
-	VolumetricVideo_iter iter;
-	if (!get_vv_instance(ID, &iter))
+	InstanceAccess instance(id);
+	if (!instance)
 	{
-		LOG("openvolumetric_get_texture_pointers - cant find instance id: %d", ID);
+		LOG("openvolumetric_get_texture_pointers - cannot find instance id: %d", id);
 		return -1;
 	}
 
-	// Get width and height - this info is within the class, just a sanity check
-	int width = (*iter)->get_avdecoder_ptr()->get_video_info().width;
-	int height = (*iter)->get_avdecoder_ptr()->get_video_info().height;
+	const openvolumetric::OpenVolumetricMediaInfo& info =
+		instance->media_info();
+	const int width = info.width;
+	const int height = info.height;
 	LOG("openvolumetric_set_texture_pointer - %d x %d", width, height);
 
-	// Create texture for instance 
-	int ret = (*iter)->get_texture_ptr()->init(g_GraphicsDevice, width, height);
+	const int ret =
+		instance->texture()->init(g_graphics_device, width, height);
 	if (ret == -1)
 	{
-		//
 		return -1;
 	}
 
-	// now get pointers
-	(*iter)->get_texture_ptr()->getResourcePointers(yPointer, uPointer, vPointer);
+	instance->texture()->getResourcePointers(
+		yPointer, uPointer, vPointer);
 
-	//
 	LOG("openvolumetric_set_texture_pointer - end");
 	return 1;	
 }
 
 OPENVOLUMETRIC_API int openvolumetric_register_texture_pointers(
-	int ID, void* yPointer, void* uPointer, void* vPointer)
+	int id, void* yPointer, void* uPointer, void* vPointer)
 {
-	VolumetricVideo_iter iter;
-	if (!get_vv_instance(ID, &iter) ||
-		yPointer == NULL || uPointer == NULL || vPointer == NULL)
+	InstanceAccess instance(id);
+	if (!instance ||
+		yPointer == nullptr || uPointer == nullptr || vPointer == nullptr)
 		return -1;
 
-	(*iter)->get_texture_ptr()->registerResourcePointers(
+	instance->texture()->registerResourcePointers(
 		yPointer, uPointer, vPointer);
 	return 1;
 }
@@ -596,34 +440,28 @@ OPENVOLUMETRIC_API int openvolumetric_register_texture_pointers(
 
 
 
-//-----------------------------------------------
-// Geometry Functions
-//-----------------------------------------------
-
-
-// --------------------------------------------------------------------------
-// Set native mesh pointers
-//
-OPENVOLUMETRIC_API int	openvolumetric_set_mesh_pointer(int ID, void* index_buffer_handle, int index_count, void* vertex_buffer_handle, int vertex_count)
+OPENVOLUMETRIC_API int	openvolumetric_set_mesh_pointer(int id, void* index_buffer_handle, int index_count, void* vertex_buffer_handle, int vertex_count)
 {
-	LOG("openvolumetric_set_mesh_pointer - id: %d", ID);
+	LOG("openvolumetric_set_mesh_pointer - id: %d", id);
 
-	// Get Instance
-	VolumetricVideo_iter iter;
-	if (!get_vv_instance(ID, &iter))
+	InstanceAccess instance(id);
+	if (!instance)
 	{
-		LOG("openvolumetric_get_texture_pointers - cant find instance id: %d", ID);
+		LOG("openvolumetric_get_texture_pointers - cannot find instance id: %d", id);
 		return -1;
 	}
 	
-	//
-	if (!(*iter)->get_meshbuffer()->init(g_GraphicsDevice, index_buffer_handle, index_count, vertex_buffer_handle, vertex_count))
+	if (!instance->mesh_buffer()->init(
+		g_graphics_device,
+		index_buffer_handle,
+		index_count,
+		vertex_buffer_handle,
+		vertex_count))
 	{
 		return -1;
 	}
 
 
-	//
 	return 1;
 }
  

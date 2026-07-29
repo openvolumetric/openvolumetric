@@ -1,6 +1,7 @@
 #include "OpenVolumetricEncoderWindow.h"
 
 #include "Async/Async.h"
+#include "AuthoringWorkflow.h"
 #include "DesktopPlatformModule.h"
 #include "DracoMeshEncoder.h"
 #include "Framework/Application/SlateApplication.h"
@@ -98,21 +99,28 @@ struct FAuthoringState final
 
 FEncodingSettings GetPreset(EOpenVolumetricPreset Preset)
 {
-	switch (Preset)
-	{
-	case EOpenVolumetricPreset::DesktopQuality:
-		return {
-			TEXT("libx265"), 20, 60, 3, false,
-			14, 10, 12, 5, 5};
-	case EOpenVolumetricPreset::QuestPerformance:
-		return {
-			TEXT("libx264"), 23, 30, 1, false,
-			12, 8, 10, 8, 10};
-	default:
-		return {
-			TEXT("libx265"), 25, 30, 1, true,
-			14, 10, 12, 7, 9};
-	}
+	using openvolumetric::authoring::PlatformPreset;
+	const PlatformPreset NativePreset =
+		Preset == EOpenVolumetricPreset::DesktopQuality
+			? PlatformPreset::DesktopQuality
+			: Preset == EOpenVolumetricPreset::QuestPerformance
+				? PlatformPreset::QuestPerformance
+				: PlatformPreset::QuestBalanced;
+	const openvolumetric::authoring::EncodingSettings Settings =
+		openvolumetric::authoring::preset_settings(NativePreset);
+	return {
+		Settings.codec == openvolumetric::authoring::VideoCodec::HEVC
+			? TEXT("libx265")
+			: TEXT("libx264"),
+		Settings.crf,
+		Settings.video_keyframe_interval,
+		Settings.reference_frames,
+		Settings.disable_sao,
+		Settings.position_quantization,
+		Settings.normal_quantization,
+		Settings.texture_quantization,
+		Settings.draco_encode_speed,
+		Settings.draco_decode_speed};
 }
 
 FString Quote(const FString& Value)
@@ -226,6 +234,18 @@ bool Validate(
 		return false;
 	}
 
+	openvolumetric::authoring::SourceSequenceInfo SequenceInfo;
+	std::string NativeError;
+	if (!openvolumetric::authoring::validate_source_sequences(
+		std::filesystem::path(TCHAR_TO_UTF8(*ImageDirectory)),
+		std::filesystem::path(TCHAR_TO_UTF8(*GeometryDirectory)),
+		SequenceInfo,
+		NativeError))
+	{
+		OutError = UTF8_TO_TCHAR(NativeError.c_str());
+		return false;
+	}
+
 	if (!DiscoverSequence(
 			ImageDirectory,
 			{TEXT(".png"), TEXT(".jpg"), TEXT(".jpeg"),
@@ -241,20 +261,6 @@ bool Validate(
 			OutError))
 	{
 		return false;
-	}
-	if (OutInputs.Images.Num() != OutInputs.Geometry.Num())
-	{
-		OutError = TEXT("Image and OBJ sequence lengths do not match.");
-		return false;
-	}
-	for (int32 Index = 0; Index < OutInputs.Images.Num(); ++Index)
-	{
-		if (OutInputs.Images[Index].Frame !=
-			OutInputs.Geometry[Index].Frame)
-		{
-			OutError = TEXT("Image and OBJ frame numbers must match.");
-			return false;
-		}
 	}
 	return true;
 }
@@ -576,62 +582,62 @@ public:
 							TEXT("%%0%dd%s"),
 							First.Stem.Len(),
 							*First.Extension);
-					FString Args = FString::Printf(
-						TEXT("-hide_banner -y -framerate %.8g ")
-						TEXT("-start_number %d -i %s "),
-						FPS,
-						First.Frame,
-						*Quote(Pattern));
+					openvolumetric::authoring::MediaEncodeRequest Request;
+					Request.image_pattern =
+						std::filesystem::path(TCHAR_TO_UTF8(*Pattern));
 					if (!AudioFile.IsEmpty())
+						Request.audio_path =
+							std::filesystem::path(TCHAR_TO_UTF8(*AudioFile));
+					Request.output_path =
+						std::filesystem::path(TCHAR_TO_UTF8(*MediaPath));
+					Request.frame_rate = FPS;
+					Request.first_frame = First.Frame;
+					Request.frame_count = Inputs.Images.Num();
+					Request.settings.codec =
+						Settings.Codec == TEXT("libx265")
+							? openvolumetric::authoring::VideoCodec::HEVC
+							: openvolumetric::authoring::VideoCodec::H264;
+					Request.settings.crf = Settings.Crf;
+					Request.settings.video_keyframe_interval =
+						Settings.Keyframes;
+					Request.settings.reference_frames = Settings.References;
+					Request.settings.disable_sao = Settings.bDisableSao;
+					std::vector<std::string> NativeArguments;
+					std::string ArgumentError;
+					if (!openvolumetric::authoring::build_ffmpeg_arguments(
+						Request, NativeArguments, ArgumentError))
 					{
-						Args += TEXT("-i ") + Quote(AudioFile) + TEXT(" ");
-					}
-					Args += FString::Printf(
-						TEXT("-frames:v %d -c:v %s -crf %d ")
-						TEXT("-pix_fmt yuv420p "),
-						Inputs.Images.Num(),
-						*Settings.Codec,
-						Settings.Crf);
-					if (Settings.Codec == TEXT("libx265"))
-					{
-						Args += FString::Printf(
-							TEXT("-x265-params ")
-							TEXT("\"keyint=%d:min-keyint=1:bframes=0:ref=%d%s\" "),
-							Settings.Keyframes,
-							Settings.References,
-							Settings.bDisableSao
-								? TEXT(":no-sao=1") : TEXT(""));
+						Failure = UTF8_TO_TCHAR(ArgumentError.c_str());
 					}
 					else
 					{
-						Args += FString::Printf(
-							TEXT("-preset fast -x264-params ")
-							TEXT("\"keyint=%d:min-keyint=1:bframes=0:ref=%d\" "),
-							Settings.Keyframes,
-							Settings.References);
-					}
-					Args += AudioFile.IsEmpty()
-						? TEXT("-an ")
-						: TEXT("-c:a aac -b:a 192k -af apad -shortest ");
-					Args += Quote(MediaPath);
-					Job->Append(TEXT("> ") + FFmpegPath + TEXT(" ") + Args);
+						FString Args;
+						for (const std::string& Argument : NativeArguments)
+						{
+							if (!Args.IsEmpty())
+								Args += TEXT(" ");
+							Args += Quote(UTF8_TO_TCHAR(Argument.c_str()));
+						}
+						Job->Append(
+							TEXT("> ") + FFmpegPath + TEXT(" ") + Args);
 
-					int32 ReturnCode = -1;
-					FString StdOut;
-					FString StdErr;
-					if (!FPlatformProcess::ExecProcess(
-						*FFmpegPath,
-						*Args,
-						&ReturnCode,
-						&StdOut,
-						&StdErr) ||
-						ReturnCode != 0)
-					{
-						Job->Append(StdOut);
-						Job->Append(StdErr);
-						Failure = FString::Printf(
-							TEXT("FFmpeg failed with exit code %d."),
-							ReturnCode);
+						int32 ReturnCode = -1;
+						FString StdOut;
+						FString StdErr;
+						if (!FPlatformProcess::ExecProcess(
+							*FFmpegPath,
+							*Args,
+							&ReturnCode,
+							&StdOut,
+							&StdErr) ||
+							ReturnCode != 0)
+						{
+							Job->Append(StdOut);
+							Job->Append(StdErr);
+							Failure = FString::Printf(
+								TEXT("FFmpeg failed with exit code %d."),
+								ReturnCode);
+						}
 					}
 				}
 

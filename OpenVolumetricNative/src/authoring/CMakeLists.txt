@@ -1,4 +1,5 @@
 add_library(OpenVolumetricAuthoringCore STATIC
+  AuthoringWorkflow.cpp
   DracoMeshEncoder.cpp
   DracoPointCloudEncoder.cpp
   TopologyAnalyzer.cpp

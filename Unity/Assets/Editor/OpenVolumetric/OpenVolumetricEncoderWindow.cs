@@ -70,6 +70,50 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr GetAuthoringReport();
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeEncodingSettings
+    {
+        public int Codec;
+        public int Crf;
+        public int VideoKeyframeInterval;
+        public int ReferenceFrames;
+        public int DisableSao;
+        public int PositionQuantization;
+        public int NormalQuantization;
+        public int TextureQuantization;
+        public int DracoEncodeSpeed;
+        public int DracoDecodeSpeed;
+    }
+
+    [DllImport(
+        AuthoringLibrary,
+        EntryPoint = "openvolumetric_authoring_get_preset",
+        CallingConvention = CallingConvention.Cdecl)]
+    private static extern int GetNativePreset(
+        int preset,
+        ref NativeEncodingSettings settings);
+
+    [DllImport(
+        AuthoringLibrary,
+        EntryPoint = "openvolumetric_authoring_validate_sources",
+        CallingConvention = CallingConvention.Cdecl)]
+    private static extern int ValidateNativeSources(
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string imageDirectory,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string geometryDirectory);
+
+    [DllImport(
+        AuthoringLibrary,
+        EntryPoint = "openvolumetric_authoring_build_ffmpeg_arguments",
+        CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr BuildNativeFFmpegArguments(
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string imagePattern,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string audioPath,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string outputPath,
+        double frameRate,
+        int firstFrame,
+        int frameCount,
+        ref NativeEncodingSettings settings);
+
     private static readonly Regex NumberedFile =
         new Regex(@"^(?<frame>[0-9]+)$", RegexOptions.Compiled);
 
@@ -516,67 +560,23 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         string imagePattern = Path.Combine(
             imageDirectory,
             "%0" + first.FrameText.Length + "d" + first.Extension);
-        List<string> arguments = new List<string>
+        NativeEncodingSettings nativeSettings = settings.ToNative();
+        IntPtr result = BuildNativeFFmpegArguments(
+            imagePattern,
+            audioFile ?? String.Empty,
+            mediaPath,
+            frameRate,
+            first.Frame,
+            inputs.Images.Count,
+            ref nativeSettings);
+        if (result == IntPtr.Zero)
         {
-            "-hide_banner",
-            "-y",
-            "-framerate", frameRate.ToString("0.########", CultureInfo.InvariantCulture),
-            "-start_number", first.Frame.ToString(CultureInfo.InvariantCulture),
-            "-i", imagePattern
-        };
-
-        if (!String.IsNullOrEmpty(audioFile))
-        {
-            arguments.Add("-i");
-            arguments.Add(audioFile);
+            throw new InvalidOperationException(
+                Marshal.PtrToStringAnsi(GetAuthoringError()) ??
+                "Could not construct FFmpeg arguments.");
         }
-
-        arguments.AddRange(new[]
-        {
-            "-frames:v", inputs.Images.Count.ToString(CultureInfo.InvariantCulture),
-            "-c:v", settings.Codec == VideoCodec.HEVC ? "libx265" : "libx264",
-            "-crf", settings.Crf.ToString(CultureInfo.InvariantCulture),
-            "-pix_fmt", "yuv420p"
-        });
-        if(settings.Codec == VideoCodec.HEVC)
-        {
-            string parameters = String.Format(
-                CultureInfo.InvariantCulture,
-                "keyint={0}:min-keyint=1:bframes=0:ref={1}{2}",
-                settings.KeyframeInterval,
-                settings.ReferenceFrames,
-                settings.DisableSao ? ":no-sao=1" : "");
-            arguments.Add("-x265-params");
-            arguments.Add(parameters);
-        }
-        else
-        {
-            arguments.Add("-preset");
-            arguments.Add("fast");
-            arguments.Add("-x264-params");
-            arguments.Add(String.Format(
-                CultureInfo.InvariantCulture,
-                "keyint={0}:min-keyint=1:bframes=0:ref={1}",
-                settings.KeyframeInterval,
-                settings.ReferenceFrames));
-        }
-
-        if (!String.IsNullOrEmpty(audioFile))
-        {
-            arguments.AddRange(new[]
-            {
-                "-c:a", "aac",
-                "-b:a", "192k",
-                "-af", "apad",
-                "-shortest"
-            });
-        }
-        else
-        {
-            arguments.Add("-an");
-        }
-        arguments.Add(mediaPath);
-        return arguments;
+        return new List<string>(
+            Marshal.PtrToStringAnsi(result).Split('\n'));
     }
 
     /// <summary>
@@ -613,6 +613,12 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             throw new InvalidOperationException(
                 "The output already exists. Choose another file or enable Overwrite Output.");
         }
+        if (ValidateNativeSources(imageDirectory, geometryDirectory) < 0)
+        {
+            throw new InvalidOperationException(
+                Marshal.PtrToStringAnsi(GetAuthoringError()) ??
+                "Image and OBJ validation failed.");
+        }
 
         List<NumberedPath> images = DiscoverNumberedFiles(
             imageDirectory,
@@ -630,9 +636,6 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             throw new InvalidOperationException(
                 "Image and OBJ frame numbers must match exactly.");
         }
-        EnsureContiguous(images);
-        EnsureUniformNaming(images, "images");
-        EnsureUniformNaming(geometry, "OBJ meshes");
         return new EncodingInputs(images, geometry);
     }
 
@@ -670,38 +673,6 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
                 "No numbered " + label + " found in " + directory + ".");
         }
         return files;
-    }
-
-    /// <summary>Rejects a numbered sequence containing missing frame numbers.</summary>
-    private static void EnsureContiguous(IReadOnlyList<NumberedPath> files)
-    {
-        for (int index = 1; index < files.Count; ++index)
-        {
-            if (files[index].Frame != files[index - 1].Frame + 1)
-            {
-                throw new InvalidOperationException(
-                    "Frame sequence has a gap between " +
-                    files[index - 1].Frame + " and " + files[index].Frame + ".");
-            }
-        }
-    }
-
-    /// <summary>
-    /// Ensures image and geometry sequences use matching start/count numbering.
-    /// </summary>
-    private static void EnsureUniformNaming(
-        IReadOnlyList<NumberedPath> files,
-        string label)
-    {
-        int width = files[0].FrameText.Length;
-        string extension = files[0].Extension;
-        if (files.Any(item =>
-            item.FrameText.Length != width ||
-            item.Extension != extension))
-        {
-            throw new InvalidOperationException(
-                "All " + label + " must use the same zero padding and extension.");
-        }
     }
 
     /// <summary>
@@ -930,37 +901,34 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
     /// <summary>Maps the selected platform preset to concrete codec settings.</summary>
     private EncodingSettings GetEncodingSettings()
     {
-        switch(encodingPreset)
+        if (encodingPreset != EncodingPreset.Custom)
         {
-            case EncodingPreset.DesktopQuality:
-                return new EncodingSettings(
-                    VideoCodec.HEVC, 20, 60, 3, false,
-                    14, 10, 12, 5, 5,
-                    "Prioritises texture and geometry quality for desktop playback.");
-            case EncodingPreset.QuestBalanced:
-                return new EncodingSettings(
-                    VideoCodec.HEVC, 25, 30, 1, true,
-                    14, 10, 12, 7, 9,
-                    "Default Quest profile with a simpler HEVC bitstream and fast Draco decoding.");
-            case EncodingPreset.QuestPerformance:
-                return new EncodingSettings(
-                    VideoCodec.H264, 23, 30, 1, false,
-                    12, 8, 10, 8, 10,
-                    "Prioritises software decoding speed at the cost of larger video files and geometry precision.");
-            default:
-                return new EncodingSettings(
-                    videoCodec,
-                    crf,
-                    keyframeInterval,
-                    referenceFrames,
-                    disableSao,
-                    positionQuantization,
-                    normalQuantization,
-                    textureQuantization,
-                    dracoEncodeSpeed,
-                    dracoDecodeSpeed,
-                    "Uses the advanced settings below.");
+            NativeEncodingSettings settings = new NativeEncodingSettings();
+            if (GetNativePreset((int)encodingPreset, ref settings) < 0)
+            {
+                throw new InvalidOperationException(
+                    "Could not load the native platform preset.");
+            }
+            return EncodingSettings.FromNative(
+                settings,
+                encodingPreset == EncodingPreset.DesktopQuality
+                    ? "Prioritises texture and geometry quality for desktop playback."
+                    : encodingPreset == EncodingPreset.QuestPerformance
+                        ? "Prioritises software decoding speed at the cost of larger video files and geometry precision."
+                        : "Default Quest profile with a simpler HEVC bitstream and fast Draco decoding.");
         }
+        return new EncodingSettings(
+            videoCodec,
+            crf,
+            keyframeInterval,
+            referenceFrames,
+            disableSao,
+            positionQuantization,
+            normalQuantization,
+            textureQuantization,
+            dracoEncodeSpeed,
+            dracoDecodeSpeed,
+            "Uses the advanced settings below.");
     }
 
     private sealed class EncodingSettings
@@ -1001,6 +969,41 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             DracoEncodeSpeed = encodeSpeed;
             DracoDecodeSpeed = decodeSpeed;
             Description = description;
+        }
+
+        public NativeEncodingSettings ToNative()
+        {
+            return new NativeEncodingSettings
+            {
+                Codec = Codec == VideoCodec.HEVC ? 0 : 1,
+                Crf = Crf,
+                VideoKeyframeInterval = KeyframeInterval,
+                ReferenceFrames = ReferenceFrames,
+                DisableSao = DisableSao ? 1 : 0,
+                PositionQuantization = PositionQuantization,
+                NormalQuantization = NormalQuantization,
+                TextureQuantization = TextureQuantization,
+                DracoEncodeSpeed = DracoEncodeSpeed,
+                DracoDecodeSpeed = DracoDecodeSpeed
+            };
+        }
+
+        public static EncodingSettings FromNative(
+            NativeEncodingSettings settings,
+            string description)
+        {
+            return new EncodingSettings(
+                settings.Codec == 0 ? VideoCodec.HEVC : VideoCodec.H264,
+                settings.Crf,
+                settings.VideoKeyframeInterval,
+                settings.ReferenceFrames,
+                settings.DisableSao != 0,
+                settings.PositionQuantization,
+                settings.NormalQuantization,
+                settings.TextureQuantization,
+                settings.DracoEncodeSpeed,
+                settings.DracoDecodeSpeed,
+                description);
         }
     }
 

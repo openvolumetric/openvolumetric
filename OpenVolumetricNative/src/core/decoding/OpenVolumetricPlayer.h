@@ -12,7 +12,7 @@
 namespace openvolumetric
 {
 
-/** Stable stream metadata returned without exposing FFmpeg structures. */
+/// Stable stream metadata returned without exposing FFmpeg structures.
 struct OpenVolumetricMediaInfo
 {
 	int width = 0;
@@ -24,7 +24,7 @@ struct OpenVolumetricMediaInfo
 	int audio_channels = 0;
 };
 
-/** One owned, timestamp-matched visual presentation. */
+/// One owned, timestamp-matched visual presentation.
 struct OpenVolumetricPresentation
 {
 	double presentation_time = 0.0;
@@ -36,12 +36,10 @@ struct OpenVolumetricPresentation
 	Mesh mesh;
 };
 
-/**
- * Engine-neutral façade for OpenVolumetric playback.
- *
- * The façade owns FFmpeg and Draco workers and returns owned CPU data. Host
- * integrations never see codec types or retain decoder-owned frame pointers.
- */
+/// Engine-neutral façade for OpenVolumetric playback.
+///
+/// The façade owns FFmpeg and Draco workers and returns owned CPU data. Host
+/// integrations never see codec types or retain decoder-owned frame pointers.
 class OpenVolumetricPlayer final
 {
 public:

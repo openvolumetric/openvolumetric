@@ -13,6 +13,44 @@
 extern "C"
 {
 
+/// ABI-stable representation of the shared platform-preset settings.
+struct OpenVolumetricAuthoringSettings
+{
+	int codec;
+	int crf;
+	int video_keyframe_interval;
+	int reference_frames;
+	int disable_sao;
+	int position_quantization;
+	int normal_quantization;
+	int texture_quantization;
+	int draco_encode_speed;
+	int draco_decode_speed;
+};
+
+/// Writes one shared preset into output. Presets are Desktop (0), Quest
+/// Balanced (1), and Quest Performance (2).
+OPENVOLUMETRIC_AUTHORING_API int openvolumetric_authoring_get_preset(
+	int preset,
+	OpenVolumetricAuthoringSettings* output);
+
+/// Validates matching, contiguous image and OBJ sequences.
+OPENVOLUMETRIC_AUTHORING_API int openvolumetric_authoring_validate_sources(
+	const char* image_directory,
+	const char* geometry_directory);
+
+/// Constructs the shared FFmpeg argument list. Arguments are separated by
+/// newlines so managed callers can pass each item through their process API.
+OPENVOLUMETRIC_AUTHORING_API const char*
+	openvolumetric_authoring_build_ffmpeg_arguments(
+		const char* image_pattern,
+		const char* audio_path,
+		const char* output_path,
+		double frame_rate,
+		int first_frame,
+		int frame_count,
+		const OpenVolumetricAuthoringSettings* settings);
+
 /// Encodes one OBJ mesh using the Draco library linked into this authoring
 /// module. Returns 1 on success and -1 on failure.
 OPENVOLUMETRIC_AUTHORING_API int openvolumetric_authoring_encode_obj(

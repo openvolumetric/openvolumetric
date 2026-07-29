@@ -3,50 +3,30 @@
 #include <Logger.h>
 #include <thread>
 
-//----------------------------------
-//
 namespace openvolumetric::unity
 {
 
-TextureD3D11::TextureD3D11()
-{
-	mD3D11Device = NULL;
-	mWidthY = mHeightY = mLengthY = 0;
-	mWidthUV = mHeightUV = mLengthUV = 0;
+TextureD3D11::TextureD3D11() = default;
 
-	for (int i = 0; i < TEXTURE_NUM; i++) {
-		mTextures[i] = NULL;
-		mShaderResourceView[i] = NULL;
-	}
+TextureD3D11::~TextureD3D11() = default;
 
-}
-
-
-//----------------------------------
-//
-TextureD3D11::~TextureD3D11()
-{
-}
-
-//----------------------------------
-//	
 void TextureD3D11::destroy()
 {
 	LOG("TextureD3D11::destroy - start");
 
-	mD3D11Device = NULL;
-	mWidthY = mHeightY = mLengthY = 0;
-	mWidthUV = mHeightUV = mLengthUV = 0;
+	m_device = nullptr;
+	m_width_y = m_height_y = m_length_y = 0;
+	m_width_uv = m_height_uv = m_length_uv = 0;
 
 	for (int i = 0; i < TEXTURE_NUM; i++) {
-		if (mTextures[i] != NULL) {
-			mTextures[i]->Release();
-			mTextures[i] = NULL;
+		if (m_textures[i] != nullptr) {
+			m_textures[i]->Release();
+			m_textures[i] = nullptr;
 		}
 
-		if (mShaderResourceView[i] != NULL) {
-			mShaderResourceView[i]->Release();
-			mShaderResourceView[i] = NULL;
+		if (m_shader_resource_views[i] != nullptr) {
+			m_shader_resource_views[i]->Release();
+			m_shader_resource_views[i] = nullptr;
 		}
 	}
 	LOG("TextureD3D11::destroy - end");
@@ -54,27 +34,22 @@ void TextureD3D11::destroy()
 
 
 
-//----------------------------------
-//
 int TextureD3D11::init(void* handler, unsigned int width, unsigned int height)
 {
 	// Check handler
-	if (handler == NULL) {
+	if (handler == nullptr) {
 		return -1;
 	}
 
-	//
-	mD3D11Device = (ID3D11Device*)handler;
+	m_device = (ID3D11Device*)handler;
 	
-	//
-	mWidthY = (unsigned int)(ceil((float)width / CPU_ALIGMENT) * CPU_ALIGMENT);
-	mHeightY = height;
-	mLengthY = mWidthY * mHeightY;
+	m_width_y = (unsigned int)(ceil((float)width / CPU_ALIGMENT) * CPU_ALIGMENT);
+	m_height_y = height;
+	m_length_y = m_width_y * m_height_y;
 
-	//
-	mWidthUV = mWidthY / 2;
-	mHeightUV = mHeightY / 2;
-	mLengthUV = mWidthUV * mHeightUV;
+	m_width_uv = m_width_y / 2;
+	m_height_uv = m_height_y / 2;
+	m_length_uv = m_width_uv * m_height_uv;
 
 	//	For YUV420
 	//	Y channel
@@ -90,7 +65,7 @@ int TextureD3D11::init(void* handler, unsigned int width, unsigned int height)
 	texDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 	texDesc.MiscFlags = 0;
 
-	HRESULT result = mD3D11Device->CreateTexture2D(&texDesc, NULL, (ID3D11Texture2D**)(&(mTextures[0])));
+	HRESULT result = m_device->CreateTexture2D(&texDesc, nullptr, (ID3D11Texture2D**)(&(m_textures[0])));
 	if (FAILED(result)) 
 	{
 		LOG("TextureD3D11::create - Create texture Y fail. Error code: %x", result);
@@ -103,7 +78,7 @@ int TextureD3D11::init(void* handler, unsigned int width, unsigned int height)
 	shaderResourceViewDesc.Texture2D.MostDetailedMip = 0;
 	shaderResourceViewDesc.Texture2D.MipLevels = 1;
 
-	result = mD3D11Device->CreateShaderResourceView((ID3D11Texture2D*)(mTextures[0]), &shaderResourceViewDesc, &(mShaderResourceView[0]));
+	result = m_device->CreateShaderResourceView((ID3D11Texture2D*)(m_textures[0]), &shaderResourceViewDesc, &(m_shader_resource_views[0]));
 	if (FAILED(result)) {
 		LOG("TextureD3D11::create - Create shader resource view Y fail. Error code: %x", result);
 		return -1;
@@ -112,63 +87,58 @@ int TextureD3D11::init(void* handler, unsigned int width, unsigned int height)
 	//	UV channel
 	texDesc.Width = width / 2;
 	texDesc.Height = height / 2;
-	result = mD3D11Device->CreateTexture2D(&texDesc, NULL, (ID3D11Texture2D**)(&(mTextures[1])));
+	result = m_device->CreateTexture2D(&texDesc, nullptr, (ID3D11Texture2D**)(&(m_textures[1])));
 	if (FAILED(result)) {
 		LOG("Create texture U fail. Error code: %x", result);
 	}
 
-	result = mD3D11Device->CreateShaderResourceView((ID3D11Texture2D*)(mTextures[1]), &shaderResourceViewDesc, &(mShaderResourceView[1]));
+	result = m_device->CreateShaderResourceView((ID3D11Texture2D*)(m_textures[1]), &shaderResourceViewDesc, &(m_shader_resource_views[1]));
 	if (FAILED(result)) {
 		LOG("TextureD3D11::create - Create shader resource view U fail. Error code: %x", result);
 		return -1;
 	}
 
-	result = mD3D11Device->CreateTexture2D(&texDesc, NULL, (ID3D11Texture2D**)(&(mTextures[2])));
+	result = m_device->CreateTexture2D(&texDesc, nullptr, (ID3D11Texture2D**)(&(m_textures[2])));
 	if (FAILED(result)) {
 		LOG("TextureD3D11::create - Create texture V fail. Error code: %x", result);
 		return -1;
 	}
 
-	result = mD3D11Device->CreateShaderResourceView((ID3D11Texture2D*)(mTextures[2]), &shaderResourceViewDesc, &(mShaderResourceView[2]));
+	result = m_device->CreateShaderResourceView((ID3D11Texture2D*)(m_textures[2]), &shaderResourceViewDesc, &(m_shader_resource_views[2]));
 	if (FAILED(result)) {
 		LOG("TextureD3D11::create - Create shader resource view V fail. %x", result);
 		return -1;
 	}
 
-	// Done 
 	return 1;
 }
 
-//----------------------------------
-//
 void TextureD3D11::getResourcePointers(void*& ptry, void*& ptru, void*& ptrv)
 {
-	if (mD3D11Device == NULL) 
+	if (m_device == nullptr)
 	{
 		return;
 	}
 
-	ptry = mShaderResourceView[0];
-	ptru = mShaderResourceView[1];
-	ptrv = mShaderResourceView[2];
+	ptry = m_shader_resource_views[0];
+	ptru = m_shader_resource_views[1];
+	ptrv = m_shader_resource_views[2];
 }
 
-//----------------------------------
-//	
 void TextureD3D11::upload(unsigned char* ych, unsigned char* uch, unsigned char* vch)
 {
-	if (mD3D11Device == NULL) 
+	if (m_device == nullptr)
 	{
 		return;
 	}
 
-	ID3D11DeviceContext* ctx = NULL;
-	mD3D11Device->GetImmediateContext(&ctx);
+	ID3D11DeviceContext* ctx = nullptr;
+	m_device->GetImmediateContext(&ctx);
 
 	D3D11_MAPPED_SUBRESOURCE mappedResource[TEXTURE_NUM];
 	for (int i = 0; i < TEXTURE_NUM; i++) {
 		ZeroMemory(&(mappedResource[i]), sizeof(D3D11_MAPPED_SUBRESOURCE));
-		ctx->Map(mTextures[i], 0, D3D11_MAP_WRITE_DISCARD, 0, &(mappedResource[i]));
+		ctx->Map(m_textures[i], 0, D3D11_MAP_WRITE_DISCARD, 0, &(mappedResource[i]));
 	}
 
 	//	Consider padding.
@@ -182,34 +152,34 @@ void TextureD3D11::upload(unsigned char* ych, unsigned char* uch, unsigned char*
 	//	Two thread memory copy
 	std::thread YThread = std::thread([&]() {
 		//	Map region has its own row pitch which may different to texture width.
-		if (mWidthY == rowPitchY) {
-			memcpy(ptrMappedY, ych, mLengthY);
+		if (m_width_y == rowPitchY) {
+			memcpy(ptrMappedY, ych, m_length_y);
 		}
 		else {
 			//	Handle rowpitch of mapped memory.
-			uint8_t* end = ych + mLengthY;
+			uint8_t* end = ych + m_length_y;
 			while (ych != end) {
-				memcpy(ptrMappedY, ych, mWidthY);
-				ych += mWidthY;
+				memcpy(ptrMappedY, ych, m_width_y);
+				ych += m_width_y;
 				ptrMappedY += rowPitchY;
 			}
 		}
 		});
 
 	std::thread UVThread = std::thread([&]() {
-		if (mWidthUV == rowPitchUV) {
-			memcpy(ptrMappedU, uch, mLengthUV);
-			memcpy(ptrMappedV, vch, mLengthUV);
+		if (m_width_uv == rowPitchUV) {
+			memcpy(ptrMappedU, uch, m_length_uv);
+			memcpy(ptrMappedV, vch, m_length_uv);
 		}
 		else {
 			//	Handle rowpitch of mapped memory.
 			//	YUV420, length U == length V
-			uint8_t* endU = uch + mLengthUV;
+			uint8_t* endU = uch + m_length_uv;
 			while (uch != endU) {
-				memcpy(ptrMappedU, uch, mWidthUV);
-				memcpy(ptrMappedV, vch, mWidthUV);
-				uch += mWidthUV;
-				vch += mWidthUV;
+				memcpy(ptrMappedU, uch, m_width_uv);
+				memcpy(ptrMappedV, vch, m_width_uv);
+				uch += m_width_uv;
+				vch += m_width_uv;
 				ptrMappedU += rowPitchUV;
 				ptrMappedV += rowPitchUV;
 			}
@@ -224,7 +194,7 @@ void TextureD3D11::upload(unsigned char* ych, unsigned char* uch, unsigned char*
 	}
 
 	for (int i = 0; i < TEXTURE_NUM; i++) {
-		ctx->Unmap(mTextures[i], 0);
+		ctx->Unmap(m_textures[i], 0);
 	}
 	ctx->Release();
 }

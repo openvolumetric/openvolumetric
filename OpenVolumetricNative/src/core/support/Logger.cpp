@@ -14,22 +14,14 @@
 namespace openvolumetric
 {
 
-//
 // Instance of logger
-//
 Logger* Logger::_instance;
 
 
-//
-//
-//
 Logger::Logger() : console_active(false)
 {
 }
 
-//
-//
-//
 Logger::Logger(std::string filename) : console_active(false)
 {
 	fclose(stdout);
@@ -37,9 +29,6 @@ Logger::Logger(std::string filename) : console_active(false)
 }
 
 
-//
-//
-//
 Logger* Logger::instance()
 {
 	if (!_instance) 
@@ -49,9 +38,6 @@ Logger* Logger::instance()
 	return _instance;
 }
 
-//
-//
-//
 void Logger::open_external_console()
 {
 	if (!Logger::instance()->console_active)
@@ -67,9 +53,6 @@ void Logger::open_external_console()
 	}
 }
 
-//
-//
-//
 void Logger::close_external_console()
 {
 	if (Logger::instance()->console_active)
@@ -83,9 +66,6 @@ void Logger::close_external_console()
 }
 
 
-//
-//
-//
 void Logger::log(const char* str, ...) 
 {
 	va_list args;

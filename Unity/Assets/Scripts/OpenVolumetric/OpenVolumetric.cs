@@ -2,7 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Scripting.APIUpdating;
+using UnityEngine.Serialization;
 
 namespace OpenVolumetric
 {
@@ -14,54 +14,42 @@ namespace OpenVolumetric
 /// presentation frame; the native render callback publishes its matching
 /// texture and geometry while the AudioClip pulls decoded PCM.
 /// </summary>
-[MovedFrom(true, sourceNamespace: "OpenVolumetric",
-    sourceAssembly: "Assembly-CSharp", sourceClassName: "VolumetricVideo")]
 public class OpenVolumetric : MonoBehaviour
 {
-    //----------------------------------------------------------
-    // Public Member variables 
-    //----------------------------------------------------------
-
-    // Volumetric Video Input
+    /// <summary>Combined OpenVolumetric MP4 beneath StreamingAssets.</summary>
     [Header("Volumetric Video Input")]
     [Tooltip("Volumetric video file containing geometry, texture, and audio")]
     public string videoFilename;
-
-    // Texture Settings
+    /// <summary>Additive correction applied to the decoded Y channel.</summary>
     [Header("Texture Settings")]
     [Tooltip("Luminance Correction - Y")]
     [Range(-0.2F, 0.2F)]
-    public float luminaceCorrection=0.0F;
+    [FormerlySerializedAs("luminaceCorrection")]
+    public float luminanceCorrection = 0.0F;
+    /// <summary>Additive correction applied to the decoded U channel.</summary>
     [Tooltip("Chrominance Correction - Blue Projection - U")]
     [Range(-0.2F, 0.2F)]
     public float blueProjectionCorrection=0.0F;
+    /// <summary>Additive correction applied to the decoded V channel.</summary>
     [Tooltip("Chrominance Correction - Red Projection - V")]
     [Range(-0.2F, 0.2F)]
     public float redProjectionCorrection=0.0F;
-
-    // Playback settings
+    /// <summary>Whether playback seeks to the beginning at end of stream.</summary>
     [Header("Playback Settings")]
     [Tooltip("When enabled the content will loop")]
     public bool enableLoop = false;
+    /// <summary>Whether a caller must schedule playback explicitly.</summary>
     [Tooltip("Enables playback to be started via a script ")]
     public bool enableScriptedStart;
+    /// <summary>Whether controller diagnostics are attached at startup.</summary>
     [Tooltip("Show the controller-operated developer overlay in headset builds")]
     public bool enableDeveloperOverlay = true;
-
-    // Debug options
+    /// <summary>Whether native diagnostic console output is enabled.</summary>
     [Header("Debug Settings")]
     [Tooltip("Enable debug, will launch an external console")]
     public bool debug = false;
-
-    //----------------------------------------------------------
-    // Private 
-    //----------------------------------------------------------
-
-    // Volumetric Video
     private OpenVolumetricDecoder m_decoder;
     private AudioSource m_audio_source;
-
-    // Start time
     private double m_start_time;
     private double m_audio_start_time;
     private bool m_has_scheduled_start;
@@ -71,8 +59,7 @@ public class OpenVolumetric : MonoBehaviour
     private double m_last_decoder_recovery = -10.0;
     private bool m_decoder_recovering;
     private double m_decoder_recovery_target;
-
-    // Enum for the Playback state
+    /// <summary>Managed playback states exposed to scripts and diagnostics.</summary>
     public enum PlaybackState
     {
         INIT_FAIL = -1,
@@ -83,18 +70,21 @@ public class OpenVolumetric : MonoBehaviour
         STOPPED,
         PLAYING,
     };
-
-    // Playback State
     private PlaybackState m_playback_state = PlaybackState.UNINITIALISED;
     private double m_playback_position;
 
+    /// <summary>Current managed playback state.</summary>
     public PlaybackState State { get { return m_playback_state; } }
+    /// <summary>Whether the shared playback clock is currently advancing.</summary>
     public bool IsPlaying { get { return m_playback_state == PlaybackState.PLAYING; } }
+    /// <summary>Duration of the opened presentation in seconds.</summary>
     public double Duration { get { return m_decoder != null ? m_decoder.Duration : 0.0; } }
+    /// <summary>Most recent native decoder error, or an empty string.</summary>
     public string LastError
     {
         get { return m_decoder != null ? m_decoder.LastError : string.Empty; }
     }
+    /// <summary>Current playback position in seconds.</summary>
     public double CurrentTime
     {
         get
@@ -120,11 +110,8 @@ public class OpenVolumetric : MonoBehaviour
     /// </summary>
     IEnumerator Start()
     {
-        // Add components required to draw mesh
         MeshFilter mesh_filter = gameObject.AddComponent<MeshFilter>();
         MeshRenderer mesh_renderer = gameObject.AddComponent<MeshRenderer>();
-
-        // create new volumetric video decoder
         m_decoder = new OpenVolumetricDecoder(debug);
              
         // The MP4 contains texture, geometry, and optional audio.
@@ -139,14 +126,14 @@ public class OpenVolumetric : MonoBehaviour
             m_playback_state = PlaybackState.INIT_FAIL;
             yield break;
         }
-        if(!m_decoder.init_texture(ref mesh_renderer, filepath))
+        if(!m_decoder.InitializeTexture(ref mesh_renderer, filepath))
         {
             Debug.LogError("OpenVolumetric::Start - Failed to init OpenVolumetricDecoder");
             m_playback_state = PlaybackState.INIT_FAIL;
             yield break;
         }
 
-        if(!m_decoder.init_mesh())
+        if(!m_decoder.InitializeMesh())
         {
             Debug.LogError("OpenVolumetric::Start - Failed to init geometry");
             m_playback_state = PlaybackState.INIT_FAIL;
@@ -156,7 +143,7 @@ public class OpenVolumetric : MonoBehaviour
         // Assign the native-backed mesh to the mesh filter.
         mesh_filter.mesh = m_decoder.Mesh;
 
-        if(!m_decoder.init_audio())
+        if(!m_decoder.InitializeAudio())
         {
             Debug.LogError("OpenVolumetric::Start - Failed to initialise audio");
         }
@@ -180,14 +167,12 @@ public class OpenVolumetric : MonoBehaviour
         }
 #endif
 
-        //
-        m_decoder.set_colour_correction_values(luminaceCorrection, blueProjectionCorrection, redProjectionCorrection);
-
-        // Set Player State to Initialised
+        m_decoder.SetColourCorrectionValues(
+            luminanceCorrection,
+            blueProjectionCorrection,
+            redProjectionCorrection);
         m_playback_state = PlaybackState.INITIALISED;
-
-        // Start Decoder
-        if(!m_decoder.start_decoding())
+        if(!m_decoder.StartDecoding())
         {
             Debug.LogError("OpenVolumetric::Start - Failed to start decoding");
         }
@@ -196,12 +181,12 @@ public class OpenVolumetric : MonoBehaviour
 
         if(!enableScriptedStart)
         {
-            set_scheduled_start(AudioSettings.dspTime + 0.1);
+            SetScheduledStart(AudioSettings.dspTime + 0.1);
         }
         else if(m_has_scheduled_start)
         {
             m_playback_state = PlaybackState.SCHEDULED;
-            schedule_audio();
+            ScheduleAudio();
         }
     }
 
@@ -213,7 +198,7 @@ public class OpenVolumetric : MonoBehaviour
     {
         if(m_decoder_recovering)
         {
-            m_decoder.update(m_decoder_recovery_target);
+            m_decoder.UpdatePresentation(m_decoder_recovery_target);
             double presented = m_decoder.LastPresentedTime;
             double tolerance = m_decoder.FrameRate > 0.0
                 ? 1.0 / m_decoder.FrameRate
@@ -228,21 +213,17 @@ public class OpenVolumetric : MonoBehaviour
                 m_last_dsp_time = m_audio_start_time;
                 m_has_last_dsp_time = true;
                 m_playback_state = PlaybackState.SCHEDULED;
-                schedule_audio();
+                ScheduleAudio();
                 Debug.Log("OpenVolumetric - synchronized recovery complete");
             }
             return;
         }
-
-        // handle the case that playback has been scheduled
         if (m_playback_state == PlaybackState.SCHEDULED && AudioSettings.dspTime >= m_start_time)
         {
             m_playback_state = PlaybackState.PLAYING;
             m_last_dsp_time = m_start_time;
             m_has_last_dsp_time = true;
         }
-
-        // If started then begin to update time
         if (m_playback_state == PlaybackState.PLAYING)
         {
             // Accumulate the DSP delta instead of deriving an absolute time.
@@ -261,15 +242,12 @@ public class OpenVolumetric : MonoBehaviour
             {
                 m_playback_position += delta;
             }
-
-            // Set counter in decoder
-            m_decoder.update(m_playback_position);
+            m_decoder.UpdatePresentation(m_playback_position);
             if(TryRecoverDecoderLag(dspTime))
             {
                 return;
             }
 
-            //
             if(!enableLoop && m_decoder.ContentLooped)
             {
                 m_playback_state = PlaybackState.STOPPED;
@@ -341,19 +319,19 @@ public class OpenVolumetric : MonoBehaviour
     /// <summary>Stops native workers before Unity tears down the application.</summary>
     void OnApplicationQuit() 
     {
-        shutdown();
+        Shutdown();
 	}
 
     /// <summary>Releases native and Unity resources when the component dies.</summary>
     void OnDestroy() 
     {
-        shutdown();
+        Shutdown();
     }
 
     /// <summary>
     /// Idempotently stops audio/decoding and disposes the native instance.
     /// </summary>
-    private void shutdown()
+    private void Shutdown()
     {
         if(m_audio_source != null)
         {
@@ -364,7 +342,7 @@ public class OpenVolumetric : MonoBehaviour
             if(m_decoder.DecoderStatus ==
                 OpenVolumetricDecoder.DecoderState.STARTED)
             {
-                m_decoder.stop_decoding();
+                m_decoder.StopDecoding();
             }
             m_decoder.Dispose();
             m_decoder = null;
@@ -375,7 +353,7 @@ public class OpenVolumetric : MonoBehaviour
     /// <summary>
     /// Schedules synchronized playback at an absolute future DSP timestamp.
     /// </summary>
-    public void set_scheduled_start(double dspTime)
+    public void SetScheduledStart(double dspTime)
     {
         m_playback_position = 0.0;
         m_start_time        = dspTime;
@@ -384,14 +362,14 @@ public class OpenVolumetric : MonoBehaviour
         m_last_dsp_time = dspTime;
         m_has_last_dsp_time = true;
         m_playback_state    = PlaybackState.SCHEDULED;
-        schedule_audio();
+        ScheduleAudio();
     }
 
     /// <summary>
     /// Schedules the streaming AudioClip from the current playback position.
     /// Texture and geometry use the same DSP-derived timeline.
     /// </summary>
-    private void schedule_audio()
+    private void ScheduleAudio()
     {
         if(m_audio_source != null && m_audio_source.clip != null)
         {
@@ -441,7 +419,7 @@ public class OpenVolumetric : MonoBehaviour
         {
             m_audio_source.Stop();
         }
-        schedule_audio();
+        ScheduleAudio();
     }
 
     /// <summary>Freezes the shared timeline and stops audio consumption.</summary>
@@ -476,7 +454,7 @@ public class OpenVolumetric : MonoBehaviour
         double target = System.Math.Max(0.0, System.Math.Min(time, Duration));
         bool resume = m_playback_state == PlaybackState.PLAYING ||
             m_playback_state == PlaybackState.SCHEDULED;
-        if(!m_decoder.seek(target))
+        if(!m_decoder.Seek(target))
         {
             return false;
         }
@@ -496,7 +474,7 @@ public class OpenVolumetric : MonoBehaviour
         else
         {
             m_playback_state = PlaybackState.PAUSED;
-            m_decoder.update(target);
+            m_decoder.UpdatePresentation(target);
         }
         return true;
     }
@@ -517,7 +495,7 @@ public class OpenVolumetric : MonoBehaviour
         }
         if(enableLoop && m_decoder != null)
         {
-            m_decoder.reset_loop_flag();
+            m_decoder.ResetLoopFlag();
         }
     }
 
@@ -529,7 +507,10 @@ public class OpenVolumetric : MonoBehaviour
     {
         if(m_playback_state == PlaybackState.PLAYING)
         {
-            m_decoder.set_colour_correction_values(luminaceCorrection, blueProjectionCorrection, redProjectionCorrection);
+            m_decoder.SetColourCorrectionValues(
+                luminanceCorrection,
+                blueProjectionCorrection,
+                redProjectionCorrection);
         }
     }
 

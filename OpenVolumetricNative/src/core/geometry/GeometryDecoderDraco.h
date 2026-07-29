@@ -105,7 +105,6 @@ private:
 	struct MeshData
 	{
 		std::uint64_t generation = 0;
-		// Decoded Mesh Data
 		Mesh mesh;
 
 		double presentation_time = 0.0;

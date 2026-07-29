@@ -53,7 +53,7 @@ or headers in the native core.
 
 | Interface | Responsibility |
 | --- | --- |
-| `IVolumetricVideo` | Coordinates presentation time, media, geometry, seeking, and engine upload backends. |
+| `OpenVolumetricPlayer` | Owns media and geometry decoding, seeking, timestamp matching, and complete CPU-side presentations. |
 | `IAVDecoder` | Opens the combined MP4 and supplies timestamped YUV video, PCM audio, and compressed geometry. |
 | `IGeometryDecoder` | Converts generation-tagged Draco payloads into timestamped engine-neutral `Mesh` values. |
 | `ITexture` | Engine/platform implementation that owns Y, U, and V texture resources and uploads one selected frame. |
@@ -62,8 +62,9 @@ or headers in the native core.
 
 The engine-neutral `OpenVolumetricPlayer` façade owns the concrete FFmpeg and
 Draco implementation. Engine integrations use this façade rather than calling
-FFmpeg or Draco APIs themselves. The older Unity upload coordinator still
-implements its native graphics bridge behind the exported C ABI.
+FFmpeg or Draco APIs themselves. Unity adds a thin `UnityOpenVolumetricPlayer`
+upload adapter behind the exported C ABI; the adapter contains no independent
+decode or synchronization policy.
 
 ## Lifecycle
 
@@ -105,7 +106,7 @@ packet reads.
 The engine supplies seconds from the same monotonic clock used to schedule
 audio:
 
-1. Call `set_presentation_time()` on the coordinator.
+1. Publish the current engine clock to the engine adapter.
 2. Move compressed geometry up to the look-ahead limit into the Draco worker.
 3. Select video by PTS using half a source-frame interval plus 0.1 ms.
 4. Match decoded geometry against the selected video PTS using the same

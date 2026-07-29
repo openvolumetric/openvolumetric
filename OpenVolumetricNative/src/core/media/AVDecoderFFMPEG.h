@@ -144,7 +144,7 @@ private:
 	struct FrameData
 	{
 		/// Constructs an empty frame holder.
-		FrameData() : data(NULL), frame_time(0.0){};
+		FrameData() : data(nullptr), frame_time(0.0){};
 
 		// Owned FFmpeg frame; released when removed from m_video_frames.
 		AVFrame* data;
@@ -162,14 +162,9 @@ private:
 
 
 
-	// --------------------------------------------------------------------------
 	// Container owns AVFormatContext and all demux/seek operations.
-	// --------------------------------------------------------------------------
 	std::unique_ptr<openvolumetric::FFmpegMp4VolumetricContainer> m_container;
 
-	// --------------------------------------------------------------------------
-	// Video Information
-	// --------------------------------------------------------------------------
 	int						m_video_stream_index;
 	AVStream*				m_video_stream;
 	AVCodecContext*			m_video_codec_ctx;

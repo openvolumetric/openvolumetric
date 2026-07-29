@@ -22,16 +22,7 @@ class IGeometryDecoder : public IDecoder
 {
 
 public:
-
-	// --------------------------------------------------------------------------
-	// Constructor
-	// --------------------------------------------------------------------------
 	IGeometryDecoder() = default;
-
-
-	// --------------------------------------------------------------------------
-	// destructor
-	// --------------------------------------------------------------------------
 	~IGeometryDecoder() override {};
 
 	/// Clears previous state and prepares the embedded-geometry pipeline.

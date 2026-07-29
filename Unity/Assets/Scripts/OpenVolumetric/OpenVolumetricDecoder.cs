@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 using Unity.Collections;
-using UnityEngine.Scripting.APIUpdating;
 
 using System.Runtime.InteropServices;
 using System;
@@ -20,106 +19,98 @@ namespace OpenVolumetric
 /// during GL.IssuePluginEvent. Audio is pulled through the streaming AudioClip
 /// callback.
 /// </summary>
-[MovedFrom(true, sourceNamespace: "OpenVolumetric",
-    sourceAssembly: "Assembly-CSharp", sourceClassName: "VolumetricVideoDecoder")]
 public class OpenVolumetricDecoder : IDisposable
 {
-    //---------------------------------------------
-    // DLL Interface
-    //---------------------------------------------
-    const string DLLNAME = "OpenVolumetricUnityPlugin";
+    private const string PluginName = "OpenVolumetricUnityPlugin";
 
-    // DLL Interfacece
-    [DllImport(DLLNAME, EntryPoint = "GetRenderEventFunc")]
+    // Entry-point names intentionally mirror the stable native C ABI.
+    [DllImport(PluginName, EntryPoint = "GetRenderEventFunc")]
     private static extern IntPtr GetRenderEventFunc();
 
-    [DllImport(DLLNAME, EntryPoint = "openvolumetric_open_external_console")]
+    [DllImport(PluginName, EntryPoint = "openvolumetric_open_external_console")]
     private static extern void openvolumetric_open_external_console();
 
-    [DllImport(DLLNAME, EntryPoint = "openvolumetric_close_external_console")]
+    [DllImport(PluginName, EntryPoint = "openvolumetric_close_external_console")]
     private static extern void openvolumetric_close_external_console();
 
-    [DllImport(DLLNAME, EntryPoint = "openvolumetric_init")]
-    private static extern int openvolumetric_init(ref int ID);
+    [DllImport(PluginName, EntryPoint = "openvolumetric_init")]
+    private static extern int openvolumetric_init(ref int id);
 
-    [DllImport(DLLNAME, EntryPoint = "openvolumetric_quit")]
-    private static extern void openvolumetric_quit(int ID);
+    [DllImport(PluginName, EntryPoint = "openvolumetric_quit")]
+    private static extern void openvolumetric_quit(int id);
 
-    [DllImport(DLLNAME, EntryPoint = "openvolumetric_set_time")]
-    private static extern void openvolumetric_set_time(int ID, double time);
+    [DllImport(PluginName, EntryPoint = "openvolumetric_set_time")]
+    private static extern void openvolumetric_set_time(int id, double time);
 
-    [DllImport(DLLNAME, EntryPoint = "openvolumetric_start_decoding")]
-    private static extern int openvolumetric_start_decoding(int ID);
+    [DllImport(PluginName, EntryPoint = "openvolumetric_start_decoding")]
+    private static extern int openvolumetric_start_decoding(int id);
 
-    [DllImport(DLLNAME, EntryPoint = "openvolumetric_stop_decoding")]
-    private static extern int openvolumetric_stop_decoding(int ID);
+    [DllImport(PluginName, EntryPoint = "openvolumetric_stop_decoding")]
+    private static extern int openvolumetric_stop_decoding(int id);
 
-    [DllImport(DLLNAME, EntryPoint = "openvolumetric_seek")]
-    private static extern int openvolumetric_seek(int ID, double time);
+    [DllImport(PluginName, EntryPoint = "openvolumetric_seek")]
+    private static extern int openvolumetric_seek(int id, double time);
 
-    [DllImport(DLLNAME, EntryPoint = "openvolumetric_load_video")]
-    private static extern int openvolumetric_load_video(int ID, string filename);
+    [DllImport(PluginName, EntryPoint = "openvolumetric_load_video")]
+    private static extern int openvolumetric_load_video(int id, string filename);
 
-    [DllImport(DLLNAME, EntryPoint = "openvolumetric_get_last_error")]
-    private static extern IntPtr openvolumetric_get_last_error(int ID);
+    [DllImport(PluginName, EntryPoint = "openvolumetric_get_last_error")]
+    private static extern IntPtr openvolumetric_get_last_error(int id);
 
-    [DllImport(DLLNAME, EntryPoint = "openvolumetric_get_last_presented_time")]
-    private static extern double openvolumetric_get_last_presented_time(int ID);
+    [DllImport(PluginName, EntryPoint = "openvolumetric_get_last_presented_time")]
+    private static extern double openvolumetric_get_last_presented_time(int id);
 
-    [DllImport(DLLNAME, EntryPoint = "openvolumetric_get_video_details")]
-    private static extern int openvolumetric_get_video_details(int ID, ref int width, ref int height, ref double fps, ref double duration);
+    [DllImport(PluginName, EntryPoint = "openvolumetric_get_video_details")]
+    private static extern int openvolumetric_get_video_details(int id, ref int width, ref int height, ref double fps, ref double duration);
 
-    [DllImport(DLLNAME, EntryPoint = "openvolumetric_get_audio_details")]
-    private static extern int openvolumetric_get_audio_details(int ID, ref int sample_rate, ref int channels);
+    [DllImport(PluginName, EntryPoint = "openvolumetric_get_audio_details")]
+    private static extern int openvolumetric_get_audio_details(int id, ref int sample_rate, ref int channels);
 
-    [DllImport(DLLNAME, EntryPoint = "openvolumetric_read_audio")]
-    private static extern int openvolumetric_read_audio(int ID, [Out] float[] samples, int sample_count);
+    [DllImport(PluginName, EntryPoint = "openvolumetric_read_audio")]
+    private static extern int openvolumetric_read_audio(int id, [Out] float[] samples, int sample_count);
 
-    [DllImport(DLLNAME, EntryPoint = "openvolumetric_get_texture_pointers")]
-    private static extern int openvolumetric_get_texture_pointers(int ID, ref IntPtr Y, ref IntPtr U, ref IntPtr V);
+    [DllImport(PluginName, EntryPoint = "openvolumetric_get_texture_pointers")]
+    private static extern int openvolumetric_get_texture_pointers(int id, ref IntPtr Y, ref IntPtr U, ref IntPtr V);
 
-    [DllImport(DLLNAME, EntryPoint = "openvolumetric_register_texture_pointers")]
+    [DllImport(PluginName, EntryPoint = "openvolumetric_register_texture_pointers")]
     private static extern int openvolumetric_register_texture_pointers(
-        int ID, IntPtr Y, IntPtr U, IntPtr V);
+        int id, IntPtr Y, IntPtr U, IntPtr V);
 
-    [DllImport(DLLNAME, EntryPoint = "openvolumetric_set_mesh_pointer")]
-    private static extern int openvolumetric_set_mesh_pointer(int ID, IntPtr index_buffer_handle, int index_size, IntPtr vertex_buffer_handle, int vertex_size);
+    [DllImport(PluginName, EntryPoint = "openvolumetric_set_mesh_pointer")]
+    private static extern int openvolumetric_set_mesh_pointer(int id, IntPtr index_buffer_handle, int index_size, IntPtr vertex_buffer_handle, int vertex_size);
 
-    //---------------------------------------------
-    // Member variables
-    //---------------------------------------------
-
-    // Instance ID generated by plugin
+    // The native instance identifier is valid until Dispose destroys it.
     private int m_instance_id = -1;
 
-    // Width and height of video - returned by plugin
+    // Stream metadata is populated once the combined MP4 opens.
     private int video_width = -1, video_height = -1;
-
-    // Video FPS and duration returned by plugin
     private double video_fps = 0.0, video_duration = 0.0;
 
-    // Textures - resources generated by Plugin and then constructed with unity in init_textures funciton
+    // Unity wraps native single-channel resources rather than copying planes
+    // through managed memory every presentation.
     private Texture2D m_YTexture, m_UTexture, m_VTexture;
 
     private AudioClip m_audio_clip;
+    /// <summary>Streaming clip backed by the native PCM ring.</summary>
     public AudioClip AudioClip
     {
         get { return m_audio_clip; }
     }
 
+    /// <summary>Whether the opened MP4 contains a usable audio stream.</summary>
     public bool HasAudio
     {
         get { return m_audio_clip != null; }
     }
 
-    // Mesh Filter - the form of the object
+    /// <summary>The Unity mesh whose native buffers receive geometry.</summary>
     private Mesh m_mesh;
     public Mesh Mesh
     {
         get{return m_mesh;}
     }
 
-    // Mesh Renderer - the way the object looks on screen
+    /// <summary>The renderer displaying the YUV material and decoded mesh.</summary>
     private MeshRenderer m_mesh_renderer;
     public MeshRenderer MeshRenderer
     {
@@ -127,14 +118,13 @@ public class OpenVolumetricDecoder : IDisposable
     }
 
 
-    // keeps track of last frame index that has been displayed
+    // Used only to detect a genuine transition across the loop boundary.
     private int m_previous_frame;
 
-    // Flag for debug mode
     private bool m_debug;
     private bool m_disposed;
 
-    // Enum for decodered state
+    /// <summary>Managed lifecycle state for the corresponding native player.</summary>
     public enum DecoderState
     {
         INIT_FAIL = -1,
@@ -144,31 +134,35 @@ public class OpenVolumetricDecoder : IDisposable
         STOPPED,
     };
 
-    // 
     private DecoderState m_decoder_state = DecoderState.UNINITIALIZED;
+    /// <summary>Current managed/native decoder lifecycle state.</summary>
     public DecoderState DecoderStatus
     {
         get{return m_decoder_state; }
-        set { m_decoder_state = value; }
+        private set { m_decoder_state = value; }
     }
 
-    // Flag to detect a loop has occured
+    // Latches when playback crosses the end until a seek or explicit reset.
     private bool m_loop = false;
+    /// <summary>Whether playback crossed the current presentation end.</summary>
     public bool ContentLooped
     {
         get { return m_loop; }
     }
 
+    /// <summary>Presentation duration in seconds.</summary>
     public double Duration
     {
         get { return video_duration; }
     }
 
+    /// <summary>Nominal presentation frame rate.</summary>
     public double FrameRate
     {
         get { return video_fps; }
     }
 
+    /// <summary>Most recent native error, or an empty string.</summary>
     public string LastError
     {
         get
@@ -184,50 +178,45 @@ public class OpenVolumetricDecoder : IDisposable
         }
     }
 
+    /// <summary>Timestamp most recently uploaded by Unity's render thread.</summary>
     public double LastPresentedTime
     {
-        get { return openvolumetric_get_last_presented_time(m_instance_id); }
+        get
+        {
+            return m_instance_id >= 0
+                ? openvolumetric_get_last_presented_time(m_instance_id)
+                : -1.0;
+        }
     }
 
-    //---------------------------------------------
-    // Constructor
-    //---------------------------------------------
     /// <summary>
     /// Creates one native decoder instance and optionally opens its diagnostic
     /// console. Graphics and media resources are initialized separately.
     /// </summary>
     public OpenVolumetricDecoder(bool debug)
     {
-        // Set state to uninitialised 
         m_decoder_state = DecoderState.UNINITIALIZED;
-
-        // Set up debug console
         m_debug = debug;
         if (m_debug)
         {
             Debug.Log("OpenVolumetricDecoder - Opening External Console");
             openvolumetric_open_external_console();
         }
-
-        // Init Instance of Volumetric Video decoder
         if (openvolumetric_init(ref m_instance_id) == -1)
         {
             Debug.LogError("OpenVolumetricDecoder::init - failed to init");
             m_decoder_state = DecoderState.INIT_FAIL;
+            return;
         }
-        Debug.Log(String.Format("OpenVolumetricDecoder::init - instance ID: {0}", m_instance_id));
+        Debug.Log(String.Format("OpenVolumetricDecoder::init - instance id: {0}", m_instance_id));
 
-        // decoder init
         m_decoder_state = DecoderState.INITIALIZED;
     }
 
     /// <summary>
-    /// Releases native decoder and graphics resources while Unity's graphics
-    /// device is still alive. This must be called from the main thread.
-    /// </summary>
-    /// <summary>
     /// Releases Unity objects and destroys the matching native instance.
-    /// Safe to call repeatedly.
+    /// Safe to call repeatedly. Call this from Unity's main thread while its
+    /// graphics device is still alive.
     /// </summary>
     public void Dispose()
     {
@@ -236,14 +225,10 @@ public class OpenVolumetricDecoder : IDisposable
             return;
         }
         m_disposed = true;
-
-        // Release Textures
         m_YTexture = null;
         m_UTexture = null;
         m_VTexture = null;
         m_audio_clip = null;
-        
-        // Close logging terminal
         if(m_debug)
         {
             Debug.Log(String.Format(
@@ -251,8 +236,6 @@ public class OpenVolumetricDecoder : IDisposable
                 m_instance_id));
             openvolumetric_close_external_console();
         }
-
-        // quit decoder plugin
         if (m_instance_id >= 0)
         {
             Debug.Log(String.Format(
@@ -264,11 +247,6 @@ public class OpenVolumetricDecoder : IDisposable
 
         GC.SuppressFinalize(this);
     }
-
-
-    //----------------------------------------------------------
-    // Vertex Data structure
-    //----------------------------------------------------------
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
     struct Vertex
     {
@@ -283,34 +261,23 @@ public class OpenVolumetricDecoder : IDisposable
         public Vector3 normal;
         public Vector2 uv;
     }
-
-    //----------------------------------------------------------
-    // Start the decoder
-    //----------------------------------------------------------
     /// <summary>
     /// Allocates a fixed-capacity dynamic Unity mesh and registers its native
     /// index and vertex buffers with the plugin.
     /// </summary>
-    public bool init_mesh()
+    public bool InitializeMesh()
     {
-        // Check for init
         if (m_decoder_state != DecoderState.INITIALIZED)
         {
             Debug.LogError("OpenVolumetricDecoder::init_mesh - failed to init");
             return false;
         }
-
-        // Create New Mesh
         m_mesh = new Mesh();
 
-        // Mark mesh as dynamic so it is writable and accessiable on the CPU
+        // Unity may rewrite these buffers every rendered presentation.
         m_mesh.MarkDynamic();
-
-        // Vertex Count 
         const int vertex_count = 65535 ;
         const int index_count = 3 * 100000;
-
-         // allocated vertex buffer and buffer layout 
         var layout = new[]
         {
             new VertexAttributeDescriptor(VertexAttribute.Position,     VertexAttributeFormat.Float32, 3),
@@ -319,7 +286,8 @@ public class OpenVolumetricDecoder : IDisposable
         };
         m_mesh.SetVertexBufferParams(vertex_count, layout);
 
-        // init buffer with zeros - not sure if this is necessary
+        // Initialize the full fixed-capacity buffer before exposing its
+        // native handle to the plugin.
         NativeArray<Vertex> vert_buffer_data = new NativeArray<Vertex>(vertex_count, Allocator.Temp);
         for (int i = 0; i < vertex_count; i++)
         {
@@ -327,89 +295,72 @@ public class OpenVolumetricDecoder : IDisposable
         }
         m_mesh.SetVertexBufferData(vert_buffer_data, 0, 0, vertex_count);
         vert_buffer_data.Dispose();
-
-        // Init indexes that make up the triangles
         int[] tris_array = new int[index_count];
         for (int i = 0; i < index_count; i++)
         {
             tris_array[i] = 0;
         }
 
-        //
         m_mesh.indexFormat    = UnityEngine.Rendering.IndexFormat.UInt32;
         m_mesh.triangles      = tris_array;
-
-        // Get Buffer Handles
         IntPtr index_buffer     = m_mesh.GetNativeIndexBufferPtr();
         IntPtr vertex_buffer    = m_mesh.GetNativeVertexBufferPtr(0);
 
         Debug.Log(String.Format("OpenVolumetricDecoder::init_mesh - {0} {1}", index_buffer, vertex_buffer));
-
-        // Pass handles to Native Plugin
         if (openvolumetric_set_mesh_pointer(m_instance_id, index_buffer, index_count, vertex_buffer, vertex_count ) == -1)
         {
             m_decoder_state = DecoderState.INIT_FAIL;
             return false;
         }
 
-        //
         Debug.Log("OpenVolumetricDecoder::init_mesh - Done");
         return true;
     }
-
-
-    //---------------------------------------------
-    // Function to init the volumetric video decoder
-    // Requires a reference to the MeshRenderer from the parent class
-    //---------------------------------------------
     /// <summary>
     /// Opens the combined MP4 and creates the material and external YUV
     /// textures used by the selected graphics backend.
     /// </summary>
-    public bool init_texture(ref  MeshRenderer mesh_renderer, string video_file)
+    public bool InitializeTexture(
+        ref MeshRenderer meshRenderer,
+        string videoFile)
     {
-        //
-        m_mesh_renderer = mesh_renderer;
-
-        // Check for init
+        m_mesh_renderer = meshRenderer;
         if (m_decoder_state != DecoderState.INITIALIZED)
         {
             Debug.LogError("OpenVolumetricDecoder::init_texture - failed to init");
             m_decoder_state = DecoderState.INIT_FAIL;
             return false;
         }
-
-        // Load Video
-        if(!load_video(video_file, ref video_width, ref video_height, ref video_fps, ref video_duration))
+        if(!LoadVideo(
+            videoFile,
+            ref video_width,
+            ref video_height,
+            ref video_fps,
+            ref video_duration))
         {
             m_decoder_state = DecoderState.INIT_FAIL;
             return false;
         }   
-
-        // Create Texture Resources         
-        if(!init_textures(ref  m_mesh_renderer, video_width, video_height))
+        if(!InitializeTextures(
+            ref m_mesh_renderer, video_width, video_height))
         {
             m_decoder_state = DecoderState.INIT_FAIL;
             return false;
         }
-         
-        // Seek to start of file
         openvolumetric_seek(m_instance_id, 0.0);
         
-        //
         return true;
     }
-
-
-    //---------------------------------------------
-    // Load video and return important properties
-    //---------------------------------------------
     /// <summary>
     /// Opens the native container and retrieves dimensions, rate, and duration.
     /// </summary>
-    private bool load_video(string filepath,  ref int video_width, ref int video_height, ref double video_fps, ref double video_duration )
+    private bool LoadVideo(
+        string filepath,
+        ref int videoWidth,
+        ref int videoHeight,
+        ref double videoFps,
+        ref double videoDuration)
     {
-        // Load Video
         if (openvolumetric_load_video(m_instance_id, filepath) == -1)
         {
             IntPtr errorPointer = openvolumetric_get_last_error(m_instance_id);
@@ -421,21 +372,27 @@ public class OpenVolumetricDecoder : IDisposable
             m_decoder_state = DecoderState.INIT_FAIL;
             return false;
         }
-
-        // Get Video Details
-        if(openvolumetric_get_video_details(m_instance_id,  ref video_width, ref video_height, ref video_fps, ref video_duration) == -1)
+        if(openvolumetric_get_video_details(
+            m_instance_id,
+            ref videoWidth,
+            ref videoHeight,
+            ref videoFps,
+            ref videoDuration) == -1)
         {
             Debug.LogError("OpenVolumetricDecoder::init - failed to get video details");
             m_decoder_state = DecoderState.INIT_FAIL;
             return false;
         }
-
-        // Log some details
         Debug.Log( String.Format("OpenVolumetricDecoder::init - file:  {0}", filepath));
-        Debug.Log( String.Format("OpenVolumetricDecoder::init - width: {0}  height:   {1}",video_width, video_height));
-        Debug.Log( String.Format("OpenVolumetricDecoder::init - fps:   {0}  duration: {1}",video_fps, video_duration));
+        Debug.Log(String.Format(
+            "OpenVolumetricDecoder::init - width: {0}  height: {1}",
+            videoWidth,
+            videoHeight));
+        Debug.Log(String.Format(
+            "OpenVolumetricDecoder::init - fps: {0}  duration: {1}",
+            videoFps,
+            videoDuration));
 
-        //
         return true;
     }
 
@@ -443,7 +400,7 @@ public class OpenVolumetricDecoder : IDisposable
     /// Creates a streaming AudioClip whose callback pulls synchronized PCM
     /// directly from the native decoder.
     /// </summary>
-    public bool init_audio()
+    public bool InitializeAudio()
     {
         int sampleRate = 0;
         int channels = 0;
@@ -468,7 +425,7 @@ public class OpenVolumetricDecoder : IDisposable
             channels,
             sampleRate,
             true,
-            read_audio);
+            ReadAudio);
         Debug.Log(String.Format(
             "OpenVolumetricDecoder::init_audio - {0} Hz, {1} channels",
             sampleRate, channels));
@@ -476,7 +433,7 @@ public class OpenVolumetricDecoder : IDisposable
     }
 
     /// <summary>Fills Unity's audio request from the native PCM ring.</summary>
-    private void read_audio(float[] samples)
+    private void ReadAudio(float[] samples)
     {
         int read = openvolumetric_read_audio(
             m_instance_id, samples, samples.Length);
@@ -485,21 +442,19 @@ public class OpenVolumetricDecoder : IDisposable
             Array.Clear(samples, 0, samples.Length);
         }
     }
-
-
-    //---------------------------------------------
-    // Function to create texture pointers which are then created by the native plugin
-    //---------------------------------------------
     /// <summary>
     /// Creates plane textures and completes the backend-specific native handle
     /// handshake required for render-thread uploads.
     /// </summary>
-    private bool init_textures(ref  MeshRenderer mesh_renderer, int width, int height)
+    private bool InitializeTextures(
+        ref MeshRenderer meshRenderer,
+        int width,
+        int height)
     {
-        // Find shader
         try
         {
-            mesh_renderer.material = new Material(Shader.Find("OpenVolumetric/YUV2RGBA"));
+            meshRenderer.material =
+                new Material(Shader.Find("OpenVolumetric/YUV2RGBA"));
         }
         catch
         {
@@ -507,21 +462,15 @@ public class OpenVolumetricDecoder : IDisposable
             m_decoder_state = DecoderState.INIT_FAIL;
             return false;
         }
-
-        // Create textures 
         IntPtr Y = new IntPtr();
         IntPtr U = new IntPtr();
         IntPtr V = new IntPtr();
-    
-        // Get/Set texture pointers
         if(openvolumetric_get_texture_pointers(m_instance_id, ref Y, ref U, ref V) == -1)
         {
             Debug.LogError("OpenVolumetricDecoder::init_textures - Error Creating Textures");
             m_decoder_state = DecoderState.INIT_FAIL;
             return false;
         }
-
-        // Create Unity Textures - Y is full size - U & V are half size
 #if UNITY_ANDROID && !UNITY_EDITOR
         const TextureFormat planeFormat = TextureFormat.R8;
 #else
@@ -545,79 +494,55 @@ public class OpenVolumetricDecoder : IDisposable
             return false;
         }
 #endif
+        meshRenderer.material.SetTexture("_YTex", m_YTexture);
+        meshRenderer.material.SetTexture("_UTex", m_UTexture);
+        meshRenderer.material.SetTexture("_VTex", m_VTexture);
 
-        // Set Shader Uniforms
-        mesh_renderer.material.SetTexture("_YTex", m_YTexture);
-        mesh_renderer.material.SetTexture("_UTex", m_UTexture);
-        mesh_renderer.material.SetTexture("_VTex", m_VTexture);
-
-        //
         return true;
     }
-
-
-    //----------------------------------------------------------
-    // Start the decoder
-    //----------------------------------------------------------
     /// <summary>Starts the native demux and geometry worker threads.</summary>
-    public bool start_decoding()
+    public bool StartDecoding()
     {
-        // Check decoder has started before attempting to stop
         if (m_decoder_state != DecoderState.INITIALIZED)
         {
             Debug.LogError(String.Format("OpenVolumetricDecoder::start - Failed to start decoder for instance {0} - decoder not initialised", m_instance_id));
             return false;
         }
-
-        // Start Decoder
         if (openvolumetric_start_decoding(m_instance_id) == -1)
         {
             Debug.LogError(String.Format("OpenVolumetricDecoder::start - Failed to start decoder for instance {0}",m_instance_id) );
             return false;
         }
-
-        // Update internal state
         m_decoder_state = DecoderState.STARTED;
 
-        //
         return true;
     }
-
-    //----------------------------------------------------------
-    // Stop the decoder
-    //----------------------------------------------------------
     /// <summary>Stops native workers while retaining initialized resources.</summary>
-    public bool stop_decoding()
+    public bool StopDecoding()
     {
-        // If decoder has stopped - then nothing to do
         if(m_decoder_state == DecoderState.STOPPED)
         {    
             return false;
         }
-
-        // Check decoder has started before attempting to stop
         if(m_decoder_state != DecoderState.STARTED)
         {
             Debug.LogError(String.Format("OpenVolumetricDecoder::stop - Failed to stop decoder for instance {0} - Decoder status has not started", m_instance_id));
             return false;
         }
 
-        //
         if(openvolumetric_stop_decoding(m_instance_id) == -1)
         {
             Debug.LogError(String.Format("OpenVolumetricDecoder::stop - Failed to start decoder for instance {0}",m_instance_id) );
             return false;
         }
 
-        //
         m_decoder_state = DecoderState.STOPPED;
 
-        //
         return true;
     }
 
     /// <summary>Seeks the unified native pipeline to a time in seconds.</summary>
-    public bool seek(double time)
+    public bool Seek(double time)
     {
         if (m_decoder_state != DecoderState.STARTED ||
             video_duration <= 0.0)
@@ -640,25 +565,19 @@ public class OpenVolumetricDecoder : IDisposable
     }
 
     /// <summary>Clears the managed end-of-content latch for a new loop pass.</summary>
-    public void reset_loop_flag()
+    public void ResetLoopFlag()
     {
         m_loop = false;
     }
 
 
-    //----------------------------------------------------------
-    // Function to set the frame counter - this should be a time within the volumetric sequence e.g. 5 secs
-    // This is then normalised within the sequence
-    //----------------------------------------------------------
     /// <summary>
     /// Supplies the desired presentation time and queues a render-thread plugin
     /// event that uploads matching texture and geometry.
     /// </summary>
-    public void update(double time)
+    public void UpdatePresentation(double time)
     {
         double presentation_time = time % video_duration;
-
-        // Compute frame within the sequence
         int current_frame = (int)(presentation_time * video_fps);
 
         // Update frame bookkeeping and loop detection only when the encoded
@@ -685,8 +604,6 @@ public class OpenVolumetricDecoder : IDisposable
                     return;
                 }
             }
-
-            // keep track of previous frame
             m_previous_frame = current_frame;
         }
 
@@ -696,15 +613,16 @@ public class OpenVolumetricDecoder : IDisposable
         m_mesh.RecalculateBounds();
     }
 
-    //----------------------------------------------------------
-    //
-    //----------------------------------------------------------
     /// <summary>Updates the YUV conversion material's correction parameters.</summary>
-    public void set_colour_correction_values(float luminaceCorrection, float blueProjectionCorrection, float redProjectionCorrection)
+    public void SetColourCorrectionValues(
+        float luminanceCorrection,
+        float blueProjectionCorrection,
+        float redProjectionCorrection)
     {
         if(m_decoder_state >= DecoderState.INITIALIZED)
         {
-             m_mesh_renderer.material.SetFloat("_LuminanceCorrection", luminaceCorrection);
+             m_mesh_renderer.material.SetFloat(
+                 "_LuminanceCorrection", luminanceCorrection);
              m_mesh_renderer.material.SetFloat("_BlueProjectionCorrection", blueProjectionCorrection);
              m_mesh_renderer.material.SetFloat("_RedProjectionCorrection", redProjectionCorrection);
         }

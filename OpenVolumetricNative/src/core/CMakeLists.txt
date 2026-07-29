@@ -18,7 +18,6 @@ target_link_libraries(OpenVolumetricFFmpeg INTERFACE
 add_library(OpenVolumetricCore STATIC
   container/FFmpegMp4VolumetricContainer.cpp
   container/GeometryPacket.cpp
-  decoding/IVolumetricVideo.cpp
   decoding/OpenVolumetricPlayer.cpp
   geometry/DracoPointCloudDecoder.cpp
   geometry/GeometryDecoderDraco.cpp

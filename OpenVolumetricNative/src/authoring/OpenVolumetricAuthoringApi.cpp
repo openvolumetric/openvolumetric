@@ -1,5 +1,6 @@
 #include "OpenVolumetricAuthoringApi.h"
 
+#include "AuthoringWorkflow.h"
 #include "DracoMeshEncoder.h"
 #include "VolumetricVideoPacker.h"
 
@@ -13,6 +14,112 @@ namespace
 {
 thread_local std::string last_error;
 thread_local std::string last_report;
+thread_local std::string last_arguments;
+}
+
+int openvolumetric_authoring_get_preset(
+	int preset,
+	OpenVolumetricAuthoringSettings* output)
+{
+	if (output == nullptr || preset < 0 || preset > 2)
+		return -1;
+	const auto settings = openvolumetric::authoring::preset_settings(
+		static_cast<openvolumetric::authoring::PlatformPreset>(preset));
+	output->codec =
+		settings.codec == openvolumetric::authoring::VideoCodec::HEVC ? 0 : 1;
+	output->crf = settings.crf;
+	output->video_keyframe_interval = settings.video_keyframe_interval;
+	output->reference_frames = settings.reference_frames;
+	output->disable_sao = settings.disable_sao ? 1 : 0;
+	output->position_quantization = settings.position_quantization;
+	output->normal_quantization = settings.normal_quantization;
+	output->texture_quantization = settings.texture_quantization;
+	output->draco_encode_speed = settings.draco_encode_speed;
+	output->draco_decode_speed = settings.draco_decode_speed;
+	return 1;
+}
+
+int openvolumetric_authoring_validate_sources(
+	const char* image_directory,
+	const char* geometry_directory)
+{
+	last_error.clear();
+	if (image_directory == nullptr || geometry_directory == nullptr)
+	{
+		last_error = "Image and OBJ directories are required.";
+		return -1;
+	}
+	openvolumetric::authoring::SourceSequenceInfo info;
+	return openvolumetric::authoring::validate_source_sequences(
+		std::filesystem::u8path(image_directory),
+		std::filesystem::u8path(geometry_directory),
+		info,
+		last_error) ? 1 : -1;
+}
+
+const char* openvolumetric_authoring_build_ffmpeg_arguments(
+	const char* image_pattern,
+	const char* audio_path,
+	const char* output_path,
+	double frame_rate,
+	int first_frame,
+	int frame_count,
+	const OpenVolumetricAuthoringSettings* settings)
+{
+	last_error.clear();
+	last_arguments.clear();
+	if (image_pattern == nullptr ||
+		output_path == nullptr ||
+		settings == nullptr ||
+		frame_count < 0)
+	{
+		last_error = "FFmpeg request fields are invalid.";
+		return nullptr;
+	}
+	openvolumetric::authoring::MediaEncodeRequest request;
+	request.image_pattern = std::filesystem::u8path(image_pattern);
+	if (audio_path != nullptr && audio_path[0] != '\0')
+		request.audio_path = std::filesystem::u8path(audio_path);
+	request.output_path = std::filesystem::u8path(output_path);
+	request.frame_rate = frame_rate;
+	request.first_frame = first_frame;
+	request.frame_count = static_cast<std::size_t>(frame_count);
+	request.settings.codec = settings->codec == 0
+		? openvolumetric::authoring::VideoCodec::HEVC
+		: openvolumetric::authoring::VideoCodec::H264;
+	request.settings.crf = settings->crf;
+	request.settings.video_keyframe_interval =
+		settings->video_keyframe_interval;
+	request.settings.reference_frames = settings->reference_frames;
+	request.settings.disable_sao = settings->disable_sao != 0;
+	request.settings.position_quantization =
+		settings->position_quantization;
+	request.settings.normal_quantization = settings->normal_quantization;
+	request.settings.texture_quantization =
+		settings->texture_quantization;
+	request.settings.draco_encode_speed = settings->draco_encode_speed;
+	request.settings.draco_decode_speed = settings->draco_decode_speed;
+
+	std::vector<std::string> arguments;
+	if (!openvolumetric::authoring::build_ffmpeg_arguments(
+		request, arguments, last_error))
+	{
+		return nullptr;
+	}
+	for (const std::string& argument : arguments)
+	{
+		if (argument.find('\n') != std::string::npos ||
+			argument.find('\r') != std::string::npos)
+		{
+			last_error = "FFmpeg paths cannot contain newline characters.";
+			last_arguments.clear();
+			return nullptr;
+		}
+		if (!last_arguments.empty())
+			last_arguments.push_back('\n');
+		last_arguments += argument;
+	}
+	return last_arguments.c_str();
 }
 
 int openvolumetric_authoring_encode_obj(

@@ -60,9 +60,6 @@ public:
 	/// Opens the combined MP4 and discovers its video, audio, and vvge tracks.
 	virtual bool init(const char* filepath) = 0;
 
-	// --------------------------------------------------------------------------
-	// 
-	// --------------------------------------------------------------------------
 	/// Worker entry point that demuxes and decodes until stopped or at EOS.
 	virtual bool decode() = 0;
 

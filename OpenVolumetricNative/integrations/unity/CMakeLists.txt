@@ -1,5 +1,6 @@
 set(VV_UNITY_API_SOURCES
   src/api/openvolumetric-unity-api.cpp
+  src/api/UnityOpenVolumetricPlayer.cpp
 )
 
 set(VV_UNITY_INCLUDE_DIRS
@@ -12,7 +13,6 @@ if(WIN32)
     ${VV_UNITY_API_SOURCES}
     src/rendering/d3d11/MeshBufferD3D11.cpp
     src/rendering/d3d11/TextureD3D11.cpp
-    src/rendering/d3d11/VolumetricVideoD3D11.cpp
   )
 
   target_include_directories(OpenVolumetricUnityPlugin
@@ -44,7 +44,6 @@ elseif(APPLE)
     ${VV_UNITY_API_SOURCES}
     src/rendering/metal/MeshBufferMetal.mm
     src/rendering/metal/TextureMetal.mm
-    src/rendering/metal/VolumetricVideoMetal.cpp
   )
 
   set_source_files_properties(
@@ -84,7 +83,6 @@ elseif(ANDROID)
     src/rendering/vulkan/MeshBufferVulkan.cpp
     src/rendering/vulkan/TextureVulkan.cpp
     src/rendering/vulkan/VulkanUploadBuffer.cpp
-    src/rendering/vulkan/VolumetricVideoVulkan.cpp
   )
 
   target_include_directories(OpenVolumetricUnityPlugin

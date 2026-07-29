@@ -269,7 +269,7 @@ bool prepare_geometry_packets(
 		return false;
 	}
 
-	TopologyAnalysisOptions analysis_options;
+	TopologyOptions topology_options;
 	CanonicalMesh previous;
 	bool has_previous = false;
 	std::uint32_t active_keyframe = 0;
@@ -316,7 +316,7 @@ bool prepare_geometry_packets(
 		CanonicalMesh current;
 		std::string error;
 		if (!load_canonical_obj(
-			obj_path, analysis_options, current, error))
+			obj_path, topology_options, current, error))
 		{
 			std::cerr << "Could not analyse OBJ frame "
 				<< obj_path << ": " << error << '\n';

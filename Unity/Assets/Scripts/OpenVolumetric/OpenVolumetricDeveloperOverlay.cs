@@ -1,7 +1,6 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.Profiling;
-using UnityEngine.Scripting.APIUpdating;
 
 namespace OpenVolumetric
 {
@@ -11,9 +10,6 @@ namespace OpenVolumetric
 /// The overlay uses a camera-attached TextMesh and does not require a Canvas,
 /// EventSystem, controller rays, or scene setup.
 /// </summary>
-[MovedFrom(true, sourceNamespace: "OpenVolumetric",
-    sourceAssembly: "Assembly-CSharp",
-    sourceClassName: "VolumetricVideoDeveloperOverlay")]
 public sealed class OpenVolumetricDeveloperOverlay : MonoBehaviour
 {
     private const float SeekSeconds = 10.0F;

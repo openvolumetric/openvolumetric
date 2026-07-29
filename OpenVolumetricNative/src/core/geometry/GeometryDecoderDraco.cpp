@@ -13,10 +13,6 @@
 
 namespace openvolumetric
 {
-
-// --------------------------------------------------------------------------
-// Constructor
-// --------------------------------------------------------------------------
 GeometryDecoderDraco::GeometryDecoderDraco():
 	IGeometryDecoder(), m_streamed_meshes(256), m_decoded_meshes(64),
 	m_generation(0),
@@ -29,27 +25,22 @@ GeometryDecoderDraco::GeometryDecoderDraco():
 {
 
 }
-
-// --------------------------------------------------------------------------
-// Destructor
-// --------------------------------------------------------------------------
 GeometryDecoderDraco::~GeometryDecoderDraco()
 {
 }
 
-// --------------------------------------------------------------------------
-// Destroy
-// --------------------------------------------------------------------------
 void GeometryDecoderDraco::destroy()
 {
 	LOG("GeometryDecoderDraco::destroy - start");
 
-	//
+	// Joining first makes this safe during partial startup and repeated close.
+	stop_decoding();
 	flush_buffer();
 
 	m_streamed_meshes.clear();
+	m_initialised = false;
+	m_decoder_state = UNINITIALIZED;
 
-	//
 	LOG("GeometryDecoderDraco::destroy - stop");
 }
 
@@ -113,34 +104,26 @@ void GeometryDecoderDraco::mark_end_of_stream(std::uint64_t generation)
 {
 	m_end_of_stream_generation.store(generation, std::memory_order_release);
 }
- 
-// --------------------------------------------------------------------------
-// Start Decoding
-// --------------------------------------------------------------------------
 bool GeometryDecoderDraco::start_decoding()
 {
 	LOG("GeometryDecoderDraco::start_decoding");
 
-	//
 	if (!this->m_initialised)
 	{
 		LOG("GeometryDecoderDraco::start_decoding - not INITIALIZED");
 		return false;
 	}
 
-	// Create thread start video decoding
+	// The worker is the sole consumer of compressed geometry packets and the
+	// sole producer of decoded meshes.
 	m_decode_thread = std::thread([&]()
 	{
-		// 
 		m_decoder_state = DECODING;
 
-		//
 		while (m_decoder_state != STOP)
 		{
-			// Switch based on decoder state
 			switch (m_decoder_state)
 			{
-				// If decoding
 				case DECODING:
 				{
 					if (!this->decode())
@@ -161,22 +144,13 @@ bool GeometryDecoderDraco::start_decoding()
 			}
 		}
 
-		//
 		LOG("AVDecoderFFMPEG::start_decoding - end");
 	});
 
-	//
 	return true;
 }
-
-
-
-// --------------------------------------------------------------------------
-// 
-// --------------------------------------------------------------------------
 bool GeometryDecoderDraco::decode()
 {
-	//
 	if (!is_buffer_blocked())
 	{
 		EncodedMeshData encoded;
@@ -281,20 +255,10 @@ bool GeometryDecoderDraco::decode()
 
 	return true;
 }
-
-
-// --------------------------------------------------------------------------
-// 
-// --------------------------------------------------------------------------
 bool GeometryDecoderDraco::is_buffer_blocked()
 {
 	return m_decoded_meshes.full();
 }
-
-
-// --------------------------------------------------------------------------
-// get_mesh_data
-// --------------------------------------------------------------------------
 openvolumetric::FrameMatchResult GeometryDecoderDraco::get_mesh_data(
 	double presentation_time,
 	double tolerance,
@@ -345,46 +309,34 @@ openvolumetric::FrameMatchResult GeometryDecoderDraco::get_mesh_data(
 		return openvolumetric::FrameMatchResult::Ready;
 	});
 }
-
-
-// --------------------------------------------------------------------------
-// 
-// --------------------------------------------------------------------------
 bool GeometryDecoderDraco::convert_draco_to_mesh(DracoData& draco_data, Mesh& mesh_out)
 {
-	// Init Buffer using data
 	draco::DecoderBuffer buffer;
 	buffer.Init(draco_data.data(), draco_data.size());
 	
-	// Create draco::Mesh
 	draco::Mesh* mesh = nullptr;
 	auto type_statusor = draco::Decoder::GetEncodedGeometryType(&buffer);
 	if (!type_statusor.ok()) {
 		return false;
 	}
 
-	// Check that the mesh type is a triangular mesh
 	const draco::EncodedGeometryType geom_type = type_statusor.value();
 	if (geom_type != draco::TRIANGULAR_MESH)
 	{
 		return false;
 	}
 
-	// Start timer
 	draco::CycleTimer timer;
 	timer.Start();
 
-	// Create draco decoder
 	draco::Decoder decoder;
 
-	// Decoder Mesh from Buffer
 	auto statusor = decoder.DecodeMeshFromBuffer(&buffer);
 	if (!statusor.ok())
 	{
 		return false;
 	}
 
-	//
 	std::unique_ptr<draco::Mesh> in_mesh = std::move(statusor).value();
 	timer.Stop();
 	if (in_mesh)
@@ -392,46 +344,37 @@ bool GeometryDecoderDraco::convert_draco_to_mesh(DracoData& draco_data, Mesh& me
 		mesh = in_mesh.get();
 	}
 
-	// Allocate space for indexes
 	mesh_out.indexes.resize(mesh->num_faces() * 3);
 	for (draco::FaceIndex face_id(0); face_id < mesh->num_faces(); ++face_id)
 	{
-		//
 		const draco::Mesh::Face face = mesh->face(face_id);
-		// Copy memory contain indices 
 		memcpy(&mesh_out.indexes[0] + face_id.value() * 3,
 			reinterpret_cast<const int*>(face.data()),
 			sizeof(int) * 3);
 	}
 
-	// Resize verts array
 	mesh_out.verts.resize(mesh->num_points());
 
-	// Get attributes
 	const auto pos_att		= mesh->GetNamedAttribute(draco::GeometryAttribute::POSITION);
 	const auto normal_att	= mesh->GetNamedAttribute(draco::GeometryAttribute::NORMAL);
 	const auto uv_att		= mesh->GetNamedAttribute(draco::GeometryAttribute::TEX_COORD);
 	if (pos_att == nullptr || normal_att == nullptr || uv_att == nullptr)
 		return false;
 
-	// Populate for each point
 	for (draco::PointIndex i(0); i < mesh->num_points(); ++i)
 	{
-		// Get Vertex posision
 		const draco::AttributeValueIndex pos_val_index = pos_att->mapped_index(i);
 		if (!pos_att->ConvertValue<float, 3>(pos_val_index, &mesh_out.verts[i.value()].pos[0]))
 		{
 			return false;
 		}
 
-		// Get Vertex Normal
 		const draco::AttributeValueIndex norm_val_index = normal_att->mapped_index(i);
 		if (!normal_att->ConvertValue<float, 3>(norm_val_index, &mesh_out.verts[i.value()].normal[0]))
 		{
 			return false;
 		}
 
-		// Get Vertex UV
 		const draco::AttributeValueIndex uv_val_index = uv_att->mapped_index(i);
 		if (!uv_att->ConvertValue<float, 2>(uv_val_index, &mesh_out.verts[i.value()].uv[0]))
 		{
@@ -439,7 +382,6 @@ bool GeometryDecoderDraco::convert_draco_to_mesh(DracoData& draco_data, Mesh& me
 		}
 	}
 
-	//
 	return true;
 }
 
@@ -519,32 +461,19 @@ bool GeometryDecoderDraco::convert_draco_update_to_mesh(
 	}
 	return true;
 }
-
-
-// --------------------------------------------------------------------------
-// Stop Decoding
-// --------------------------------------------------------------------------
 bool GeometryDecoderDraco::stop_decoding()
 {
-	//
 	LOG("GeometryDecoderDraco::stop_decoding");
 
-	//
 	this->m_decoder_state = STOP;
 
-	//
 	if (m_decode_thread.joinable())
 	{
 		m_decode_thread.join();
 	}
 
-	//
 	return true;
 }
-
-// --------------------------------------------------------------------------
-// Clear front decoded mesh
-// --------------------------------------------------------------------------
 void GeometryDecoderDraco::clear_frame_data()
 {
 	m_decoded_meshes.access([](auto& meshes)
@@ -553,10 +482,6 @@ void GeometryDecoderDraco::clear_frame_data()
 			meshes.pop_front();
 	});
 }
-
-// --------------------------------------------------------------------------
-// Flush Buffers
-// --------------------------------------------------------------------------
 void GeometryDecoderDraco::flush_buffer()
 {
 	LOG("GeometryDecoderDraco::flush_buffer - start");
@@ -564,7 +489,6 @@ void GeometryDecoderDraco::flush_buffer()
 	m_decoded_meshes.clear();
 	m_streamed_meshes.clear();
 
-	//
 	LOG("GeometryDecoderDraco::flush_buffer - stop");
 }
 
