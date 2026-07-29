@@ -171,7 +171,7 @@ when that is smaller or simpler.
 Proposed authoring controls:
 
 - mode: automatic, independent only, or topology reuse;
-- maximum topology-window length;
+- maximum geometry keyframe interval measured in samples;
 - minimum reusable-window length;
 - forced topology-keyframe interval;
 - position quantization precision or error target;
@@ -385,6 +385,15 @@ Because updates are keyframe-relative, intermediate geometry frames do not
 need to be decoded solely to reconstruct the target. Periodic topology
 keyframes should bound seek cost even when topology remains constant for an
 entire sequence.
+
+The authoring interval is inclusive of the reference mesh: an interval of
+`N` creates one complete Draco mesh plus at most `N - 1` dependent position
+updates. The following frame starts a new reference window. An interval of
+`1` therefore disables temporal dependency without requiring a separate
+packet format. When the optional limit is disabled, authoring uses `0` and
+allows the window to continue until topology changes. Segment boundaries may
+shorten a window so independently addressable streaming segments always begin
+with usable geometry.
 
 ## Engine integration
 

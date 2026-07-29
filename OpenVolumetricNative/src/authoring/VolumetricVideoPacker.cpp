@@ -277,6 +277,7 @@ bool prepare_geometry_packets(
 	fs::path active_keyframe_obj;
 	bool active_keyframe_has_updates = false;
 	bool active_keyframe_validated = false;
+	std::uint32_t active_window_length = 0;
 	std::size_t keyframe_count = 0;
 
 	// A singleton topology does not require stable decoded point ordering.
@@ -333,7 +334,10 @@ bool prepare_geometry_packets(
 		const bool keyframe =
 			!options.enable_topology_compression ||
 			!has_previous ||
-			!topology_matches(previous, current);
+			!topology_matches(previous, current) ||
+			(options.maximum_geometry_keyframe_interval > 0 &&
+				active_window_length >=
+					options.maximum_geometry_keyframe_interval);
 		input.packet.version = openvolumetric::kGeometryPacketVersion;
 		input.packet.frame_number = input.frame_number;
 		input.packet.topology_id = current.topology_id;
@@ -350,6 +354,7 @@ bool prepare_geometry_packets(
 			active_keyframe_obj = obj_path;
 			active_keyframe_has_updates = false;
 			active_keyframe_validated = false;
+			active_window_length = 1;
 			++keyframe_count;
 			input.packet.flags = openvolumetric::kGeometryPacketKeyframe;
 			input.packet.coding_mode =
@@ -359,6 +364,7 @@ bool prepare_geometry_packets(
 		}
 		else
 		{
+			++active_window_length;
 			if (!active_keyframe_has_updates)
 			{
 				if (active_keyframe_input == nullptr ||

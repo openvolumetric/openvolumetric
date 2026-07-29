@@ -72,7 +72,8 @@ int openvolumetric_authoring_pack(
 	int texture_quantization,
 	int encode_speed,
 	int decode_speed,
-	int enable_topology_compression)
+	int enable_topology_compression,
+	int maximum_geometry_keyframe_interval)
 {
 	last_error.clear();
 	last_report.clear();
@@ -82,6 +83,12 @@ int openvolumetric_authoring_pack(
 		output_path == nullptr)
 	{
 		last_error = "Media, geometry, and output paths are required.";
+		return -1;
+	}
+	if (maximum_geometry_keyframe_interval < 0)
+	{
+		last_error =
+			"Maximum geometry keyframe interval cannot be negative.";
 		return -1;
 	}
 
@@ -94,6 +101,9 @@ int openvolumetric_authoring_pack(
 		options.output_path = output_path;
 		options.enable_topology_compression =
 			enable_topology_compression != 0;
+		options.maximum_geometry_keyframe_interval =
+			static_cast<std::uint32_t>(
+				maximum_geometry_keyframe_interval);
 		options.draco_options.position_quantization =
 			position_quantization;
 		options.draco_options.normal_quantization =

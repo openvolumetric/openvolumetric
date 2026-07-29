@@ -38,7 +38,8 @@ OPENVOLUMETRIC_AUTHORING_API int openvolumetric_authoring_pack(
 	int texture_quantization,
 	int encode_speed,
 	int decode_speed,
-	int enable_topology_compression);
+	int enable_topology_compression,
+	int maximum_geometry_keyframe_interval);
 
 /// Returns a short description of the most recent failure on this thread.
 OPENVOLUMETRIC_AUTHORING_API const char* openvolumetric_authoring_last_error();

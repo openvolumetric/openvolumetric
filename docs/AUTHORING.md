@@ -41,6 +41,14 @@ mesh mode, preserving canonical vertex and index ordering. The first frame of
 each topology window becomes a complete-mesh keyframe. Matching subsequent
 frames become sequential Draco point clouds containing positions only.
 
+Both Editor encoders provide an optional **Limit Geometry Keyframes** control
+and **Maximum Geometry Frames** value. For a value of `N`, the encoder emits
+one full Draco reference mesh followed by at most `N - 1` position updates
+before forcing another full reference mesh. Disabling the limit allows reuse
+until topology changes. This is separate from the video codec's keyframe
+interval and bounds geometry seek/preroll cost for streamed content. Topology
+changes or media-segment boundaries can force an earlier geometry keyframe.
+
 The packer rejects a keyframe whose decoded indices differ from the canonical
 OBJ, preventing an order mismatch from corrupting dependent updates.
 
@@ -60,8 +68,9 @@ Both Editor encoders provide four content profiles:
 - **Quest Performance** uses H.264 CRF 23 with no B-frames, one reference
   frame, reduced geometry quantization, and Draco decode speed 10. It trades
   file size and some geometry precision for lower software decode cost.
-- **Custom** exposes codec, CRF, keyframe interval, reference frames, HEVC SAO,
-  quantization, and Draco encode/decode speed.
+- **Custom** exposes codec, CRF, video keyframe interval, reference frames,
+  HEVC SAO, quantization, and Draco encode/decode speed. The optional geometry
+  keyframe limit is available independently of the selected preset.
 
 Draco speed values range from 0 (slowest, best compression) to 10 (fastest).
 The decode-speed choice changes how Draco encodes the bitstream and can

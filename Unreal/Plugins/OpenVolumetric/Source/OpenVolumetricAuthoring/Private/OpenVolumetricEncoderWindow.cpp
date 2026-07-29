@@ -290,8 +290,10 @@ public:
 	TSharedPtr<SEditableTextBox> Output;
 	TSharedPtr<SEditableTextBox> FFmpeg;
 	TSharedPtr<SEditableTextBox> FrameRate;
+	TSharedPtr<SEditableTextBox> MaximumGeometryFrames;
 	bool bOverwrite = false;
 	bool bGeometryCompression = true;
+	bool bLimitGeometryKeyframeInterval = false;
 
 	FImpl()
 	{
@@ -324,6 +326,13 @@ public:
 			TEXT("GeometryCompression"),
 			bGeometryCompression,
 			GEditorPerProjectIni);
+		GConfig->GetBool(
+			SettingsSection,
+			TEXT("LimitGeometryKeyframeInterval"),
+			bLimitGeometryKeyframeInterval,
+			GEditorPerProjectIni);
+		MaximumGeometryFrames->SetText(FText::FromString(LoadValue(
+			TEXT("MaximumGeometryKeyframeInterval"), TEXT("60"))));
 	}
 
 	void Save() const
@@ -347,6 +356,16 @@ public:
 			SettingsSection,
 			TEXT("GeometryCompression"),
 			bGeometryCompression,
+			GEditorPerProjectIni);
+		GConfig->SetBool(
+			SettingsSection,
+			TEXT("LimitGeometryKeyframeInterval"),
+			bLimitGeometryKeyframeInterval,
+			GEditorPerProjectIni);
+		GConfig->SetString(
+			SettingsSection,
+			TEXT("MaximumGeometryKeyframeInterval"),
+			*MaximumGeometryFrames->GetText().ToString(),
 			GEditorPerProjectIni);
 		GConfig->Flush(false, GEditorPerProjectIni);
 	}
@@ -462,6 +481,21 @@ public:
 		const FEncodingSettings Settings = GetPreset(Preset);
 		const bool bReplace = bOverwrite;
 		const bool bCompressGeometry = bGeometryCompression;
+		const int32 MaximumGeometryKeyframeInterval =
+			bCompressGeometry && bLimitGeometryKeyframeInterval
+				? FCString::Atoi(
+					*MaximumGeometryFrames->GetText().ToString())
+				: 0;
+		if (MaximumGeometryKeyframeInterval < 0 ||
+			(bCompressGeometry && bLimitGeometryKeyframeInterval &&
+				MaximumGeometryKeyframeInterval == 0))
+		{
+			const FString Message =
+				TEXT("Maximum geometry frames must be at least one.");
+			State->SetStatus(Message);
+			State->Append(TEXT("Cannot encode: ") + Message);
+			return;
+		}
 		const TSharedRef<FAuthoringState, ESPMode::ThreadSafe> Job = State;
 
 		Job->bCancel.Store(false);
@@ -476,7 +510,7 @@ public:
 		Async(EAsyncExecution::ThreadPool,
 			[Job, Inputs = MoveTemp(Inputs), ImageDirectory, AudioFile,
 			 OutputFile, FFmpegPath, FPS, Settings, bReplace,
-			 bCompressGeometry]
+			 bCompressGeometry, MaximumGeometryKeyframeInterval]
 			{
 				const FString TempDirectory =
 					FPaths::ProjectIntermediateDir() /
@@ -618,6 +652,9 @@ public:
 						TCHAR_TO_UTF8(*PackagedPath));
 					Options.enable_topology_compression =
 						bCompressGeometry;
+					Options.maximum_geometry_keyframe_interval =
+						static_cast<std::uint32_t>(
+							MaximumGeometryKeyframeInterval);
 					Options.draco_options.position_quantization =
 						Settings.PositionBits;
 					Options.draco_options.normal_quantization =
@@ -894,6 +931,63 @@ void SOpenVolumetricEncoderWindow::Construct(const FArguments&)
 								"GeometryCompression",
 								"Geometry Compression"))
 					]
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)
+			[
+				SNew(SCheckBox)
+					.IsEnabled_Lambda(
+						[this] { return Impl->bGeometryCompression; })
+					.IsChecked_Lambda(
+						[this]
+						{
+							return Impl->bLimitGeometryKeyframeInterval
+								? ECheckBoxState::Checked
+								: ECheckBoxState::Unchecked;
+						})
+					.ToolTipText(NSLOCTEXT(
+						"OpenVolumetricAuthoring",
+						"LimitGeometryKeyframesTooltip",
+						"Force periodic full Draco reference meshes to bound geometry seek and streaming preroll."))
+					.OnCheckStateChanged_Lambda(
+						[this](ECheckBoxState State)
+						{
+							Impl->bLimitGeometryKeyframeInterval =
+								State == ECheckBoxState::Checked;
+						})
+					[
+						SNew(STextBlock)
+							.Text(NSLOCTEXT(
+								"OpenVolumetricAuthoring",
+								"LimitGeometryKeyframes",
+								"Limit Geometry Keyframes"))
+					]
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[
+					SNew(SBox).WidthOverride(180)
+					[
+						SNew(STextBlock).Text(NSLOCTEXT(
+							"OpenVolumetricAuthoring",
+							"MaximumGeometryFrames",
+							"Maximum Geometry Frames"))
+					]
+				]
+				+ SHorizontalBox::Slot().FillWidth(1)
+				[
+					SAssignNew(
+						Impl->MaximumGeometryFrames,
+						SEditableTextBox)
+						.Text(FText::FromString(TEXT("60")))
+						.IsEnabled_Lambda(
+							[this]
+							{
+								return Impl->bGeometryCompression &&
+									Impl->bLimitGeometryKeyframeInterval;
+							})
+				]
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)
 			[

@@ -321,6 +321,11 @@ seeking rules, validation matrix, and phased implementation are recorded in
       whole-sequence coding.
 - [x] Encode a full topology/keyframe at every required random-access point
       and temporally compressed attribute updates for dependent samples.
+- [x] Add a configurable maximum geometry keyframe interval. Force a complete
+      Draco reference mesh when that many geometry samples have elapsed,
+      even if topology and UVs remain unchanged.
+- [x] Expose the optional maximum geometry keyframe interval in both Unity and
+      Unreal authoring, with positive-value validation when enabled.
 - [x] Package dependency metadata and compressed payloads into the existing
       timestamped `vvge` MP4 track.
 - [x] Extend the core geometry decoder with topology caches and dependent-frame
@@ -341,6 +346,8 @@ seeking rules, validation matrix, and phased implementation are recorded in
 - Same-topology samples reconstruct within the configured error target.
 - Windowed streams remain seekable and recover at the next geometry keyframe
   after a corrupt or missing dependent sample.
+- No dependent geometry sample references a keyframe farther back than the
+  configured maximum geometry keyframe interval.
 - Representative content is materially smaller than independent-frame Draco
   without violating playback performance budgets.
 

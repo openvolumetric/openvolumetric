@@ -141,7 +141,14 @@ collision experiments justify the extra dependency or cost.
 
 - A `PositionUpdate` may reference only the active preceding topology
   keyframe identified in its header.
-- A maximum topology window/keyframe interval is an authoring requirement.
+- Authoring accepts a maximum geometry keyframe interval measured in geometry
+  samples. A value of `N` permits at most `N - 1` dependent `PositionUpdate`
+  packets after a full `IndependentMesh`; the next sample is forced to be a
+  new full Draco reference mesh even when topology remains unchanged.
+- An interval of `1` emits only independently decodable geometry. Disabling
+  the optional limit passes `0`, allowing reuse until topology changes.
+- Topology changes and explicit segment/random-access boundaries may force a
+  reference mesh earlier than the configured interval.
 - Seeking starts at or before the referenced topology keyframe.
 - Adaptive or fragmented delivery repeats a topology keyframe at every
   independently addressable media-segment boundary.
@@ -175,7 +182,7 @@ update is applied.
 
 ## Remaining integration decisions
 
-- Choose the default maximum topology window/keyframe interval.
+- Choose platform-preset defaults for the maximum geometry keyframe interval.
 - Measure recalculated-normal error.
 - Establish hard limits for vertex counts, payload sizes, and topology-cache
   memory.

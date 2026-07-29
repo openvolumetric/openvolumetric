@@ -19,6 +19,9 @@ struct PackOptions
 	std::filesystem::path source_geometry_directory;
 	std::filesystem::path output_path;
 	bool enable_topology_compression = true;
+	/// Maximum samples in one topology-reference window. Zero leaves the
+	/// window unbounded until topology changes.
+	std::uint32_t maximum_geometry_keyframe_interval = 0;
 	/// Settings reused when singleton topology groups are re-encoded with
 	/// Draco's normal mesh method after topology analysis.
 	DracoEncodeOptions draco_options;

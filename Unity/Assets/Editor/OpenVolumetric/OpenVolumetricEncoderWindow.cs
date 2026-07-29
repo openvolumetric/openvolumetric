@@ -41,7 +41,8 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         int textureQuantization,
         int encodeSpeed,
         int decodeSpeed,
-        int enableTopologyCompression);
+        int enableTopologyCompression,
+        int maximumGeometryKeyframeInterval);
 
     [DllImport(
         AuthoringLibrary,
@@ -105,6 +106,8 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
     [SerializeField] private int dracoDecodeSpeed = 9;
     [SerializeField] private bool overwriteOutput;
     [SerializeField] private bool geometryCompression = true;
+    [SerializeField] private bool limitGeometryKeyframeInterval;
+    [SerializeField] private int maximumGeometryKeyframeInterval = 60;
     [SerializeField] private bool showAdvanced;
     [SerializeField] private string ffmpegPath = "";
 
@@ -134,6 +137,10 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         ffmpegPath = Load("FFmpeg", FindExecutable("ffmpeg"));
         geometryCompression = EditorPrefs.GetBool(
             PreferencePrefix + "GeometryCompression", true);
+        limitGeometryKeyframeInterval = EditorPrefs.GetBool(
+            PreferencePrefix + "LimitGeometryKeyframeInterval", false);
+        maximumGeometryKeyframeInterval = EditorPrefs.GetInt(
+            PreferencePrefix + "MaximumGeometryKeyframeInterval", 60);
     }
 
     /// <summary>Persists current paths before the window is destroyed.</summary>
@@ -181,6 +188,24 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
                     "Geometry Compression",
                     "Reuse matching mesh topology and encode dependent frames as position-only Draco point clouds. Disable to encode every packet as an independent Draco mesh."),
                 geometryCompression);
+            using (new EditorGUI.DisabledScope(!geometryCompression))
+            {
+                limitGeometryKeyframeInterval = EditorGUILayout.Toggle(
+                    new GUIContent(
+                        "Limit Geometry Keyframes",
+                        "Force a full Draco reference mesh periodically to bound geometry seek and streaming preroll."),
+                    limitGeometryKeyframeInterval);
+                using (new EditorGUI.DisabledScope(
+                    !limitGeometryKeyframeInterval))
+                {
+                    maximumGeometryKeyframeInterval =
+                        EditorGUILayout.IntField(
+                            new GUIContent(
+                                "Maximum Geometry Frames",
+                                "Maximum number of geometry frames in one reference window, including its full Draco keyframe."),
+                            maximumGeometryKeyframeInterval);
+                }
+            }
 
             EncodingSettings effective = GetEncodingSettings();
             EditorGUILayout.HelpBox(
@@ -425,7 +450,11 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
                     settings.TextureQuantization,
                     settings.DracoEncodeSpeed,
                     settings.DracoDecodeSpeed,
-                    geometryCompression ? 1 : 0) != 1)
+                    geometryCompression ? 1 : 0,
+                    geometryCompression &&
+                        limitGeometryKeyframeInterval
+                        ? maximumGeometryKeyframeInterval
+                        : 0) != 1)
                 {
                     string error = Marshal.PtrToStringAnsi(GetAuthoringError());
                     throw new InvalidOperationException(
@@ -563,6 +592,13 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         if (frameRate <= 0.0f)
         {
             throw new InvalidOperationException("Frame rate must be greater than zero.");
+        }
+        if (geometryCompression &&
+            limitGeometryKeyframeInterval &&
+            maximumGeometryKeyframeInterval < 1)
+        {
+            throw new InvalidOperationException(
+                "Maximum geometry frames must be at least one.");
         }
         if (!String.IsNullOrEmpty(audioFile) && !File.Exists(audioFile))
         {
@@ -883,6 +919,12 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         EditorPrefs.SetString(PreferencePrefix + "FFmpeg", ffmpegPath);
         EditorPrefs.SetBool(
             PreferencePrefix + "GeometryCompression", geometryCompression);
+        EditorPrefs.SetBool(
+            PreferencePrefix + "LimitGeometryKeyframeInterval",
+            limitGeometryKeyframeInterval);
+        EditorPrefs.SetInt(
+            PreferencePrefix + "MaximumGeometryKeyframeInterval",
+            maximumGeometryKeyframeInterval);
     }
 
     /// <summary>Maps the selected platform preset to concrete codec settings.</summary>
