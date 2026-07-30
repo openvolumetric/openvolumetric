@@ -12,7 +12,7 @@ players do not require separately installed native runtimes.
 | `OpenVolumetricCore` | Engine-independent MP4, media, geometry, timing, and playback core |
 | `OpenVolumetricAuthoringCore` | Draco encoding, MP4 packaging, and verification |
 | `OpenVolumetricAuthoring` | Unity Editor authoring shared library |
-| `OpenVolumetricUnityPlugin` | Unity runtime native plug-in |
+| `OpenVolumetricUnityPlugin` | CMake target for the Unity runtime and native DSP plug-in |
 | `OpenVolumetricRuntime` | Unreal runtime module |
 | `OpenVolumetricAuthoring` | Unreal Editor module |
 
@@ -70,12 +70,13 @@ The macOS build produces the Metal Unity runtime and the authoring library:
 
 ```text
 Unity/Assets/Plugins/OpenVolumetric/macOS/
+├── AudioPluginOpenVolumetricUnity.dylib
 ├── OpenVolumetricAuthoring.dylib
-└── OpenVolumetricUnityPlugin.dylib
 ```
 
 Use Metal as Unity's graphics API. The normal preset builds the host
-architecture.
+architecture. The `AudioPlugin` filename prefix allows Unity to discover the
+native audio effect exported by the same library as the runtime C API.
 
 ### Windows
 
@@ -110,7 +111,7 @@ The stripped Vulkan plug-in is staged at:
 
 ```text
 Unity/Assets/Plugins/OpenVolumetric/Android/arm64-v8a/
-libOpenVolumetricUnityPlugin.so
+libAudioPluginOpenVolumetricUnity.so
 ```
 
 The preset targets Android API 29 and `arm64-v8a`. See

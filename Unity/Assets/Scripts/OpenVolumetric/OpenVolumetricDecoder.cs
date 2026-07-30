@@ -21,7 +21,7 @@ namespace OpenVolumetric
 /// </summary>
 public class OpenVolumetricDecoder : IDisposable
 {
-    private const string PluginName = "OpenVolumetricUnityPlugin";
+    private const string PluginName = "AudioPluginOpenVolumetricUnity";
 
     // Entry-point names intentionally mirror the stable native C ABI.
     [DllImport(PluginName, EntryPoint = "GetRenderEventFunc")]
@@ -77,8 +77,17 @@ public class OpenVolumetricDecoder : IDisposable
     [DllImport(PluginName, EntryPoint = "openvolumetric_get_audio_details")]
     private static extern int openvolumetric_get_audio_details(int id, ref int sample_rate, ref int channels);
 
-    [DllImport(PluginName, EntryPoint = "openvolumetric_read_audio")]
-    private static extern int openvolumetric_read_audio(int id, [Out] float[] samples, int sample_count);
+    [DllImport(PluginName, EntryPoint = "openvolumetric_schedule_dsp_audio")]
+    private static extern int openvolumetric_schedule_dsp_audio(
+        int id,
+        ulong dspStartTick,
+        double mediaStartTime);
+
+    [DllImport(PluginName, EntryPoint = "openvolumetric_stop_dsp_audio")]
+    private static extern void openvolumetric_stop_dsp_audio(int id);
+
+    [DllImport(PluginName, EntryPoint = "openvolumetric_get_dsp_audio_time")]
+    private static extern double openvolumetric_get_dsp_audio_time();
 
     [DllImport(PluginName, EntryPoint = "openvolumetric_get_audio_buffer_details")]
     private static extern int openvolumetric_get_audio_buffer_details(
@@ -109,7 +118,8 @@ public class OpenVolumetricDecoder : IDisposable
     private Texture2D m_YTexture, m_UTexture, m_VTexture;
 
     private AudioClip m_audio_clip;
-    /// <summary>Streaming clip backed by the native PCM ring.</summary>
+    private int m_audio_sample_rate;
+    /// <summary>Silent carrier that routes the native effect through Unity.</summary>
     public AudioClip AudioClip
     {
         get { return m_audio_clip; }
@@ -119,6 +129,17 @@ public class OpenVolumetricDecoder : IDisposable
     public bool HasAudio
     {
         get { return m_audio_clip != null; }
+    }
+
+    /// <summary>Latest media timestamp processed inside Unity's DSP graph.</summary>
+    public double DspAudioTime
+    {
+        get
+        {
+            return HasAudio
+                ? openvolumetric_get_dsp_audio_time()
+                : -1.0;
+        }
     }
 
     /// <summary>Immutable snapshot of native PCM readiness and consumption.</summary>
@@ -499,8 +520,7 @@ public class OpenVolumetricDecoder : IDisposable
     }
 
     /// <summary>
-    /// Creates a streaming AudioClip whose callback pulls synchronized PCM
-    /// directly from the native decoder.
+    /// Creates the silent carrier clip that activates the native DSP effect.
     /// </summary>
     public bool InitializeAudio()
     {
@@ -521,27 +541,38 @@ public class OpenVolumetricDecoder : IDisposable
 
         int lengthSamples = Math.Max(
             1, (int)Math.Ceiling(video_duration * sampleRate));
+        m_audio_sample_rate = sampleRate;
         m_audio_clip = AudioClip.Create(
-            "OpenVolumetricAudio",
+            "OpenVolumetricDspCarrier",
             lengthSamples,
             channels,
             sampleRate,
-            true,
-            ReadAudio);
+            false);
         Debug.Log(String.Format(
             "OpenVolumetricDecoder::init_audio - {0} Hz, {1} channels",
             sampleRate, channels));
         return m_audio_clip != null;
     }
 
-    /// <summary>Fills Unity's audio request from the native PCM ring.</summary>
-    private void ReadAudio(float[] samples)
+    /// <summary>Arms native PCM generation at an absolute Unity DSP time.</summary>
+    public bool ScheduleDspAudio(double dspTime, double mediaStartTime)
     {
-        int read = openvolumetric_read_audio(
-            m_instance_id, samples, samples.Length);
-        if (read < 0)
+        int sampleRate = AudioSettings.outputSampleRate > 0
+            ? AudioSettings.outputSampleRate
+            : System.Math.Max(1, m_audio_sample_rate);
+        ulong dspTick = (ulong)System.Math.Max(
+            0.0,
+            System.Math.Round(dspTime * sampleRate));
+        return openvolumetric_schedule_dsp_audio(
+            m_instance_id, dspTick, mediaStartTime) == 1;
+    }
+
+    /// <summary>Stops native DSP consumption before a timeline mutation.</summary>
+    public void StopDspAudio()
+    {
+        if(HasAudio && m_instance_id >= 0)
         {
-            Array.Clear(samples, 0, samples.Length);
+            openvolumetric_stop_dsp_audio(m_instance_id);
         }
     }
     /// <summary>
@@ -653,6 +684,7 @@ public class OpenVolumetricDecoder : IDisposable
         }
 
         double target = Math.Max(0.0, Math.Min(time, video_duration));
+        StopDspAudio();
         if (openvolumetric_seek(m_instance_id, target) == -1)
         {
             Debug.LogError(String.Format(
@@ -700,6 +732,7 @@ public class OpenVolumetricDecoder : IDisposable
             if(crossed_loop_boundary)
             {
                 m_loop = true;
+                StopDspAudio();
                 if(openvolumetric_seek(m_instance_id, 0.0) == -1)
                 {
                     Debug.LogError("OpenVolumetricDecoder::update - failed to reset decoder at loop boundary");

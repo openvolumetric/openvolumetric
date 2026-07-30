@@ -13,7 +13,7 @@ namespace OpenVolumetric
 ///
 /// Unity's DSP clock provides the playback timeline. Each update selects a
 /// presentation frame; the native render callback publishes its matching
-/// texture and geometry while the AudioClip pulls decoded PCM.
+/// texture and geometry while the native DSP effect pulls decoded PCM.
 /// </summary>
 public class OpenVolumetric : MonoBehaviour
 {
@@ -42,12 +42,6 @@ public class OpenVolumetric : MonoBehaviour
     [Header("Playback Settings")]
     [Tooltip("When enabled the content will loop")]
     public bool enableLoop = false;
-    /// <summary>
-    /// Unity procedural-audio queue lead measured against visual DSP time.
-    /// </summary>
-    [Tooltip("Unity procedural audio output compensation in seconds")]
-    [Range(0.0F, 1.0F)]
-    public float audioOutputLatencyCompensation = 0.55F;
     /// <summary>Whether a caller must schedule playback explicitly.</summary>
     [Tooltip("Enables playback to be started via a script ")]
     public bool enableScriptedStart;
@@ -61,7 +55,6 @@ public class OpenVolumetric : MonoBehaviour
     private OpenVolumetricDecoder m_decoder;
     private AudioSource m_audio_source;
     private double m_start_time;
-    private double m_audio_start_time;
     private double m_audio_preroll_duration;
     private bool m_waiting_for_audio_preroll;
     private bool m_has_scheduled_start;
@@ -112,6 +105,16 @@ public class OpenVolumetric : MonoBehaviour
                 ? m_decoder.InputBufferInfo
                 : new OpenVolumetricDecoder.BufferInfo();
         }
+    }
+    /// <summary>Whether the opened presentation has native DSP audio.</summary>
+    public bool NativeDspAudioEnabled
+    {
+        get { return m_decoder != null && m_decoder.HasAudio; }
+    }
+    /// <summary>Media time most recently processed by Unity's DSP callback.</summary>
+    public double NativeDspAudioTime
+    {
+        get { return m_decoder != null ? m_decoder.DspAudioTime : -1.0; }
     }
     /// <summary>Current playback position in seconds.</summary>
     public double CurrentTime
@@ -203,6 +206,7 @@ public class OpenVolumetric : MonoBehaviour
             m_audio_source.playOnAwake = false;
             m_audio_source.loop = enableLoop;
             m_audio_source.spatialBlend = 0.0F;
+            m_audio_source.spatialize = true;
             m_audio_source.clip = m_decoder.AudioClip;
 
             // Require enough native PCM for Unity's complete DSP queue plus a
@@ -294,9 +298,7 @@ public class OpenVolumetric : MonoBehaviour
             if(m_play_after_initial_presentation)
             {
                 SetScheduledStart(
-                    AudioSettings.dspTime +
-                    0.1 +
-                    audioOutputLatencyCompensation);
+                    AudioSettings.dspTime + 0.1);
             }
             Debug.Log(
                 "OpenVolumetric - initial synchronized presentation ready");
@@ -330,9 +332,7 @@ public class OpenVolumetric : MonoBehaviour
 
             m_waiting_for_audio_preroll = false;
             SchedulePlayback(
-                AudioSettings.dspTime +
-                0.1 +
-                audioOutputLatencyCompensation);
+                AudioSettings.dspTime + 0.1);
             Debug.Log("OpenVolumetric - synchronized audio preroll ready");
             return;
         }
@@ -345,8 +345,8 @@ public class OpenVolumetric : MonoBehaviour
         if (m_playback_state == PlaybackState.PLAYING)
         {
             double dspTime = AudioSettings.dspTime;
-            // Accumulate the shared visual clock from Unity DSP time. Audio is
-            // scheduled earlier by its measured procedural queue lead.
+            // Accumulate the shared visual clock from the same Unity DSP
+            // timeline used by the native audio effect.
             if(!m_has_last_dsp_time)
             {
                 m_last_dsp_time = dspTime;
@@ -379,6 +379,13 @@ public class OpenVolumetric : MonoBehaviour
                 return;
             }
             m_decoder.UpdatePresentation(m_playback_position);
+            if(enableLoop && m_decoder.ContentLooped)
+            {
+                m_decoder.ResetLoopFlag();
+                m_playback_position = 0.0;
+                Play();
+                return;
+            }
             if(TryRecoverDecoderLag(dspTime))
             {
                 return;
@@ -393,6 +400,7 @@ public class OpenVolumetric : MonoBehaviour
                 {
                     m_audio_source.Stop();
                 }
+                m_decoder.StopDspAudio();
             }
          }
 
@@ -430,6 +438,7 @@ public class OpenVolumetric : MonoBehaviour
                 {
                     m_audio_source.Stop();
                 }
+                m_decoder.StopDspAudio();
                 Debug.LogWarning(
                     "OpenVolumetric - network interrupted; rebuffering");
             }
@@ -523,7 +532,13 @@ public class OpenVolumetric : MonoBehaviour
         double lag = target - presented;
         if(lag < 0.0)
         {
-            lag += Duration;
+            // A decoder is allowed to publish the nearest frame fractionally
+            // ahead of the requested timestamp. Treating that normal negative
+            // delta as a loop wrapped it into almost the full media duration
+            // and triggered a false recovery. Real loop transitions are
+            // handled explicitly by ContentLooped before this check.
+            m_decoder_lag_started = -1.0;
+            return false;
         }
         // Audio is driven by Unity's DSP clock while a complete visual frame
         // may wait for both texture and geometry decoding. Keep their maximum
@@ -562,6 +577,7 @@ public class OpenVolumetric : MonoBehaviour
         {
             m_audio_source.Stop();
         }
+        m_decoder.StopDspAudio();
         return true;
     }
 
@@ -588,6 +604,7 @@ public class OpenVolumetric : MonoBehaviour
         }
         if(m_decoder != null)
         {
+            m_decoder.StopDspAudio();
             if(m_decoder.DecoderStatus ==
                 OpenVolumetricDecoder.DecoderState.STARTED)
             {
@@ -616,9 +633,6 @@ public class OpenVolumetric : MonoBehaviour
     {
         m_start_time = System.Math.Max(
             AudioSettings.dspTime + 0.05, dspTime);
-        m_audio_start_time = System.Math.Max(
-            AudioSettings.dspTime + 0.05,
-            m_start_time - audioOutputLatencyCompensation);
         m_last_dsp_time = m_start_time;
         m_has_last_dsp_time = true;
         m_playback_state = PlaybackState.SCHEDULED;
@@ -635,14 +649,23 @@ public class OpenVolumetric : MonoBehaviour
     }
 
     /// <summary>
-    /// Schedules streaming PCM ahead of the shared visual DSP timeline.
+    /// Schedules native DSP audio on the shared visual timeline.
     /// </summary>
     private void ScheduleAudio()
     {
         if(m_audio_source != null && m_audio_source.clip != null)
         {
             m_audio_source.time = (float)m_playback_position;
-            m_audio_source.PlayScheduled(m_audio_start_time);
+            if(!m_decoder.ScheduleDspAudio(
+                m_start_time,
+                m_playback_position))
+            {
+                Debug.LogError(
+                    "OpenVolumetric - failed to schedule native DSP audio");
+                m_playback_state = PlaybackState.INIT_FAIL;
+                return;
+            }
+            m_audio_source.PlayScheduled(m_start_time);
         }
     }
 
@@ -682,6 +705,7 @@ public class OpenVolumetric : MonoBehaviour
         {
             m_audio_source.Stop();
         }
+        m_decoder.StopDspAudio();
         if(!HasRequiredAudioPreroll())
         {
             m_waiting_for_audio_preroll = true;
@@ -692,9 +716,7 @@ public class OpenVolumetric : MonoBehaviour
 
         m_waiting_for_audio_preroll = false;
         SchedulePlayback(
-            AudioSettings.dspTime +
-            0.1 +
-            audioOutputLatencyCompensation);
+            AudioSettings.dspTime + 0.1);
     }
 
     /// <summary>Freezes the shared timeline and stops audio consumption.</summary>
@@ -714,6 +736,7 @@ public class OpenVolumetric : MonoBehaviour
         {
             m_audio_source.Stop();
         }
+        m_decoder.StopDspAudio();
     }
 
     /// <summary>

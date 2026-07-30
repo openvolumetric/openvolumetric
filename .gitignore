@@ -44,3 +44,4 @@ Desktop.ini
 data/sync-test/README.md
 .gitignore
 data/sync-test/generate.py
+OpenVolumetricNative/.gitignore

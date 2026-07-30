@@ -32,6 +32,7 @@
 #include <TextureVulkan.h>
 #endif
 #include "UnityOpenVolumetricPlayer.h"
+#include <UnityAudioBridge.h>
 #include <Logger.h>
 
 using openvolumetric::Logger;
@@ -250,6 +251,7 @@ OPENVOLUMETRIC_API void	openvolumetric_quit(int id)
 		return;
 	}
 
+	openvolumetric::unity::stop_dsp_audio(iterator->second.get());
 	g_instances.erase(iterator);
 }
 
@@ -411,14 +413,31 @@ OPENVOLUMETRIC_API int openvolumetric_get_audio_details(
 	return 1;
 }
 
-OPENVOLUMETRIC_API int openvolumetric_read_audio(
-	int id, float* samples, int sample_count)
+OPENVOLUMETRIC_API int openvolumetric_schedule_dsp_audio(
+	int id,
+	unsigned long long dsp_start_tick,
+	double media_start_time)
 {
 	InstanceAccess instance(id);
-	if (!instance || samples == nullptr || sample_count <= 0)
+	if (!instance)
 		return -1;
+	openvolumetric::unity::schedule_dsp_audio(
+		instance.operator->(),
+		static_cast<std::uint64_t>(dsp_start_tick),
+		media_start_time);
+	return 1;
+}
 
-	return instance->read_audio(samples, sample_count);
+OPENVOLUMETRIC_API void openvolumetric_stop_dsp_audio(int id)
+{
+	InstanceAccess instance(id);
+	if (instance)
+		openvolumetric::unity::stop_dsp_audio(instance.operator->());
+}
+
+OPENVOLUMETRIC_API double openvolumetric_get_dsp_audio_time()
+{
+	return openvolumetric::unity::dsp_audio_time();
 }
 
 OPENVOLUMETRIC_API int openvolumetric_get_audio_buffer_details(

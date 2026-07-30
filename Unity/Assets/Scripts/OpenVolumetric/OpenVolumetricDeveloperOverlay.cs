@@ -242,12 +242,17 @@ public sealed class OpenVolumetricDeveloperOverlay : MonoBehaviour
               "X -10s  Y +10s  Menu Hide"
             : "Space Play/Pause  L Loop\n" +
               "Left -10s  Right +10s  H Hide";
+        string dspAudio = m_player.NativeDspAudioEnabled
+            ? string.Format(
+                "\nNative DSP audio:{0:F3}s",
+                m_player.NativeDspAudioTime)
+            : string.Empty;
         m_text.text = string.Format(
             "OPENVOLUMETRIC\n" +
             "{0}  {1:F1}/{2:F1}s  Loop:{3}\n" +
             "{4:F1} fps  {5:F2} ms  Memory:{6} MB\n" +
-            "{7} | {8}{9}{10}\n" +
-            "{11}",
+            "{7} | {8}{9}{10}{11}\n" +
+            "{12}",
             m_player.State,
             m_player.CurrentTime,
             m_player.Duration,
@@ -259,6 +264,7 @@ public sealed class OpenVolumetricDeveloperOverlay : MonoBehaviour
             SystemInfo.deviceModel,
             network,
             string.IsNullOrEmpty(error) ? string.Empty : "\nERROR: " + error,
+            dspAudio,
             controls);
     }
 }

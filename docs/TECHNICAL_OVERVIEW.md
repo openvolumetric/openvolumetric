@@ -600,7 +600,10 @@ render callback or audio/API call is using it.
 
 ### 8.1 Unity native boundary
 
-Unity communicates with `OpenVolumetricUnityPlugin` through an exported C ABI.
+Unity communicates with `AudioPluginOpenVolumetricUnity` through an exported
+C ABI. Its CMake target remains `OpenVolumetricUnityPlugin`; the output name
+uses Unity's required `AudioPlugin` prefix so the same library can expose the
+runtime API and the native DSP effect.
 Operations include:
 
 - Instance creation and destruction.
@@ -629,7 +632,8 @@ separate platform coordinators.
 
 - A Unity mesh with preallocated vertex and index capacity.
 - External or native texture objects for the three YUV planes.
-- A streaming `AudioClip`.
+- A silent carrier `AudioClip` that routes the native effect through Unity's
+  DSP graph.
 - Material bindings for Y, U, and V.
 - A native render event for every required presentation.
 
@@ -667,12 +671,20 @@ ready. The PCM requirement is derived from Unity's configured DSP buffer
 length and buffer count with a scheduling margin. Audio and visuals are then
 released at one future DSP timestamp.
 
-Unity supplies decoded PCM through a streaming `AudioClip`. Unity's
-procedural-audio producer queue leads audible output by a stable amount that
-is not exposed by `AudioSettings.GetDSPBufferSize`. The integration therefore
-schedules audio ahead of the visual DSP start using an explicit, editable
-output-latency compensation value. The value validated for the current macOS
-and Quest configurations is 0.55 seconds.
+Unity supplies decoded PCM from a real-time-safe native spatializer callback
+inside its DSP graph. The callback receives Unity's absolute DSP sample tick,
+converts it to media time using the shared scheduled start, and reads PCM
+directly from the native player. It performs no allocation, locking, or
+logging. A fixed-capacity linear converter reconciles the encoded sample rate
+with Unity's output rate; this is required for 44.1 kHz media on Quest's 48 kHz
+mixer. Visual presentation advances from the same DSP timeline, so no
+empirical output-latency correction is required.
+
+The native DSP bridge currently supports one active OpenVolumetric player and
+occupies Unity's project-wide spatializer plug-in slot. These are integration
+constraints rather than core decoder limitations. A dedicated native
+AudioMixer effect is the intended route to multiple players and coexistence
+with another spatializer.
 
 The managed player advances visual media time from monotonic DSP-time deltas.
 The native PCM status supplies buffer readiness and underrun evidence; it does
@@ -683,7 +695,7 @@ presentations cannot intentionally cross a timeline boundary.
 If rendering is suspended long enough for a large forward DSP discontinuity,
 as can occur when a desktop window is minimized, Unity audio may continue
 while the managed visual update stops. On resume, the integration reads the
-procedural clip's media position and performs a unified seek. This flushes
+carrier clip's media position and performs a unified seek. This flushes
 audio, texture, and geometry queues and restarts them in one new generation
 instead of allowing a permanent offset.
 
@@ -822,7 +834,7 @@ The principal targets are:
 | `OpenVolumetricCore` | Static library | Engine-neutral decoding |
 | `OpenVolumetricAuthoringCore` | Static library | Encoding, packaging, and verification |
 | `OpenVolumetricAuthoring` | Shared library | Unity Editor authoring C API |
-| `OpenVolumetricUnityPlugin` | Shared library | Unity runtime integration |
+| `OpenVolumetricUnityPlugin` | Shared library target | Unity runtime and native DSP integration; output as `AudioPluginOpenVolumetricUnity` |
 | `OpenVolumetricRuntime` | Unreal module | Blueprint/C++ runtime component and core adapter |
 | `OpenVolumetricAuthoring` | Unreal module | Unreal Editor authoring interface |
 
@@ -1070,7 +1082,7 @@ novelty claims:
 - A four-second audio ring.
 - Specific queue capacities.
 - Eight FFmpeg decode threads.
-- Unity's scheduled DSP clock and procedural-audio latency compensation.
+- Unity's scheduled DSP clock and native spatializer effect.
 - D3D11, Metal, and Vulkan upload implementations.
 - Unity `GL.IssuePluginEvent`.
 - Unreal `UDynamicMeshComponent`, transient `UTexture2D`, and

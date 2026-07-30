@@ -44,7 +44,7 @@ Vulkan Unity plug-in. The stripped ARM64 library is staged at:
 
 ```text
 Unity/Assets/Plugins/OpenVolumetric/Android/arm64-v8a/
-libOpenVolumetricUnityPlugin.so
+libAudioPluginOpenVolumetricUnity.so
 ```
 
 The Vulkan backend creates three `VK_FORMAT_R8_UNORM` images for the Y, U, and

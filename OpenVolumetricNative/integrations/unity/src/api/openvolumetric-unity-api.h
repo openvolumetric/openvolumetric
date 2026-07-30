@@ -62,8 +62,17 @@ extern "C"
 	/// Retrieves decoded PCM layout. Returns 0 when audio is absent.
 	OPENVOLUMETRIC_API int	openvolumetric_get_audio_details(int id, int& sample_rate, int& channels);
 
-	/// Pulls interleaved float PCM, filling unavailable samples with silence.
-	OPENVOLUMETRIC_API int	openvolumetric_read_audio(int id, float* samples, int sample_count);
+	/// Arms native DSP audio at an absolute Unity sample tick.
+	OPENVOLUMETRIC_API int openvolumetric_schedule_dsp_audio(
+		int id,
+		unsigned long long dsp_start_tick,
+		double media_start_time);
+
+	/// Stops native DSP audio consumption before pause, seek, or destruction.
+	OPENVOLUMETRIC_API void openvolumetric_stop_dsp_audio(int id);
+
+	/// Returns the media time most recently processed by Unity's DSP callback.
+	OPENVOLUMETRIC_API double openvolumetric_get_dsp_audio_time();
 
 	/// Retrieves the PCM read timestamp, queued duration, and underrun count.
 	OPENVOLUMETRIC_API int openvolumetric_get_audio_buffer_details(

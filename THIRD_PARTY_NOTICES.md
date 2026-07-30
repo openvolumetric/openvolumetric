@@ -75,6 +75,16 @@ applicable Unity terms for their engine installation and application.
 
 - Product information and terms: <https://unity.com/legal>
 
+The Unity integration vendors a minimal ABI declaration derived from Unity
+Technologies' NativeAudioPlugins SDK `AudioPluginInterface.h` for its native
+DSP audio path.
+
+- Project: <https://github.com/Unity-Technologies/NativeAudioPlugins>
+- License: MIT
+- Copyright: Unity Technologies
+- Vendored license:
+  `OpenVolumetricNative/integrations/unity/third_party/unity_audio_plugin_sdk/LICENSE`
+
 ## Unreal Engine
 
 The Unreal integration builds against Unreal Engine APIs. Unreal Engine is

@@ -394,3 +394,5 @@ ARM64/
 *.lastbuildstate
 
 
+*.so.meta
+)

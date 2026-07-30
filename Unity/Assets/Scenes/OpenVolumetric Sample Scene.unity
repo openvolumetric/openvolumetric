@@ -454,13 +454,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0f19b987d80146544bbfbba8a5206081, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::OpenVolumetric.OpenVolumetric
-  videoFilename: sync-test.mp4
+  videoFilename: volumetric_video_quest_local.mp4
   videoUrl: 
   luminanceCorrection: 0
   blueProjectionCorrection: 0
   redProjectionCorrection: 0
   enableLoop: 1
-  audioOutputLatencyCompensation: 0.55
   enableScriptedStart: 0
   enableDeveloperOverlay: 1
   debug: 0

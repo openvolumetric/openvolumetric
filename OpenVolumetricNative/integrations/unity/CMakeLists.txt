@@ -1,11 +1,15 @@
 set(VV_UNITY_API_SOURCES
   src/api/openvolumetric-unity-api.cpp
   src/api/UnityOpenVolumetricPlayer.cpp
+  src/audio/OpenVolumetricAudioPlugin.cpp
+  src/audio/UnityAudioBridge.cpp
 )
 
 set(VV_UNITY_INCLUDE_DIRS
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/api"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/audio"
+  "${CMAKE_CURRENT_SOURCE_DIR}/third_party/unity_audio_plugin_sdk"
 )
 
 if(WIN32)
@@ -33,6 +37,7 @@ if(WIN32)
   )
 
   set_target_properties(OpenVolumetricUnityPlugin PROPERTIES
+    OUTPUT_NAME "AudioPluginOpenVolumetricUnity"
     RUNTIME_OUTPUT_DIRECTORY
       "${PROJECT_SOURCE_DIR}/../Unity/Assets/Plugins/OpenVolumetric/x64"
   )
@@ -71,6 +76,7 @@ elseif(APPLE)
 
   set_target_properties(OpenVolumetricUnityPlugin PROPERTIES
     PREFIX ""
+    OUTPUT_NAME "AudioPluginOpenVolumetricUnity"
     LIBRARY_OUTPUT_DIRECTORY
       "${PROJECT_SOURCE_DIR}/../Unity/Assets/Plugins/OpenVolumetric/macOS"
   )
@@ -106,10 +112,12 @@ elseif(ANDROID)
   target_link_options(OpenVolumetricUnityPlugin
     PRIVATE
       "-Wl,-Bsymbolic"
+      "-Wl,-z,max-page-size=16384"
+      "-Wl,-z,common-page-size=16384"
   )
 
   set_target_properties(OpenVolumetricUnityPlugin PROPERTIES
-    OUTPUT_NAME "OpenVolumetricUnityPlugin"
+    OUTPUT_NAME "AudioPluginOpenVolumetricUnity"
     LIBRARY_OUTPUT_DIRECTORY
       "${PROJECT_SOURCE_DIR}/../Unity/Assets/Plugins/OpenVolumetric/Android/arm64-v8a"
   )
