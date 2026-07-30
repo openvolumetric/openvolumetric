@@ -109,6 +109,33 @@ std::string curl_failure(CURLcode result)
 	return curl_easy_strerror(result);
 }
 
+/// Returns whether repeating a request can recover from the curl failure.
+///
+/// HTTP status is deliberately not considered here. libcurl can retain a
+/// valid response code from an interrupted transfer, so coupling a transport
+/// error to that code incorrectly made a brief Wi-Fi outage terminal.
+bool is_retryable_transport_failure(CURLcode result)
+{
+	switch (result)
+	{
+	case CURLE_COULDNT_RESOLVE_HOST:
+	case CURLE_COULDNT_CONNECT:
+	case CURLE_PARTIAL_FILE:
+	case CURLE_HTTP2:
+	case CURLE_WRITE_ERROR:
+	case CURLE_UPLOAD_FAILED:
+	case CURLE_READ_ERROR:
+	case CURLE_OPERATION_TIMEDOUT:
+	case CURLE_SEND_ERROR:
+	case CURLE_RECV_ERROR:
+	case CURLE_GOT_NOTHING:
+	case CURLE_HTTP2_STREAM:
+		return true;
+	default:
+		return false;
+	}
+}
+
 } // namespace
 
 HttpRangeByteSource::HttpRangeByteSource(
@@ -172,7 +199,7 @@ std::int64_t HttpRangeByteSource::read(
 			std::lock_guard<std::mutex> lock(m_mutex);
 			if (!m_error.empty() || is_cancelled() ||
 				m_size < 0 || m_position < 0)
-				return copied > 0 ? static_cast<std::int64_t>(copied) : -1;
+				return -1;
 			if (m_position >= m_size)
 				break;
 			block_index = static_cast<std::uint64_t>(
@@ -181,7 +208,12 @@ std::int64_t HttpRangeByteSource::read(
 				m_position % static_cast<std::int64_t>(m_options.block_size));
 		}
 		if (!wait_for_block(block_index))
-			return copied > 0 ? static_cast<std::int64_t>(copied) : -1;
+		{
+			// Never report a prefix of a failed logical read as success.
+			// FFmpeg can interpret such a prefix as a complete compressed
+			// packet and surface transport truncation as codec corruption.
+			return -1;
+		}
 
 		std::lock_guard<std::mutex> lock(m_mutex);
 		auto iterator = m_cache.find(block_index);
@@ -461,7 +493,8 @@ bool HttpRangeByteSource::download_block(
 			status == 0 || status == 408 || status == 429 ||
 			(status >= 500 && status < 600);
 		const bool retryable_failure =
-			(result != CURLE_OK && retryable_status) ||
+			(result != CURLE_OK &&
+				is_retryable_transport_failure(result)) ||
 			(result == CURLE_OK && retryable_status) ||
 			(result == CURLE_OK && valid_status && !complete);
 		if (attempt >= m_options.maximum_retry_count ||

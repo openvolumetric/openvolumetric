@@ -229,7 +229,7 @@ public sealed class OpenVolumetricDeveloperOverlay : MonoBehaviour
         OpenVolumetricDecoder.BufferInfo buffer = m_player.InputBufferInfo;
         string network = buffer.IsRemote
             ? string.Format(
-                "\nHTTP {0} cache:{1:F1} MB downloaded:{2:F1} MB " +
+                "\nHTTP {0} cache:{1:F1} MB \ndownloaded:{2:F1} MB " +
                 "requests:{3} recoveries:{4}",
                 buffer.State,
                 buffer.CachedBytes / (1024.0 * 1024.0),

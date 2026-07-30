@@ -26,7 +26,10 @@ struct HttpRangeByteSourceOptions
 	std::size_t sequential_read_ahead_blocks = 3;
 	long connection_timeout_ms = 10000;
 	long request_timeout_ms = 10000;
-	int maximum_retry_count = 6;
+	// A headset Wi-Fi toggle can take more than ten seconds to restore its
+	// interface and route. Keep bounded retries, but allow approximately
+	// thirty-five seconds of exponential backoff before declaring failure.
+	int maximum_retry_count = 12;
 	long initial_retry_delay_ms = 250;
 	long maximum_retry_delay_ms = 4000;
 };

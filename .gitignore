@@ -45,3 +45,4 @@ data/sync-test/README.md
 .gitignore
 data/sync-test/generate.py
 OpenVolumetricNative/.gitignore
+Unity/Assets/Plugins/OpenVolumetric/Android/arm64-v8a/libAudioPluginOpenVolumetricUnity.so.meta

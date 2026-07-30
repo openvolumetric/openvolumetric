@@ -80,7 +80,6 @@ crashlytics-build.properties
 *.so
 *.so.meta
 
-# Native binaries remain build outputs, but their Unity importer settings are
-# source-controlled so clean Android builds package the ARM64 DSP/runtime plug-in.
-!/[Aa]ssets/[Pp]lugins/OpenVolumetric/Android/arm64-v8a/libAudioPluginOpenVolumetricUnity.so.meta
+# Native binaries and their generated Android importer metadata remain local
+# build outputs. The macOS importer configuration is source-controlled.
 !/[Aa]ssets/[Pp]lugins/OpenVolumetric/macOS/AudioPluginOpenVolumetricUnity.dylib.meta

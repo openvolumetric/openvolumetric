@@ -82,6 +82,8 @@ public class OpenVolumetric : MonoBehaviour
     private bool m_network_rebuffering;
     private bool m_resume_after_network_recovery;
     private double m_network_recovery_target;
+    private bool m_network_decoder_recovery;
+    private double m_network_settle_until = -1.0;
     private bool m_waiting_for_initial_presentation;
     private bool m_play_after_initial_presentation;
 
@@ -311,8 +313,36 @@ public class OpenVolumetric : MonoBehaviour
             double tolerance = m_decoder.FrameRate > 0.0
                 ? 1.0 / m_decoder.FrameRate
                 : 0.034;
-            if(presented >= m_decoder_recovery_target - tolerance)
+            // Native seek clears LastPresentedTime to -1 synchronously. The
+            // first valid presentation can be later than zero when stream PTS
+            // has an initial offset, so any non-negative timestamp proves the
+            // new playback generation has reached the render thread.
+            bool presentationRecovered = m_decoder_recovery_target <= tolerance
+                ? presented >= 0.0
+                : presented >= m_decoder_recovery_target - tolerance;
+            if(presentationRecovered)
             {
+                if(m_network_decoder_recovery)
+                {
+                    // One recovered presentation proves the seek succeeded,
+                    // but does not mean the compressed read-ahead and decoded
+                    // queues have refilled. Hold the shared clock briefly so
+                    // playback does not immediately enter a lag-recovery loop.
+                    if(m_network_settle_until < 0.0)
+                    {
+                        m_network_settle_until =
+                            AudioSettings.dspTime + 1.0;
+                        return;
+                    }
+                    if(AudioSettings.dspTime < m_network_settle_until)
+                    {
+                        return;
+                    }
+                    m_network_decoder_recovery = false;
+                    m_network_settle_until = -1.0;
+                    m_last_decoder_recovery =
+                        AudioSettings.dspTime + 1.5;
+                }
                 m_decoder_recovering = false;
                 m_playback_position = m_decoder_recovery_target;
                 Play();
@@ -324,6 +354,15 @@ public class OpenVolumetric : MonoBehaviour
         {
             // A seek invalidates queued PCM. Keep the requested visual frame
             // warm while the native worker reconstructs the audio window.
+            // Do not submit Duration to UpdatePresentation for non-looping
+            // playback: its modulo timeline would turn Duration into zero and
+            // begin a native loop before the managed stop state is applied.
+            if(!enableLoop && m_playback_position >= Duration)
+            {
+                StopAtEnd();
+                return;
+            }
+
             m_decoder.UpdatePresentation(m_playback_position);
             if(!HasRequiredAudioPreroll())
             {
@@ -378,6 +417,15 @@ public class OpenVolumetric : MonoBehaviour
                 Seek(recoveryTime);
                 return;
             }
+            // Stop before UpdatePresentation receives Duration. The decoder
+            // uses a modulo media timeline, so submitting Duration would
+            // request frame zero even though managed looping is disabled.
+            if(!enableLoop && m_playback_position >= Duration)
+            {
+                StopAtEnd();
+                return;
+            }
+
             m_decoder.UpdatePresentation(m_playback_position);
             if(enableLoop && m_decoder.ContentLooped)
             {
@@ -391,19 +439,30 @@ public class OpenVolumetric : MonoBehaviour
                 return;
             }
 
-            if(!enableLoop && m_decoder.ContentLooped)
-            {
-                m_playback_state = PlaybackState.STOPPED;
-                m_playback_position = m_decoder.Duration;
-                m_decoder.MeshRenderer.enabled = false;
-                if(m_audio_source != null)
-                {
-                    m_audio_source.Stop();
-                }
-                m_decoder.StopDspAudio();
-            }
          }
 
+    }
+
+    /// <summary>
+    /// Stops a non-looping presentation without allowing the decoder's modulo
+    /// timeline to begin another playback generation.
+    /// </summary>
+    private void StopAtEnd()
+    {
+        m_playback_state = PlaybackState.STOPPED;
+        m_playback_position = Duration;
+        m_has_last_dsp_time = false;
+        m_waiting_for_audio_preroll = false;
+        m_decoder_recovering = false;
+        m_network_decoder_recovery = false;
+        m_network_settle_until = -1.0;
+        m_decoder.ResetLoopFlag();
+        m_decoder.MeshRenderer.enabled = false;
+        if(m_audio_source != null)
+        {
+            m_audio_source.Stop();
+        }
+        m_decoder.StopDspAudio();
     }
 
     /// <summary>
@@ -433,6 +492,8 @@ public class OpenVolumetric : MonoBehaviour
                 m_playback_position = m_network_recovery_target;
                 m_playback_state = PlaybackState.REBUFFERING;
                 m_decoder_recovering = false;
+                m_network_decoder_recovery = false;
+                m_network_settle_until = -1.0;
                 m_has_last_dsp_time = false;
                 if(m_audio_source != null)
                 {
@@ -473,13 +534,20 @@ public class OpenVolumetric : MonoBehaviour
             m_decoder.UpdatePresentation(m_network_recovery_target);
             if(m_resume_after_network_recovery)
             {
-                Play();
+                m_decoder_recovering = true;
+                m_decoder_recovery_target = m_network_recovery_target;
+                m_network_decoder_recovery = true;
+                m_network_settle_until = -1.0;
+                m_playback_state = PlaybackState.PREROLLING;
+                Debug.Log(
+                    "OpenVolumetric - network transport restored; " +
+                    "refilling decoder queues");
             }
             else
             {
                 m_playback_state = PlaybackState.PAUSED;
+                Debug.Log("OpenVolumetric - network recovery complete");
             }
-            Debug.Log("OpenVolumetric - network recovery complete");
             return true;
         }
 
@@ -695,12 +763,55 @@ public class OpenVolumetric : MonoBehaviour
             return;
         }
 
-        if(m_playback_position >= Duration)
+        // STOPPED is the authoritative end-of-content state. Do not rely only
+        // on an exact floating-point comparison with Duration: the final media
+        // PTS can be a fraction of a frame shorter than the container duration.
+        double endTolerance = m_decoder.FrameRate > 0.0
+            ? 1.0 / m_decoder.FrameRate
+            : 0.034;
+        bool restartFromEnd =
+            m_playback_state == PlaybackState.STOPPED ||
+            m_playback_position >= Duration - endTolerance;
+        if(restartFromEnd)
         {
-            Seek(0.0);
+            // Restart as a new synchronized decoder generation. Wait for the
+            // first texture/geometry presentation before scheduling audio;
+            // otherwise audio can run while the render thread is still
+            // waiting for post-seek visual data.
+            if(!m_decoder.Seek(0.0))
+            {
+                Debug.LogError(
+                    "OpenVolumetric - failed to restart playback from the beginning");
+                m_playback_state = PlaybackState.INIT_FAIL;
+                return;
+            }
+            m_playback_position = 0.0;
+            m_decoder.MeshRenderer.enabled = true;
+            m_has_last_dsp_time = false;
+            m_waiting_for_audio_preroll = false;
+            m_decoder_recovery_target = 0.0;
+            m_decoder_recovering = true;
+            m_network_decoder_recovery = false;
+            m_network_settle_until = -1.0;
+            m_playback_state = PlaybackState.PREROLLING;
+            return;
         }
 
         m_decoder.MeshRenderer.enabled = true;
+        // Seek resets the native presented timestamp. Do not let a quickly
+        // refilled audio queue start the clock until texture and geometry from
+        // that same seek generation have reached Unity's render thread.
+        if(m_decoder.LastPresentedTime < 0.0)
+        {
+            m_decoder_recovery_target = m_playback_position;
+            m_decoder_recovering = true;
+            m_network_decoder_recovery = false;
+            m_network_settle_until = -1.0;
+            m_has_last_dsp_time = false;
+            m_waiting_for_audio_preroll = false;
+            m_playback_state = PlaybackState.PREROLLING;
+            return;
+        }
         if(m_audio_source != null)
         {
             m_audio_source.Stop();
