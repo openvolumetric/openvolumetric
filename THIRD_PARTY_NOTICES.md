@@ -44,6 +44,20 @@ OpenVolumetric uses Draco for mesh encoding and decoding.
 The dependency is acquired by vcpkg. The repository currently requests Draco
 port version `1.5.7#1`.
 
+## libcurl, OpenSSL, and zlib
+
+OpenVolumetric uses libcurl for HTTP and HTTPS byte-range transport. The
+vcpkg configuration enables libcurl's OpenSSL backend and also brings in
+zlib.
+
+- libcurl: <https://curl.se/> — curl license
+- OpenSSL: <https://www.openssl.org/> — Apache License 2.0
+- zlib: <https://zlib.net/> — zlib license
+
+These dependencies are acquired by vcpkg and may be statically incorporated
+into runtime binaries. Distributors must retain the applicable notices and
+license texts for the exact libraries included in their build.
+
 ## vcpkg
 
 vcpkg is used to acquire and build native dependencies. Each installed port

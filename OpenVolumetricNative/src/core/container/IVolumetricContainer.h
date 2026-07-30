@@ -1,6 +1,9 @@
 #pragma once
 
+#include <IByteSource.h>
+
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -48,12 +51,16 @@ public:
 
 	/// Opens and validates a combined volumetric media file.
 	virtual bool open(const char* path) = 0;
+	/// Opens and validates media through an owned custom byte source.
+	virtual bool open(std::unique_ptr<IByteSource> source) = 0;
 	/// Closes the file and clears stream discovery and error state.
 	virtual void close() = 0;
 	/// Reads the next recognized compressed sample in demux order.
 	virtual bool read(ContainerPacket& packet) = 0;
 	/// Repositions demuxing to a timestamp in seconds.
 	virtual bool seek(double seconds) = 0;
+	/// Interrupts blocking source I/O before the demux worker is joined.
+	virtual void cancel_pending_io() = 0;
 
 	/// Returns whether a container is currently available for reads.
 	virtual bool is_open() const = 0;
@@ -61,6 +68,8 @@ public:
 	virtual bool end_of_stream() const = 0;
 	/// Returns the most recent container error.
 	virtual const std::string& error() const = 0;
+	/// Returns transport/cache activity for local or remote custom input.
+	virtual ByteSourceDiagnostics source_diagnostics() const = 0;
 };
 
 } // namespace openvolumetric

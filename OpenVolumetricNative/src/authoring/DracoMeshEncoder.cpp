@@ -70,6 +70,16 @@ bool encode_obj_to_draco(
 		error = "OBJ contains no triangular mesh data.";
 		return false;
 	}
+	if (mesh.GetNamedAttribute(draco::GeometryAttribute::POSITION) == nullptr ||
+		mesh.GetNamedAttribute(draco::GeometryAttribute::NORMAL) == nullptr ||
+		mesh.GetNamedAttribute(draco::GeometryAttribute::TEX_COORD) == nullptr)
+	{
+		error =
+			"OBJ must contain positions, normals, and texture coordinates "
+			"required by OpenVolumetric playback: " +
+			input_path.string();
+		return false;
+	}
 
 	draco::Encoder encoder;
 	encoder.SetSpeedOptions(options.encode_speed, options.decode_speed);

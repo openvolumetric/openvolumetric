@@ -10,6 +10,13 @@
       "version>=": "1.5.7#1"
     },
     {
+      "name": "curl",
+      "default-features": false,
+      "features": [
+        "ssl"
+      ]
+    },
+    {
       "name": "ffmpeg",
       "version>=": "8.1.2#3",
       "default-features": false,

@@ -568,6 +568,7 @@ bool mux_file(
 	AVFormatContext* input = nullptr;
 	AVFormatContext* output = nullptr;
 	AVPacket* packet = nullptr;
+	AVDictionary* mux_options = nullptr;
 	bool output_open = false;
 	bool header_written = false;
 	bool success = false;
@@ -682,7 +683,12 @@ bool mux_file(
 			output_open = true;
 		}
 
-		result = avformat_write_header(output, nullptr);
+		// The MP4 muxer normally writes its movie metadata after all samples.
+		// Fast-start performs a final relocation pass in av_write_trailer() so
+		// HTTP clients can parse track tables before downloading media data.
+		av_dict_set(&mux_options, "movflags", "+faststart", 0);
+		result = avformat_write_header(output, &mux_options);
+		av_dict_free(&mux_options);
 		if (result < 0)
 		{
 			std::cerr << "Failed to write MP4 header: "
@@ -775,6 +781,7 @@ bool mux_file(
 	success = true;
 
 cleanup:
+	av_dict_free(&mux_options);
 	if (header_written && output != nullptr)
 	{
 		av_write_trailer(output);
@@ -800,6 +807,93 @@ std::uint32_t read_be32(const std::uint8_t* value)
 		(static_cast<std::uint32_t>(value[1]) << 16) |
 		(static_cast<std::uint32_t>(value[2]) << 8) |
 		static_cast<std::uint32_t>(value[3]);
+}
+
+/// Confirms that MP4 movie metadata precedes the first media-data box.
+bool verify_fast_start(const fs::path& path)
+{
+	std::ifstream file(path, std::ios::binary | std::ios::ate);
+	if (!file)
+	{
+		std::cerr << "Could not inspect MP4 box order\n";
+		return false;
+	}
+
+	const std::streamoff end = file.tellg();
+	if (end < 8)
+	{
+		std::cerr << "MP4 is too small to contain top-level boxes\n";
+		return false;
+	}
+	const std::uint64_t file_size = static_cast<std::uint64_t>(end);
+	std::uint64_t offset = 0;
+	std::uint64_t moov_offset = std::numeric_limits<std::uint64_t>::max();
+	std::uint64_t mdat_offset = std::numeric_limits<std::uint64_t>::max();
+
+	while (offset + 8 <= file_size)
+	{
+		std::array<std::uint8_t, 16> header{};
+		file.seekg(static_cast<std::streamoff>(offset));
+		if (!file.read(reinterpret_cast<char*>(header.data()), 8))
+		{
+			std::cerr << "Could not read MP4 top-level box header\n";
+			return false;
+		}
+
+		std::uint64_t box_size = read_be32(header.data());
+		std::uint64_t header_size = 8;
+		if (box_size == 1)
+		{
+			if (!file.read(reinterpret_cast<char*>(header.data() + 8), 8))
+			{
+				std::cerr << "Could not read extended MP4 box size\n";
+				return false;
+			}
+			box_size =
+				(static_cast<std::uint64_t>(read_be32(header.data() + 8)) << 32) |
+				read_be32(header.data() + 12);
+			header_size = 16;
+		}
+		else if (box_size == 0)
+		{
+			box_size = file_size - offset;
+		}
+
+		if (box_size < header_size || box_size > file_size - offset)
+		{
+			std::cerr << "Invalid MP4 top-level box size\n";
+			return false;
+		}
+
+		if (header[4] == 'm' && header[5] == 'o' &&
+			header[6] == 'o' && header[7] == 'v')
+		{
+			moov_offset = offset;
+		}
+		else if (header[4] == 'm' && header[5] == 'd' &&
+			header[6] == 'a' && header[7] == 't' &&
+			mdat_offset == std::numeric_limits<std::uint64_t>::max())
+		{
+			mdat_offset = offset;
+		}
+		offset += box_size;
+	}
+
+	if (moov_offset == std::numeric_limits<std::uint64_t>::max() ||
+		mdat_offset == std::numeric_limits<std::uint64_t>::max())
+	{
+		std::cerr << "MP4 is missing its moov or mdat box\n";
+		return false;
+	}
+	if (moov_offset > mdat_offset)
+	{
+		std::cerr << "MP4 metadata follows media data; fast-start failed\n";
+		return false;
+	}
+
+	std::cout << "Verified fast-start MP4 metadata at byte "
+		<< moov_offset << " before media data at byte " << mdat_offset << '\n';
+	return true;
 }
 
 /// Rewrites FFmpeg's generic binary-data sample entry to the OpenVolumetric vvge tag.
@@ -1198,6 +1292,7 @@ bool pack_openvolumetric(
 		<< " geometry samples into MP4\n";
 	if (!mux_file(options, geometry, temporary_path) ||
 		!replace_geometry_sample_entry(temporary_path) ||
+		!verify_fast_start(temporary_path) ||
 		!verify_file(temporary_path, geometry))
 	{
 		fs::remove(temporary_path, ignored);

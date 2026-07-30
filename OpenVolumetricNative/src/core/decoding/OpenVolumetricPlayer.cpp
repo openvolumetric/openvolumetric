@@ -100,6 +100,7 @@ void OpenVolumetricPlayer::close()
 {
 	if (!m_impl)
 		return;
+	m_impl->media.cancel_pending_io();
 	stop();
 	// Both destroy methods are deliberately idempotent so partial open and
 	// startup failures follow the same rollback path as normal shutdown.
@@ -130,6 +131,31 @@ bool OpenVolumetricPlayer::seek(double time)
 const OpenVolumetricMediaInfo& OpenVolumetricPlayer::media_info() const
 {
 	return m_impl->info;
+}
+
+OpenVolumetricBufferInfo OpenVolumetricPlayer::buffer_info() const
+{
+	const ByteSourceDiagnostics source = m_impl->media.source_diagnostics();
+	OpenVolumetricBufferInfo result;
+	result.state = source.state;
+	result.remote = source.remote;
+	result.resource_size_bytes = source.resource_size_bytes;
+	result.cached_bytes = source.cached_bytes;
+	result.downloaded_bytes = source.downloaded_bytes;
+	result.request_count = source.request_count;
+	result.recovery_count = source.recovery_count;
+	return result;
+}
+
+OpenVolumetricAudioBufferInfo OpenVolumetricPlayer::audio_buffer_info() const
+{
+	const IAVDecoder::AudioBufferInfo audio =
+		m_impl->media.audio_buffer_info();
+	OpenVolumetricAudioBufferInfo result;
+	result.read_time = audio.read_time;
+	result.buffered_duration = audio.buffered_duration;
+	result.underrun_count = audio.underrun_count;
+	return result;
 }
 
 const std::string& OpenVolumetricPlayer::error() const

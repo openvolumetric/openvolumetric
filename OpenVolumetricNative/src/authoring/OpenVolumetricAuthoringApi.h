@@ -26,10 +26,13 @@ struct OpenVolumetricAuthoringSettings
 	int texture_quantization;
 	int draco_encode_speed;
 	int draco_decode_speed;
+	int maximum_video_bitrate_kbps;
+	int video_buffer_size_kbps;
+	int geometry_keyframe_interval;
 };
 
-/// Writes one shared preset into output. Presets are Desktop (0), Quest
-/// Balanced (1), and Quest Performance (2).
+/// Writes one shared preset into output. Presets are Desktop Local (0),
+/// Desktop Streaming (1), Quest Local (2), and Quest Streaming (3).
 OPENVOLUMETRIC_AUTHORING_API int openvolumetric_authoring_get_preset(
 	int preset,
 	OpenVolumetricAuthoringSettings* output);

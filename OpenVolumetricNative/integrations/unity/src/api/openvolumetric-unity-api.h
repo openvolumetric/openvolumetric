@@ -45,6 +45,16 @@ extern "C"
 	OPENVOLUMETRIC_API const char* openvolumetric_get_last_error(int id);
 	/// Returns the timestamp most recently uploaded by the render thread.
 	OPENVOLUMETRIC_API double openvolumetric_get_last_presented_time(int id);
+	/// Retrieves input transport, cache, download, and request counters.
+	OPENVOLUMETRIC_API int openvolumetric_get_buffer_details(
+		int id,
+		int& state,
+		int& remote,
+		long long& resource_size_bytes,
+		unsigned long long& cached_bytes,
+		unsigned long long& downloaded_bytes,
+		unsigned long long& request_count,
+		unsigned long long& recovery_count);
 
 	/// Retrieves decoded dimensions, nominal FPS, and duration in seconds.
 	OPENVOLUMETRIC_API int	openvolumetric_get_video_details(int id, int& width, int& height, double& fps, double& duration);
@@ -54,6 +64,13 @@ extern "C"
 
 	/// Pulls interleaved float PCM, filling unavailable samples with silence.
 	OPENVOLUMETRIC_API int	openvolumetric_read_audio(int id, float* samples, int sample_count);
+
+	/// Retrieves the PCM read timestamp, queued duration, and underrun count.
+	OPENVOLUMETRIC_API int openvolumetric_get_audio_buffer_details(
+		int id,
+		double& read_time,
+		double& buffered_duration,
+		unsigned long long& underrun_count);
 
 	/// Returns platform texture handles used to construct Unity textures.
 	OPENVOLUMETRIC_API int	openvolumetric_get_texture_pointers(int id, void*& yPointer, void*& uPointer, void*& vPointer);

@@ -23,6 +23,17 @@ enum class EOpenVolumetricPlaybackState : uint8
 	Error
 };
 
+/** Observable state of the local or HTTP byte source. */
+UENUM(BlueprintType)
+enum class EOpenVolumetricInputState : uint8
+{
+	Opening,
+	Ready,
+	Rebuffering,
+	Error,
+	Cancelled
+};
+
 /**
  * Blueprint-facing owner of one OpenVolumetric playback instance.
  *
@@ -45,6 +56,10 @@ public:
 	/** OpenVolumetric MP4 path. Relative paths are resolved beneath Content. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OpenVolumetric|Input")
 	FFilePath SourceFile;
+
+	/** Optional HTTP(S) MP4 URL. When set, this takes precedence over SourceFile. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OpenVolumetric|Input")
+	FString SourceUrl;
 
 	/** Start playback automatically after a file opens successfully. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OpenVolumetric|Playback")
@@ -109,7 +124,29 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status")
 	FString LastError;
 
-	/** Opens SourceFile and prepares native and engine resources. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status|Buffer")
+	bool bRemoteSource = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status|Buffer")
+	EOpenVolumetricInputState InputState =
+		EOpenVolumetricInputState::Opening;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status|Buffer")
+	int64 ResourceSizeBytes = -1;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status|Buffer")
+	int64 CachedBytes = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status|Buffer")
+	int64 DownloadedBytes = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status|Buffer")
+	int64 HttpRequestCount = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status|Buffer")
+	int64 NetworkRecoveryCount = 0;
+
+	/** Opens SourceUrl or SourceFile and prepares native and engine resources. */
 	UFUNCTION(BlueprintCallable, Category = "OpenVolumetric|Playback")
 	bool Open();
 
@@ -144,6 +181,13 @@ private:
 	void InitializeAudio();
 	void PumpAudio();
 	void ResetAudio();
+	void UpdateBufferDiagnostics();
+	bool HandleNetworkRecovery();
+
+	bool bNetworkRebuffering = false;
+	bool bResumeAfterNetworkRecovery = false;
+	double NetworkRecoveryTarget = 0.0;
+	double LastPresentationTime = -1.0;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> DynamicMaterial;

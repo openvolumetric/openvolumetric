@@ -1,9 +1,9 @@
 # Building OpenVolumetric
 
 OpenVolumetric's native libraries use CMake 3.20 or newer, Ninja, and vcpkg
-manifest mode. vcpkg downloads and builds FFmpeg and Draco. Runtime libraries
-are linked into the produced engine plug-ins, so players do not require a
-separately installed FFmpeg runtime.
+manifest mode. vcpkg downloads and builds FFmpeg, Draco, libcurl, OpenSSL,
+and zlib. Runtime libraries are linked into the produced engine plug-ins, so
+players do not require separately installed native runtimes.
 
 ## Build outputs
 
@@ -60,9 +60,9 @@ cmake --preset vcpkg
 cmake --build --preset vcpkg
 ```
 
-The first FFmpeg and Draco build can take several minutes. Subsequent builds
-reuse the vcpkg installed tree. CI should additionally configure a vcpkg
-binary cache.
+The first dependency build can take several minutes, particularly FFmpeg and
+OpenSSL. Subsequent builds reuse the vcpkg installed tree. CI should
+additionally configure a vcpkg binary cache.
 
 ### macOS
 
@@ -115,7 +115,9 @@ libOpenVolumetricUnityPlugin.so
 
 The preset targets Android API 29 and `arm64-v8a`. See
 [QUEST_BASELINE.md](QUEST_BASELINE.md) for the validated Unity and Quest
-configuration.
+configuration. The Unity project forces the Android internet permission for
+native HTTP(S) playback, and the Android libcurl/OpenSSL build uses the
+platform trusted-certificate directory.
 
 ## Unreal Engine 5.8 on macOS
 

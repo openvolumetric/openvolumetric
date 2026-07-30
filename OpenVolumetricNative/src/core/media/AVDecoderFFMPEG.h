@@ -71,6 +71,9 @@ public:
 	/// Copies interleaved PCM from the single-producer/single-consumer ring.
 	int read_audio(float* output, int sample_count) override;
 
+	/// Returns a lock-free snapshot of the PCM consumer timeline.
+	AudioBufferInfo audio_buffer_info() const override;
+
 	/// Returns whether init_geometry_context() found a valid vvge stream.
 	bool has_embedded_geometry() const override;
 
@@ -87,6 +90,10 @@ public:
 
 	/// Combines persistent container and queue errors for engine diagnostics.
 	std::string get_last_error() const override;
+
+	/// Interrupts a blocking local/network container read during teardown.
+	void cancel_pending_io() override;
+	ByteSourceDiagnostics source_diagnostics() const override;
 
 	/// Stops the worker and frees container, codecs, frames, and audio state.
 	void destroy() override;
@@ -185,6 +192,9 @@ private:
 	std::vector<float>		m_audio_samples;
 	std::atomic<uint64_t>	m_audio_read_position;
 	std::atomic<uint64_t>	m_audio_write_position;
+	std::atomic<uint64_t>	m_audio_timeline_origin_position;
+	std::atomic<double>		m_audio_timeline_origin_time;
+	std::atomic<uint64_t>	m_audio_underrun_count;
 	double					m_audio_discard_before = -1.0;
 	openvolumetric::BoundedQueue<EncodedGeometryFrame> m_geometry_frames;
 	std::deque<openvolumetric::ContainerPacket> m_pending_video_packets;

@@ -1,12 +1,18 @@
 #include "FFmpegMp4VolumetricContainer.h"
 
+#include <HttpRangeByteSource.h>
+#include <LocalFileByteSource.h>
+
 extern "C"
 {
 #include <libavutil/error.h>
+#include <libavutil/mem.h>
 }
 
 #include <array>
+#include <cerrno>
 #include <cmath>
+#include <memory>
 
 namespace openvolumetric
 {
@@ -48,6 +54,7 @@ std::size_t kind_slot(StreamKind kind)
 
 FFmpegMp4VolumetricContainer::FFmpegMp4VolumetricContainer()
 	: m_context(nullptr),
+	  m_io_context(nullptr),
 	  m_stream_indices{{-1, -1, -1}},
 	  m_end_of_stream(false)
 {
@@ -66,14 +73,91 @@ bool FFmpegMp4VolumetricContainer::open(const char* path)
 		set_error("Container path is empty.");
 		return false;
 	}
-
-	int result = avformat_open_input(&m_context, path, nullptr, nullptr);
-	if (result < 0)
+	const std::string input(path);
+	if (is_http_url(input))
 	{
-		set_error("Could not open MP4: " + ffmpeg_error(result));
+		auto source = std::make_unique<HttpRangeByteSource>(input);
+		if (!source->is_open())
+		{
+			set_error(source->error());
+			return false;
+		}
+		return open(std::move(source));
+	}
+	auto source = std::make_unique<LocalFileByteSource>(path);
+	if (!source->is_open())
+	{
+		set_error(source->error());
 		return false;
 	}
-	result = avformat_find_stream_info(m_context, nullptr);
+	return open(std::move(source));
+}
+
+bool FFmpegMp4VolumetricContainer::open(
+	std::unique_ptr<IByteSource> source)
+{
+	close();
+	if (!source)
+	{
+		set_error("A byte source is required.");
+		return false;
+	}
+	m_source = std::move(source);
+
+	constexpr int io_buffer_size = 32 * 1024;
+	std::uint8_t* io_buffer =
+		static_cast<std::uint8_t*>(av_malloc(io_buffer_size));
+	if (io_buffer == nullptr)
+	{
+		set_error("Could not allocate the FFmpeg custom-I/O buffer.");
+		close();
+		return false;
+	}
+	m_io_context = avio_alloc_context(
+		io_buffer,
+		io_buffer_size,
+		0,
+		this,
+		&FFmpegMp4VolumetricContainer::read_source,
+		nullptr,
+		&FFmpegMp4VolumetricContainer::seek_source);
+	if (m_io_context == nullptr)
+	{
+		av_free(io_buffer);
+		set_error("Could not create the FFmpeg custom-I/O context.");
+		close();
+		return false;
+	}
+	m_io_context->seekable =
+		m_source->is_seekable() ? AVIO_SEEKABLE_NORMAL : 0;
+
+	m_context = avformat_alloc_context();
+	if (m_context == nullptr)
+	{
+		set_error("Could not allocate the FFmpeg format context.");
+		close();
+		return false;
+	}
+	m_context->pb = m_io_context;
+	m_context->flags |= AVFMT_FLAG_CUSTOM_IO;
+
+	const int result =
+		avformat_open_input(&m_context, nullptr, nullptr, nullptr);
+	if (result < 0)
+	{
+		const std::string source_error = m_source->error();
+		set_error(
+			"Could not open MP4 byte source: " + ffmpeg_error(result) +
+			(source_error.empty() ? "" : " (" + source_error + ")"));
+		close();
+		return false;
+	}
+	return finish_open();
+}
+
+bool FFmpegMp4VolumetricContainer::finish_open()
+{
+	const int result = avformat_find_stream_info(m_context, nullptr);
 	if (result < 0)
 	{
 		set_error("Could not read MP4 stream information: " +
@@ -95,10 +179,78 @@ bool FFmpegMp4VolumetricContainer::open(const char* path)
 
 void FFmpegMp4VolumetricContainer::close()
 {
+	if (m_source)
+		m_source->cancel();
 	if (m_context != nullptr)
 		avformat_close_input(&m_context);
+	if (m_io_context != nullptr)
+		avio_context_free(&m_io_context);
+	m_source.reset();
 	m_stream_indices = {{-1, -1, -1}};
 	m_end_of_stream = false;
+}
+
+int FFmpegMp4VolumetricContainer::read_source(
+	void* opaque,
+	std::uint8_t* buffer,
+	int size)
+{
+	auto* container =
+		static_cast<FFmpegMp4VolumetricContainer*>(opaque);
+	if (container == nullptr || !container->m_source ||
+		buffer == nullptr || size <= 0)
+	{
+		return AVERROR(EINVAL);
+	}
+	const std::int64_t result = container->m_source->read(
+		buffer,
+		static_cast<std::size_t>(size));
+	if (result > 0)
+		return static_cast<int>(result);
+	if (result == 0)
+		return AVERROR_EOF;
+	return container->m_source->is_cancelled()
+		? AVERROR_EXIT
+		: AVERROR(EIO);
+}
+
+std::int64_t FFmpegMp4VolumetricContainer::seek_source(
+	void* opaque,
+	std::int64_t offset,
+	int whence)
+{
+	auto* container =
+		static_cast<FFmpegMp4VolumetricContainer*>(opaque);
+	if (container == nullptr || !container->m_source)
+		return AVERROR(EINVAL);
+	if (whence == AVSEEK_SIZE)
+		return container->m_source->size();
+	if (!container->m_source->is_seekable())
+		return AVERROR(ENOSYS);
+
+	const int origin = whence & ~AVSEEK_FORCE;
+	ByteSeekOrigin seek_origin;
+	switch (origin)
+	{
+	case SEEK_SET:
+		seek_origin = ByteSeekOrigin::Begin;
+		break;
+	case SEEK_CUR:
+		seek_origin = ByteSeekOrigin::Current;
+		break;
+	case SEEK_END:
+		seek_origin = ByteSeekOrigin::End;
+		break;
+	default:
+		return AVERROR(EINVAL);
+	}
+	const std::int64_t result =
+		container->m_source->seek(offset, seek_origin);
+	if (result >= 0)
+		return result;
+	return container->m_source->is_cancelled()
+		? AVERROR_EXIT
+		: AVERROR(EIO);
 }
 
 bool FFmpegMp4VolumetricContainer::discover_streams()
@@ -208,6 +360,12 @@ bool FFmpegMp4VolumetricContainer::seek(double seconds)
 	return true;
 }
 
+void FFmpegMp4VolumetricContainer::cancel_pending_io()
+{
+	if (m_source)
+		m_source->cancel();
+}
+
 bool FFmpegMp4VolumetricContainer::is_open() const
 {
 	return m_context != nullptr;
@@ -221,6 +379,14 @@ bool FFmpegMp4VolumetricContainer::end_of_stream() const
 const std::string& FFmpegMp4VolumetricContainer::error() const
 {
 	return m_error;
+}
+
+ByteSourceDiagnostics
+FFmpegMp4VolumetricContainer::source_diagnostics() const
+{
+	return m_source != nullptr
+		? m_source->diagnostics()
+		: ByteSourceDiagnostics{};
 }
 
 int FFmpegMp4VolumetricContainer::stream_index(StreamKind kind) const

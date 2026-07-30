@@ -37,7 +37,8 @@ void UOpenVolumetricComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	CreateDynamicMeshComponent();
-	if (!SourceFile.FilePath.IsEmpty())
+	if (!SourceUrl.TrimStartAndEnd().IsEmpty() ||
+		!SourceFile.FilePath.IsEmpty())
 	{
 		Open();
 	}
@@ -75,13 +76,17 @@ void UOpenVolumetricComponent::TickComponent(
 	FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	UpdateBufferDiagnostics();
+	if (HandleNetworkRecovery())
+	{
+		return;
+	}
 	if (PlaybackState != EOpenVolumetricPlaybackState::Playing ||
 		Player == nullptr ||
 		DynamicMeshComponent == nullptr)
 	{
 		return;
 	}
-
 	CurrentTimeSeconds += static_cast<double>(DeltaTime);
 	// Feeding Unreal also drains the native PCM ring so audio backpressure
 	// cannot stall the shared video/geometry demuxer.
@@ -125,6 +130,7 @@ void UOpenVolumetricComponent::TickComponent(
 			PresentationTime);
 	if (Result == openvolumetric::FrameMatchResult::Ready)
 	{
+		LastPresentationTime = PresentationTime;
 		DynamicMeshComponent->SetMesh(MoveTemp(Mesh));
 		UpdatePresentationTexture(
 			Pixels, TextureWidth, TextureHeight);
@@ -191,7 +197,9 @@ bool UOpenVolumetricComponent::Open()
 {
 	Close();
 
-	if (SourceFile.FilePath.IsEmpty())
+	const FString TrimmedUrl = SourceUrl.TrimStartAndEnd();
+	const bool bUseRemoteSource = !TrimmedUrl.IsEmpty();
+	if (!bUseRemoteSource && SourceFile.FilePath.IsEmpty())
 	{
 		LastError = TEXT("No OpenVolumetric MP4 has been selected.");
 		PlaybackState = EOpenVolumetricPlaybackState::Error;
@@ -199,41 +207,58 @@ bool UOpenVolumetricComponent::Open()
 		return false;
 	}
 
-	FString ResolvedPath = SourceFile.FilePath;
-	FPaths::NormalizeFilename(ResolvedPath);
-	if (FPaths::IsRelative(ResolvedPath))
+	FString ResolvedPath = bUseRemoteSource
+		? TrimmedUrl
+		: SourceFile.FilePath;
+	if (bUseRemoteSource)
 	{
-		// FFilePath may serialize a picker result relative to the editor
-		// process, the project, or Content. Test the conventional locations
-		// rather than blindly prefixing Content and duplicating the path.
-		const TArray<FString> Candidates = {
-			FPaths::ConvertRelativePathToFull(ResolvedPath),
-			FPaths::ConvertRelativePathToFull(
-				FPaths::ProjectDir(), ResolvedPath),
-			FPaths::ConvertRelativePathToFull(
-				FPaths::ProjectContentDir(), ResolvedPath),
-			FPaths::ConvertRelativePathToFull(
-				FPaths::ProjectContentDir(),
-				FPaths::GetCleanFilename(ResolvedPath))
-		};
-		for (const FString& Candidate : Candidates)
+		if (!ResolvedPath.StartsWith(
+				TEXT("http://"), ESearchCase::IgnoreCase) &&
+			!ResolvedPath.StartsWith(
+				TEXT("https://"), ESearchCase::IgnoreCase))
 		{
-			if (FPaths::FileExists(Candidate))
-			{
-				ResolvedPath = Candidate;
-				break;
-			}
+			LastError = TEXT("SourceUrl must be an HTTP or HTTPS URL.");
+			PlaybackState = EOpenVolumetricPlaybackState::Error;
+			UE_LOG(LogOpenVolumetricComponent, Error, TEXT("%s"), *LastError);
+			return false;
 		}
 	}
-	FPaths::NormalizeFilename(ResolvedPath);
-
-	if (!FPaths::FileExists(ResolvedPath))
+	else
 	{
-		LastError = FString::Printf(
-			TEXT("OpenVolumetric MP4 does not exist: %s"), *ResolvedPath);
-		PlaybackState = EOpenVolumetricPlaybackState::Error;
-		UE_LOG(LogOpenVolumetricComponent, Error, TEXT("%s"), *LastError);
-		return false;
+		FPaths::NormalizeFilename(ResolvedPath);
+		if (FPaths::IsRelative(ResolvedPath))
+		{
+			// FFilePath may serialize a picker result relative to the editor,
+			// project, or Content directory.
+			const TArray<FString> Candidates = {
+				FPaths::ConvertRelativePathToFull(ResolvedPath),
+				FPaths::ConvertRelativePathToFull(
+					FPaths::ProjectDir(), ResolvedPath),
+				FPaths::ConvertRelativePathToFull(
+					FPaths::ProjectContentDir(), ResolvedPath),
+				FPaths::ConvertRelativePathToFull(
+					FPaths::ProjectContentDir(),
+					FPaths::GetCleanFilename(ResolvedPath))
+			};
+			for (const FString& Candidate : Candidates)
+			{
+				if (FPaths::FileExists(Candidate))
+				{
+					ResolvedPath = Candidate;
+					break;
+				}
+			}
+		}
+		FPaths::NormalizeFilename(ResolvedPath);
+
+		if (!FPaths::FileExists(ResolvedPath))
+		{
+			LastError = FString::Printf(
+				TEXT("OpenVolumetric MP4 does not exist: %s"), *ResolvedPath);
+			PlaybackState = EOpenVolumetricPlaybackState::Error;
+			UE_LOG(LogOpenVolumetricComponent, Error, TEXT("%s"), *LastError);
+			return false;
+		}
 	}
 
 	PlaybackState = EOpenVolumetricPlaybackState::Opening;
@@ -249,6 +274,7 @@ bool UOpenVolumetricComponent::Open()
 	CurrentTimeSeconds = 0.0;
 	PlaybackState = EOpenVolumetricPlaybackState::Ready;
 	LastError.Reset();
+	UpdateBufferDiagnostics();
 	InitializeAudio();
 
 	UE_LOG(
@@ -337,6 +363,103 @@ void UOpenVolumetricComponent::Close()
 	DurationSeconds = 0.0;
 	CurrentTimeSeconds = 0.0;
 	LastError.Reset();
+	bRemoteSource = false;
+	ResourceSizeBytes = -1;
+	CachedBytes = 0;
+	DownloadedBytes = 0;
+	HttpRequestCount = 0;
+	NetworkRecoveryCount = 0;
+	InputState = EOpenVolumetricInputState::Opening;
+	bNetworkRebuffering = false;
+	bResumeAfterNetworkRecovery = false;
+	NetworkRecoveryTarget = 0.0;
+	LastPresentationTime = -1.0;
+}
+
+void UOpenVolumetricComponent::UpdateBufferDiagnostics()
+{
+	if (Player == nullptr)
+	{
+		return;
+	}
+	const openvolumetric::OpenVolumetricBufferInfo Info =
+		Player->GetBufferInfo();
+	// Core and reflected enums intentionally share stable numeric states.
+	InputState = static_cast<EOpenVolumetricInputState>(Info.state);
+	bRemoteSource = Info.remote;
+	ResourceSizeBytes = static_cast<int64>(Info.resource_size_bytes);
+	CachedBytes = static_cast<int64>(Info.cached_bytes);
+	DownloadedBytes = static_cast<int64>(Info.downloaded_bytes);
+	HttpRequestCount = static_cast<int64>(Info.request_count);
+	NetworkRecoveryCount = static_cast<int64>(Info.recovery_count);
+}
+
+bool UOpenVolumetricComponent::HandleNetworkRecovery()
+{
+	if (!bRemoteSource)
+	{
+		return false;
+	}
+	if (InputState == EOpenVolumetricInputState::Rebuffering)
+	{
+		if (!bNetworkRebuffering)
+		{
+			bNetworkRebuffering = true;
+			bResumeAfterNetworkRecovery =
+				PlaybackState == EOpenVolumetricPlaybackState::Playing;
+			NetworkRecoveryTarget = LastPresentationTime >= 0.0
+				? LastPresentationTime
+				: CurrentTimeSeconds;
+			CurrentTimeSeconds = NetworkRecoveryTarget;
+			PlaybackState = EOpenVolumetricPlaybackState::Paused;
+			ResetAudio();
+			UE_LOG(
+				LogOpenVolumetricComponent,
+				Warning,
+				TEXT("HTTP input interrupted; rebuffering."));
+		}
+		return true;
+	}
+	if (!bNetworkRebuffering)
+	{
+		if (InputState == EOpenVolumetricInputState::Error)
+		{
+			PlaybackState = EOpenVolumetricPlaybackState::Error;
+			LastError = TEXT("HTTP input failed after recovery retries.");
+			ResetAudio();
+			return true;
+		}
+		return false;
+	}
+	if (InputState == EOpenVolumetricInputState::Error ||
+		InputState == EOpenVolumetricInputState::Cancelled)
+	{
+		bNetworkRebuffering = false;
+		PlaybackState = EOpenVolumetricPlaybackState::Error;
+		LastError = TEXT("HTTP input failed after recovery retries.");
+		return true;
+	}
+	if (InputState != EOpenVolumetricInputState::Ready)
+	{
+		return true;
+	}
+
+	bNetworkRebuffering = false;
+	if (!Player->Seek(NetworkRecoveryTarget, LastError))
+	{
+		PlaybackState = EOpenVolumetricPlaybackState::Error;
+		return true;
+	}
+	CurrentTimeSeconds = NetworkRecoveryTarget;
+	ResetAudio();
+	PlaybackState = bResumeAfterNetworkRecovery
+		? EOpenVolumetricPlaybackState::Playing
+		: EOpenVolumetricPlaybackState::Paused;
+	UE_LOG(
+		LogOpenVolumetricComponent,
+		Log,
+		TEXT("HTTP input recovered and playback resynchronized."));
+	return true;
 }
 
 void UOpenVolumetricComponent::InitializeAudio()

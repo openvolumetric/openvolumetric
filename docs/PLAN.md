@@ -4,10 +4,10 @@ Last updated: 29 July 2026
 
 ## Current objective
 
-Stabilize and validate the implemented Unity and Unreal integrations around
-the shared MP4/core architecture, finish Milestone 11 temporal-geometry
-validation, and complete the remaining cross-platform and packaged-build
-tests before streamable input work begins.
+Implement Milestone 12 progressive and fragmented input beneath the shared
+container boundary while preserving local-file behavior, timestamp
+synchronization, temporal-geometry dependencies, and the existing Unity and
+Unreal adapters.
 
 ## Decisions
 
@@ -205,8 +205,9 @@ inter-frame dependency preroll.
       loop, seek, status, and error controls.
 - [x] Handle Android asset delivery and readable local-file paths without
       assuming desktop `StreamingAssets` filesystem behavior.
-- [x] Add Desktop Quality, Quest Balanced, Quest Performance, and Custom
-      authoring presets for video complexity and Draco decode speed.
+- [x] Add Desktop Local, Desktop Streaming, Quest Local, Quest Streaming,
+      and Custom authoring presets for video complexity, bounded network
+      rate, reference windows, and Draco decode speed.
 - [ ] Profile CPU, GPU, memory, queue depth, dropped presentations, thermals,
       and sustained playback on the physical Quest 3S.
 - [ ] Produce and test a signed development APK from a clean checkout.
@@ -356,12 +357,12 @@ The complete progressive-download, fragmented-MP4, adaptive-selection,
 threading, recovery, authoring, and validation design is recorded in
 [STREAMING_AND_ADAPTATION.md](STREAMING_AND_ADAPTATION.md).
 
-- [ ] Add an engine-independent byte/segment source beneath the MP4
+- [x] Add an engine-independent byte/segment source beneath the MP4
       container while retaining local-file input.
-- [ ] Add cancellable HTTP byte-range input and bounded caching.
-- [ ] Author fast-start MP4 files for progressive playback.
-- [ ] Connect FFmpeg custom I/O to the network byte source.
-- [ ] Validate progressive startup and seeking without downloading the whole
+- [x] Add cancellable HTTP byte-range input and bounded caching.
+- [x] Author fast-start MP4 files for progressive playback.
+- [x] Connect FFmpeg custom I/O to the network byte source.
+- [x] Validate progressive startup and seeking without downloading the whole
       asset.
 - [ ] Author initialization segments and aligned fragmented-MP4 media
       segments for a single fixed-quality representation.
@@ -371,8 +372,13 @@ threading, recovery, authoring, and validation design is recorded in
       independently addressable segment.
 - [ ] Align topology keyframes with segment boundaries when temporal geometry
       coding is used.
-- [ ] Expose URL input and buffer diagnostics through the core API, Unity, and
+- [x] Expose URL input and buffer diagnostics through the core API, Unity, and
       Unreal without placing transport logic in either engine adapter.
+- [x] On a network outage, enter a defined rebuffer/error state, freeze the
+      last complete presentation, silence audio, and recover from a valid
+      synchronized access point after connectivity returns.
+- [ ] Validate outage recovery, retry exhaustion, and synchronized resume on
+      Quest and Unreal using controlled disconnects.
 
 ### Milestone 12 exit criteria
 

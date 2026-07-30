@@ -16,7 +16,8 @@ Unity integration.
 1. Enable the OpenVolumetric plug-in and restart the Editor if requested.
 2. Add an Actor to the level.
 3. Add an **Open Volumetric Component** to the Actor.
-4. Set **Source File** to an OpenVolumetric MP4.
+4. Set **Source File** to an OpenVolumetric MP4, or set **Source URL** to an
+   HTTP(S) fast-start MP4. Source URL takes precedence when both are present.
 5. Enable **Play on Open** and **Loop** as required.
 6. Enter Play in Editor.
 
@@ -31,7 +32,9 @@ operations are also available to Blueprints:
 - `Close`
 
 Status, duration, current time, and the last error are exposed as component
-properties.
+properties. Remote playback additionally publishes resource size, cache
+occupancy, cumulative downloaded bytes, and HTTP request count beneath
+**Status > Buffer**.
 
 The component's **Texture** section also exposes the same normalized
 correction controls as Unity:

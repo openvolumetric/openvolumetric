@@ -117,19 +117,23 @@ EncodingSettings preset_settings(PlatformPreset preset)
 {
 	switch (preset)
 	{
-	case PlatformPreset::DesktopQuality:
+	case PlatformPreset::DesktopLocal:
 		return {
 			VideoCodec::HEVC, 20, 60, 3, false,
-			14, 10, 12, 5, 5};
-	case PlatformPreset::QuestPerformance:
+			14, 10, 12, 5, 5, 0, 0, 0};
+	case PlatformPreset::DesktopStreaming:
+		return {
+			VideoCodec::HEVC, 23, 60, 2, false,
+			14, 10, 12, 5, 7, 16000, 32000, 60};
+	case PlatformPreset::QuestLocal:
 		return {
 			VideoCodec::H264, 23, 30, 1, false,
-			12, 8, 10, 8, 10};
-	case PlatformPreset::QuestBalanced:
+			12, 8, 10, 8, 10, 0, 0, 0};
+	case PlatformPreset::QuestStreaming:
 	default:
 		return {
-			VideoCodec::HEVC, 25, 30, 1, true,
-			14, 10, 12, 7, 9};
+			VideoCodec::HEVC, 27, 30, 1, true,
+			12, 8, 10, 8, 10, 8000, 16000, 30};
 	}
 }
 
@@ -198,9 +202,13 @@ bool build_ffmpeg_arguments(
 	const EncodingSettings& settings = request.settings;
 	if (settings.crf < 0 ||
 		settings.video_keyframe_interval <= 0 ||
-		settings.reference_frames <= 0)
+		settings.reference_frames <= 0 ||
+		settings.maximum_video_bitrate_kbps < 0 ||
+		settings.video_buffer_size_kbps < 0 ||
+		((settings.maximum_video_bitrate_kbps == 0) !=
+			(settings.video_buffer_size_kbps == 0)))
 	{
-		error = "CRF, keyframe interval, and reference-frame settings are invalid.";
+		error = "Codec, bitrate, or keyframe settings are invalid.";
 		return false;
 	}
 
@@ -220,6 +228,14 @@ bool build_ffmpeg_arguments(
 		"-c:v", settings.codec == VideoCodec::HEVC ? "libx265" : "libx264",
 		"-crf", std::to_string(settings.crf),
 		"-pix_fmt", "yuv420p"});
+	if (settings.maximum_video_bitrate_kbps > 0)
+	{
+		arguments.insert(arguments.end(), {
+			"-maxrate",
+			std::to_string(settings.maximum_video_bitrate_kbps) + "k",
+			"-bufsize",
+			std::to_string(settings.video_buffer_size_kbps) + "k"});
+	}
 	const std::string codec_parameters =
 		"keyint=" + std::to_string(settings.video_keyframe_interval) +
 		":min-keyint=1:bframes=0:ref=" +

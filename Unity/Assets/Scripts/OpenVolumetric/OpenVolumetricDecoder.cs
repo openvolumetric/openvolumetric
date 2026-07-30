@@ -60,6 +60,17 @@ public class OpenVolumetricDecoder : IDisposable
     [DllImport(PluginName, EntryPoint = "openvolumetric_get_last_presented_time")]
     private static extern double openvolumetric_get_last_presented_time(int id);
 
+    [DllImport(PluginName, EntryPoint = "openvolumetric_get_buffer_details")]
+    private static extern int openvolumetric_get_buffer_details(
+        int id,
+        ref int state,
+        ref int remote,
+        ref long resourceSizeBytes,
+        ref ulong cachedBytes,
+        ref ulong downloadedBytes,
+        ref ulong requestCount,
+        ref ulong recoveryCount);
+
     [DllImport(PluginName, EntryPoint = "openvolumetric_get_video_details")]
     private static extern int openvolumetric_get_video_details(int id, ref int width, ref int height, ref double fps, ref double duration);
 
@@ -68,6 +79,13 @@ public class OpenVolumetricDecoder : IDisposable
 
     [DllImport(PluginName, EntryPoint = "openvolumetric_read_audio")]
     private static extern int openvolumetric_read_audio(int id, [Out] float[] samples, int sample_count);
+
+    [DllImport(PluginName, EntryPoint = "openvolumetric_get_audio_buffer_details")]
+    private static extern int openvolumetric_get_audio_buffer_details(
+        int id,
+        ref double readTime,
+        ref double bufferedDuration,
+        ref ulong underrunCount);
 
     [DllImport(PluginName, EntryPoint = "openvolumetric_get_texture_pointers")]
     private static extern int openvolumetric_get_texture_pointers(int id, ref IntPtr Y, ref IntPtr U, ref IntPtr V);
@@ -101,6 +119,37 @@ public class OpenVolumetricDecoder : IDisposable
     public bool HasAudio
     {
         get { return m_audio_clip != null; }
+    }
+
+    /// <summary>Immutable snapshot of native PCM readiness and consumption.</summary>
+    public struct AudioBufferInfo
+    {
+        public double ReadTime;
+        public double BufferedDuration;
+        public ulong UnderrunCount;
+
+        public bool HasPreroll(double requiredDuration)
+        {
+            return BufferedDuration >= requiredDuration;
+        }
+    }
+
+    /// <summary>Current timestamp and occupancy of the native PCM ring.</summary>
+    public AudioBufferInfo CurrentAudioBufferInfo
+    {
+        get
+        {
+            AudioBufferInfo info = new AudioBufferInfo();
+            if(m_instance_id >= 0 && HasAudio)
+            {
+                openvolumetric_get_audio_buffer_details(
+                    m_instance_id,
+                    ref info.ReadTime,
+                    ref info.BufferedDuration,
+                    ref info.UnderrunCount);
+            }
+            return info;
+        }
     }
 
     /// <summary>The Unity mesh whose native buffers receive geometry.</summary>
@@ -186,6 +235,54 @@ public class OpenVolumetricDecoder : IDisposable
             return m_instance_id >= 0
                 ? openvolumetric_get_last_presented_time(m_instance_id)
                 : -1.0;
+        }
+    }
+
+    /// <summary>Immutable native input/cache counter snapshot.</summary>
+    public struct BufferInfo
+    {
+        public BufferState State;
+        public bool IsRemote;
+        public long ResourceSizeBytes;
+        public ulong CachedBytes;
+        public ulong DownloadedBytes;
+        public ulong RequestCount;
+        public ulong RecoveryCount;
+    }
+
+    public enum BufferState
+    {
+        Opening = 0,
+        Ready = 1,
+        Rebuffering = 2,
+        Error = 3,
+        Cancelled = 4
+    }
+
+    /// <summary>Current transport and bounded-cache diagnostics.</summary>
+    public BufferInfo InputBufferInfo
+    {
+        get
+        {
+            BufferInfo info = new BufferInfo();
+            if(m_instance_id < 0)
+            {
+                return info;
+            }
+            int state = 0;
+            int remote = 0;
+            openvolumetric_get_buffer_details(
+                m_instance_id,
+                ref state,
+                ref remote,
+                ref info.ResourceSizeBytes,
+                ref info.CachedBytes,
+                ref info.DownloadedBytes,
+                ref info.RequestCount,
+                ref info.RecoveryCount);
+            info.State = (BufferState)state;
+            info.IsRemote = remote != 0;
+            return info;
         }
     }
 
@@ -383,7 +480,12 @@ public class OpenVolumetricDecoder : IDisposable
             m_decoder_state = DecoderState.INIT_FAIL;
             return false;
         }
-        Debug.Log( String.Format("OpenVolumetricDecoder::init - file:  {0}", filepath));
+        Debug.Log(String.Format(
+            "OpenVolumetricDecoder::init - source: {0}",
+            filepath.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                filepath.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                ? "remote HTTP source"
+                : filepath));
         Debug.Log(String.Format(
             "OpenVolumetricDecoder::init - width: {0}  height: {1}",
             videoWidth,

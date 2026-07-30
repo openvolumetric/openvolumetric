@@ -83,6 +83,9 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         public int TextureQuantization;
         public int DracoEncodeSpeed;
         public int DracoDecodeSpeed;
+        public int MaximumVideoBitrateKbps;
+        public int VideoBufferSizeKbps;
+        public int GeometryKeyframeInterval;
     }
 
     [DllImport(
@@ -119,9 +122,10 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
 
     private enum EncodingPreset
     {
-        DesktopQuality,
-        QuestBalanced,
-        QuestPerformance,
+        DesktopLocal,
+        DesktopStreaming,
+        QuestLocal,
+        QuestStreaming,
         Custom
     }
 
@@ -132,7 +136,7 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
     }
 
     [SerializeField] private EncodingPreset encodingPreset =
-        EncodingPreset.QuestBalanced;
+        EncodingPreset.QuestLocal;
     [SerializeField] private string imageDirectory = "";
     [SerializeField] private string geometryDirectory = "";
     [SerializeField] private string audioFile = "";
@@ -496,8 +500,11 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
                     settings.DracoDecodeSpeed,
                     geometryCompression ? 1 : 0,
                     geometryCompression &&
-                        limitGeometryKeyframeInterval
-                        ? maximumGeometryKeyframeInterval
+                        (settings.GeometryKeyframeInterval > 0 ||
+                         limitGeometryKeyframeInterval)
+                        ? (settings.GeometryKeyframeInterval > 0
+                            ? settings.GeometryKeyframeInterval
+                            : maximumGeometryKeyframeInterval)
                         : 0) != 1)
                 {
                     string error = Marshal.PtrToStringAnsi(GetAuthoringError());
@@ -911,11 +918,13 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             }
             return EncodingSettings.FromNative(
                 settings,
-                encodingPreset == EncodingPreset.DesktopQuality
-                    ? "Prioritises texture and geometry quality for desktop playback."
-                    : encodingPreset == EncodingPreset.QuestPerformance
-                        ? "Prioritises software decoding speed at the cost of larger video files and geometry precision."
-                        : "Default Quest profile with a simpler HEVC bitstream and fast Draco decoding.");
+                encodingPreset == EncodingPreset.DesktopLocal
+                    ? "Prioritises texture and geometry quality for local desktop playback."
+                    : encodingPreset == EncodingPreset.DesktopStreaming
+                        ? "Constrains bitrate and dependency windows for high-quality desktop streaming."
+                        : encodingPreset == EncodingPreset.QuestLocal
+                            ? "Prioritises Quest decoding speed without a network bitrate ceiling."
+                            : "Constrains bitrate and reference windows for stable Quest Wi-Fi playback.");
         }
         return new EncodingSettings(
             videoCodec,
@@ -928,6 +937,9 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             textureQuantization,
             dracoEncodeSpeed,
             dracoDecodeSpeed,
+            0,
+            0,
+            0,
             "Uses the advanced settings below.");
     }
 
@@ -943,6 +955,9 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         public readonly int TextureQuantization;
         public readonly int DracoEncodeSpeed;
         public readonly int DracoDecodeSpeed;
+        public readonly int MaximumVideoBitrateKbps;
+        public readonly int VideoBufferSizeKbps;
+        public readonly int GeometryKeyframeInterval;
         public readonly string Description;
 
         public EncodingSettings(
@@ -956,6 +971,9 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             int texture,
             int encodeSpeed,
             int decodeSpeed,
+            int maximumVideoBitrateKbps,
+            int videoBufferSizeKbps,
+            int geometryKeyframeInterval,
             string description)
         {
             Codec = codec;
@@ -968,6 +986,9 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             TextureQuantization = texture;
             DracoEncodeSpeed = encodeSpeed;
             DracoDecodeSpeed = decodeSpeed;
+            MaximumVideoBitrateKbps = maximumVideoBitrateKbps;
+            VideoBufferSizeKbps = videoBufferSizeKbps;
+            GeometryKeyframeInterval = geometryKeyframeInterval;
             Description = description;
         }
 
@@ -984,7 +1005,10 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
                 NormalQuantization = NormalQuantization,
                 TextureQuantization = TextureQuantization,
                 DracoEncodeSpeed = DracoEncodeSpeed,
-                DracoDecodeSpeed = DracoDecodeSpeed
+                DracoDecodeSpeed = DracoDecodeSpeed,
+                MaximumVideoBitrateKbps = MaximumVideoBitrateKbps,
+                VideoBufferSizeKbps = VideoBufferSizeKbps,
+                GeometryKeyframeInterval = GeometryKeyframeInterval
             };
         }
 
@@ -1003,6 +1027,9 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
                 settings.TextureQuantization,
                 settings.DracoEncodeSpeed,
                 settings.DracoDecodeSpeed,
+                settings.MaximumVideoBitrateKbps,
+                settings.VideoBufferSizeKbps,
+                settings.GeometryKeyframeInterval,
                 description);
         }
     }

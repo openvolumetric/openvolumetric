@@ -32,4 +32,15 @@ Desktop.ini
 .tmp*
 .utmp*
 
+# Local datasets are generated or too large to version. Keep reproducible
+# sync-test instructions while ignoring its generated image, mesh, and audio
+# assets along with every other dataset.
 /data/*
+!/data/sync-test/
+/data/sync-test/*
+!/data/sync-test/generate.py
+!/data/sync-test/README.md
+/tmp/
+data/sync-test/README.md
+.gitignore
+data/sync-test/generate.py

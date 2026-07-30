@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IDecoder.h>
+#include <IByteSource.h>
 #include <Stream.h>
 #include <TimedFrame.h>
 
@@ -41,6 +42,19 @@ public:
 
 		int sample_rate;
 		int channels;
+	};
+
+	/// Thread-safe snapshot of the decoded PCM consumer timeline.
+	struct AudioBufferInfo
+	{
+		/// Media timestamp represented by the next interleaved sample to read.
+		double read_time = 0.0;
+
+		/// Duration of decoded PCM currently available to the host callback.
+		double buffered_duration = 0.0;
+
+		/// Number of host reads that could not be filled completely.
+		std::uint64_t underrun_count = 0;
 	};
 
 	using EncodedGeometryFrame = openvolumetric::CompressedGeometryFrame;
@@ -88,6 +102,9 @@ public:
 	/// represented as silence by the implementation.
 	virtual int read_audio(float* output, int sample_count) = 0;
 
+	/// Returns the PCM read-head timestamp, buffered duration, and underruns.
+	virtual AudioBufferInfo audio_buffer_info() const = 0;
+
 	/// True when the required project-specific geometry track was discovered.
 	virtual bool has_embedded_geometry() const = 0;
 
@@ -105,6 +122,11 @@ public:
 
 	/// Returns a persistent decoder or queue error suitable for display.
 	virtual std::string get_last_error() const = 0;
+
+	/// Interrupts blocking container input during terminal player teardown.
+	virtual void cancel_pending_io() = 0;
+	/// Returns a thread-safe input transport/cache snapshot.
+	virtual ByteSourceDiagnostics source_diagnostics() const = 0;
 
 	/// Releases the currently selected video frame.
 	virtual void clean_frame_data() = 0;

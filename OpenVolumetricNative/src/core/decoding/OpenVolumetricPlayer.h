@@ -24,6 +24,26 @@ struct OpenVolumetricMediaInfo
 	int audio_channels = 0;
 };
 
+/// Engine-facing snapshot of input transport and bounded-cache activity.
+struct OpenVolumetricBufferInfo
+{
+	ByteSourceState state = ByteSourceState::Opening;
+	bool remote = false;
+	std::int64_t resource_size_bytes = -1;
+	std::uint64_t cached_bytes = 0;
+	std::uint64_t downloaded_bytes = 0;
+	std::uint64_t request_count = 0;
+	std::uint64_t recovery_count = 0;
+};
+
+/// Engine-facing snapshot of decoded PCM readiness and consumption.
+struct OpenVolumetricAudioBufferInfo
+{
+	double read_time = 0.0;
+	double buffered_duration = 0.0;
+	std::uint64_t underrun_count = 0;
+};
+
 /// One owned, timestamp-matched visual presentation.
 struct OpenVolumetricPresentation
 {
@@ -56,6 +76,8 @@ public:
 	bool seek(double time);
 
 	const OpenVolumetricMediaInfo& media_info() const;
+	OpenVolumetricBufferInfo buffer_info() const;
+	OpenVolumetricAudioBufferInfo audio_buffer_info() const;
 	const std::string& error() const;
 
 	FrameMatchResult presentation(

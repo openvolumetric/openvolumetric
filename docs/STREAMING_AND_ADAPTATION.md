@@ -2,9 +2,28 @@
 
 ## Status
 
-This document records a proposed future extension to OpenVolumetric. Network
-streaming, fragmented MP4, and adaptive representation switching are not
-implemented in the current runtime.
+Milestone 12 implementation has begun. The runtime now has an
+engine-independent `IByteSource`, a seekable `LocalFileByteSource`, and FFmpeg
+custom I/O beneath the MP4 container. Existing path-based playback is routed
+through this boundary. `HttpRangeByteSource` now provides cancellable
+HTTP/HTTPS range requests on a dedicated worker with a bounded block cache.
+New authoring outputs place `moov` before `mdat` and reject packaging if that
+fast-start invariant is absent. Progressive container opening, packet reads,
+and midpoint seeking have been validated over a local HTTP range server.
+Unity and Unreal now expose optional HTTP(S) URL fields plus core-owned
+resource-size, cache, download, and request-count diagnostics. Fragmented MP4,
+segment scheduling, and adaptive representation switching are not yet
+implemented.
+
+For current progressive-file testing:
+
+- In Unity, set `videoUrl` on the `OpenVolumetric` component. It takes
+  precedence over `videoFilename`; the Quest developer overlay shows HTTP
+  cache, downloaded-byte, and request counters.
+- In Unreal, set **Source URL** on `UOpenVolumetricComponent`. It takes
+  precedence over **Source File**; counters appear under **Status > Buffer**.
+- Serve a newly authored fast-start MP4 from an HTTP(S) endpoint that returns
+  a stable `Content-Length` and honors byte ranges.
 
 The goal is to play OpenVolumetric content before the complete asset has been
 downloaded and to adapt texture and geometry quality to available bandwidth,
@@ -295,10 +314,12 @@ The authoring pipeline should gain a streaming-package mode:
 7. Verify every representation switch boundary.
 8. Produce a size, bitrate, keyframe, and compatibility report.
 
-Presets can extend the existing Desktop, Quest Balanced, and Quest
-Performance model. A preset should define a ladder, segment duration, codec
-settings, geometry precision, and decoder-capability constraints rather than
-only one output file.
+The current Desktop Streaming and Quest Streaming presets create one
+fast-start MP4 with bounded texture-video rate and bounded video/geometry
+reference windows. A future adaptive packaging mode should extend this
+platform-and-delivery model to define a representation ladder, segment
+duration, aligned switch points, geometry precision, and decoder-capability
+constraints rather than only one output file.
 
 Packaging may continue to invoke the FFmpeg executable for media encoding
 while using `OpenVolumetricAuthoringCore` for geometry encoding, muxing,
@@ -356,15 +377,31 @@ loss, and temporary outages. Tests should report:
 - decode time by stream; and
 - visual/geometric quality.
 
+### Progressive HTTP validation findings
+
+Quest testing on 29 July 2026 confirmed forward/backward range seeking and
+repeated looping. Temporarily disconnecting Wi-Fi did not crash the player,
+but playback did not recover: the engine clock continued advancing, audio
+became unavailable, and incomplete/random-looking visual presentations were
+shown after reconnection.
+
+The recovery path now publishes `Rebuffering`, retries transient range
+failures with bounded exponential backoff, retains the last complete
+synchronized mesh/texture, and stops engine audio. When transport becomes
+ready, the engine seeks every stream back to the last presented timestamp and
+resumes only from that synchronized access point. Exhausted retries publish
+`Error`. A failure-injection test covering two HTTP 503 responses passes;
+Quest disconnect/reconnect and retry-exhaustion validation remain outstanding.
+
 ## Implementation phases
 
 ### Phase 1: Progressive HTTP input
 
-- Define `IByteSource` and retain the local-file implementation.
-- Add HTTP range reads through a portable dependency or platform-neutral
+- [x] Define `IByteSource` and retain the local-file implementation.
+- [x] Add HTTP range reads through a portable dependency or platform-neutral
   transport boundary.
-- Connect FFmpeg custom I/O to the byte source.
-- Author fast-start MP4 with metadata available before media payloads.
+- [x] Connect FFmpeg custom I/O to the byte source.
+- [x] Author fast-start MP4 with metadata available before media payloads.
 - Validate startup, seeking, cancellation, and bounded caching.
 
 ### Phase 2: Fragmented single-representation VOD

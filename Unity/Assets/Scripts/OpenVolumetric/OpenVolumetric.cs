@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -20,6 +21,9 @@ public class OpenVolumetric : MonoBehaviour
     [Header("Volumetric Video Input")]
     [Tooltip("Volumetric video file containing geometry, texture, and audio")]
     public string videoFilename;
+    /// <summary>Optional HTTP(S) MP4 URL; takes precedence over videoFilename.</summary>
+    [Tooltip("Optional HTTP(S) URL. When set, this takes precedence over the StreamingAssets filename.")]
+    public string videoUrl;
     /// <summary>Additive correction applied to the decoded Y channel.</summary>
     [Header("Texture Settings")]
     [Tooltip("Luminance Correction - Y")]
@@ -38,11 +42,17 @@ public class OpenVolumetric : MonoBehaviour
     [Header("Playback Settings")]
     [Tooltip("When enabled the content will loop")]
     public bool enableLoop = false;
+    /// <summary>
+    /// Unity procedural-audio queue lead measured against visual DSP time.
+    /// </summary>
+    [Tooltip("Unity procedural audio output compensation in seconds")]
+    [Range(0.0F, 1.0F)]
+    public float audioOutputLatencyCompensation = 0.55F;
     /// <summary>Whether a caller must schedule playback explicitly.</summary>
     [Tooltip("Enables playback to be started via a script ")]
     public bool enableScriptedStart;
-    /// <summary>Whether controller diagnostics are attached at startup.</summary>
-    [Tooltip("Show the controller-operated developer overlay in headset builds")]
+    /// <summary>Whether runtime diagnostics and controls are attached.</summary>
+    [Tooltip("Show the keyboard/controller developer overlay")]
     public bool enableDeveloperOverlay = true;
     /// <summary>Whether native diagnostic console output is enabled.</summary>
     [Header("Debug Settings")]
@@ -52,6 +62,8 @@ public class OpenVolumetric : MonoBehaviour
     private AudioSource m_audio_source;
     private double m_start_time;
     private double m_audio_start_time;
+    private double m_audio_preroll_duration;
+    private bool m_waiting_for_audio_preroll;
     private bool m_has_scheduled_start;
     private double m_last_dsp_time;
     private bool m_has_last_dsp_time;
@@ -67,11 +79,18 @@ public class OpenVolumetric : MonoBehaviour
         INITIALISED,
         SCHEDULED,
         PAUSED,
+        PREROLLING,
+        REBUFFERING,
         STOPPED,
         PLAYING,
     };
     private PlaybackState m_playback_state = PlaybackState.UNINITIALISED;
     private double m_playback_position;
+    private bool m_network_rebuffering;
+    private bool m_resume_after_network_recovery;
+    private double m_network_recovery_target;
+    private bool m_waiting_for_initial_presentation;
+    private bool m_play_after_initial_presentation;
 
     /// <summary>Current managed playback state.</summary>
     public PlaybackState State { get { return m_playback_state; } }
@@ -83,6 +102,16 @@ public class OpenVolumetric : MonoBehaviour
     public string LastError
     {
         get { return m_decoder != null ? m_decoder.LastError : string.Empty; }
+    }
+    /// <summary>Current native input and bounded-cache diagnostics.</summary>
+    public OpenVolumetricDecoder.BufferInfo InputBufferInfo
+    {
+        get
+        {
+            return m_decoder != null
+                ? m_decoder.InputBufferInfo
+                : new OpenVolumetricDecoder.BufferInfo();
+        }
     }
     /// <summary>Current playback position in seconds.</summary>
     public double CurrentTime
@@ -116,9 +145,26 @@ public class OpenVolumetric : MonoBehaviour
              
         // The MP4 contains texture, geometry, and optional audio.
         string filepath = null;
-        yield return StreamingAssetFile.PrepareReadablePath(
-            videoFilename,
-            path => filepath = path);
+        if(!string.IsNullOrWhiteSpace(videoUrl))
+        {
+            Uri remoteUri;
+            if(!Uri.TryCreate(videoUrl.Trim(), UriKind.Absolute, out remoteUri) ||
+                (remoteUri.Scheme != Uri.UriSchemeHttp &&
+                 remoteUri.Scheme != Uri.UriSchemeHttps))
+            {
+                Debug.LogError(
+                    "OpenVolumetric::Start - videoUrl must be an HTTP or HTTPS URL");
+                m_playback_state = PlaybackState.INIT_FAIL;
+                yield break;
+            }
+            filepath = remoteUri.AbsoluteUri;
+        }
+        else
+        {
+            yield return StreamingAssetFile.PrepareReadablePath(
+                videoFilename,
+                path => filepath = path);
+        }
         if(string.IsNullOrEmpty(filepath))
         {
             Debug.LogError(
@@ -158,36 +204,61 @@ public class OpenVolumetric : MonoBehaviour
             m_audio_source.loop = enableLoop;
             m_audio_source.spatialBlend = 0.0F;
             m_audio_source.clip = m_decoder.AudioClip;
+
+            // Require enough native PCM for Unity's complete DSP queue plus a
+            // small scheduling margin before either timeline is released.
+            int dspBufferLength;
+            int dspBufferCount;
+            AudioSettings.GetDSPBufferSize(
+                out dspBufferLength, out dspBufferCount);
+            int outputRate = AudioSettings.outputSampleRate;
+            if(outputRate <= 0)
+            {
+                // Android can report zero while its audio device is still
+                // starting. The carrier uses the decoded PCM sample rate.
+                outputRate = m_decoder.AudioClip.frequency;
+            }
+            double configuredQueueDuration =
+                (double)(dspBufferLength * dspBufferCount) /
+                System.Math.Max(1, outputRate);
+            m_audio_preroll_duration = System.Math.Min(
+                1.0,
+                System.Math.Max(0.15, configuredQueueDuration + 0.1));
+            Debug.Log(string.Format(
+                "OpenVolumetric - audio preroll {0:F3}s " +
+                "(DSP {1} x {2}, {3} Hz)",
+                m_audio_preroll_duration,
+                dspBufferLength,
+                dspBufferCount,
+                outputRate));
         }
 
-#if UNITY_ANDROID && !UNITY_EDITOR
         if(enableDeveloperOverlay)
         {
             OpenVolumetricDeveloperOverlay.Attach(this);
         }
-#endif
 
         m_decoder.SetColourCorrectionValues(
             luminanceCorrection,
             blueProjectionCorrection,
             redProjectionCorrection);
-        m_playback_state = PlaybackState.INITIALISED;
         if(!m_decoder.StartDecoding())
         {
             Debug.LogError("OpenVolumetric::Start - Failed to start decoding");
+            m_playback_state = PlaybackState.INIT_FAIL;
+            yield break;
         }
 
-        m_playback_state = PlaybackState.INITIALISED;
-
-        if(!enableScriptedStart)
-        {
-            SetScheduledStart(AudioSettings.dspTime + 0.1);
-        }
-        else if(m_has_scheduled_start)
-        {
-            m_playback_state = PlaybackState.SCHEDULED;
-            ScheduleAudio();
-        }
+        // A remote source may need several range requests before texture and
+        // geometry for the first timestamp are both available. Hold the
+        // timeline at zero until that complete presentation has reached the
+        // render thread; otherwise the advancing clock continually discards
+        // late startup frames and may never establish visual playback.
+        m_play_after_initial_presentation =
+            !enableScriptedStart || m_has_scheduled_start;
+        m_waiting_for_initial_presentation = true;
+        m_playback_position = 0.0;
+        m_playback_state = PlaybackState.PREROLLING;
     }
 
     /// <summary>
@@ -196,6 +267,41 @@ public class OpenVolumetric : MonoBehaviour
     /// </summary>
     void Update()
     {
+        if(m_decoder != null && HandleNetworkRecovery())
+        {
+            return;
+        }
+        if(m_waiting_for_initial_presentation)
+        {
+            m_decoder.UpdatePresentation(0.0);
+            if(m_decoder.LastPresentedTime < 0.0)
+            {
+                return;
+            }
+            if(m_decoder.HasAudio)
+            {
+                OpenVolumetricDecoder.AudioBufferInfo audio =
+                    m_decoder.CurrentAudioBufferInfo;
+                if(!audio.HasPreroll(m_audio_preroll_duration))
+                {
+                    return;
+                }
+            }
+
+            m_waiting_for_initial_presentation = false;
+            m_playback_position = 0.0;
+            m_playback_state = PlaybackState.INITIALISED;
+            if(m_play_after_initial_presentation)
+            {
+                SetScheduledStart(
+                    AudioSettings.dspTime +
+                    0.1 +
+                    audioOutputLatencyCompensation);
+            }
+            Debug.Log(
+                "OpenVolumetric - initial synchronized presentation ready");
+            return;
+        }
         if(m_decoder_recovering)
         {
             m_decoder.UpdatePresentation(m_decoder_recovery_target);
@@ -207,15 +313,27 @@ public class OpenVolumetric : MonoBehaviour
             {
                 m_decoder_recovering = false;
                 m_playback_position = m_decoder_recovery_target;
-                m_audio_start_time = AudioSettings.dspTime + 0.05;
-                m_start_time =
-                    m_audio_start_time - m_playback_position;
-                m_last_dsp_time = m_audio_start_time;
-                m_has_last_dsp_time = true;
-                m_playback_state = PlaybackState.SCHEDULED;
-                ScheduleAudio();
+                Play();
                 Debug.Log("OpenVolumetric - synchronized recovery complete");
             }
+            return;
+        }
+        if(m_waiting_for_audio_preroll)
+        {
+            // A seek invalidates queued PCM. Keep the requested visual frame
+            // warm while the native worker reconstructs the audio window.
+            m_decoder.UpdatePresentation(m_playback_position);
+            if(!HasRequiredAudioPreroll())
+            {
+                return;
+            }
+
+            m_waiting_for_audio_preroll = false;
+            SchedulePlayback(
+                AudioSettings.dspTime +
+                0.1 +
+                audioOutputLatencyCompensation);
+            Debug.Log("OpenVolumetric - synchronized audio preroll ready");
             return;
         }
         if (m_playback_state == PlaybackState.SCHEDULED && AudioSettings.dspTime >= m_start_time)
@@ -226,11 +344,9 @@ public class OpenVolumetric : MonoBehaviour
         }
         if (m_playback_state == PlaybackState.PLAYING)
         {
-            // Accumulate the DSP delta instead of deriving an absolute time.
-            // Some Android audio-stack transitions briefly move dspTime
-            // backwards. Treating that discontinuity as a loop used to seek
-            // native playback to zero while the engine clock continued.
             double dspTime = AudioSettings.dspTime;
+            // Accumulate the shared visual clock from Unity DSP time. Audio is
+            // scheduled earlier by its measured procedural queue lead.
             if(!m_has_last_dsp_time)
             {
                 m_last_dsp_time = dspTime;
@@ -241,6 +357,26 @@ public class OpenVolumetric : MonoBehaviour
             if(delta >= 0.0 && delta <= 0.5)
             {
                 m_playback_position += delta;
+            }
+            else if(delta > 0.5)
+            {
+                // Desktop minimization and mobile lifecycle transitions can
+                // suspend Update while Unity's audio graph keeps running.
+                // Resuming from the stale visual time would permanently leave
+                // texture/geometry behind audio. AudioSource.time identifies
+                // the media position Unity reached; a unified seek flushes all
+                // native queues and restarts them as one generation.
+                double recoveryTime = m_audio_source != null &&
+                    m_audio_source.clip != null
+                    ? m_audio_source.time
+                    : m_playback_position;
+                Debug.LogWarning(string.Format(
+                    "OpenVolumetric - playback clock advanced by {0:F3}s " +
+                    "while rendering was suspended; resynchronizing at {1:F3}s",
+                    delta,
+                    recoveryTime));
+                Seek(recoveryTime);
+                return;
             }
             m_decoder.UpdatePresentation(m_playback_position);
             if(TryRecoverDecoderLag(dspTime))
@@ -263,6 +399,94 @@ public class OpenVolumetric : MonoBehaviour
     }
 
     /// <summary>
+    /// Freezes the synchronized timeline while the HTTP source retries and
+    /// restarts from the last complete presentation after connectivity returns.
+    /// </summary>
+    private bool HandleNetworkRecovery()
+    {
+        OpenVolumetricDecoder.BufferInfo buffer = m_decoder.InputBufferInfo;
+        if(!buffer.IsRemote)
+        {
+            return false;
+        }
+
+        if(buffer.State == OpenVolumetricDecoder.BufferState.Rebuffering)
+        {
+            if(!m_network_rebuffering)
+            {
+                m_network_rebuffering = true;
+                m_resume_after_network_recovery =
+                    m_playback_state == PlaybackState.PLAYING ||
+                    m_playback_state == PlaybackState.SCHEDULED;
+                double presented = m_decoder.LastPresentedTime;
+                m_network_recovery_target = presented >= 0.0
+                    ? presented
+                    : m_playback_position;
+                m_playback_position = m_network_recovery_target;
+                m_playback_state = PlaybackState.REBUFFERING;
+                m_decoder_recovering = false;
+                m_has_last_dsp_time = false;
+                if(m_audio_source != null)
+                {
+                    m_audio_source.Stop();
+                }
+                Debug.LogWarning(
+                    "OpenVolumetric - network interrupted; rebuffering");
+            }
+            return true;
+        }
+
+        if(m_network_rebuffering)
+        {
+            if(buffer.State == OpenVolumetricDecoder.BufferState.Error ||
+                buffer.State == OpenVolumetricDecoder.BufferState.Cancelled)
+            {
+                m_network_rebuffering = false;
+                m_playback_state = PlaybackState.INIT_FAIL;
+                Debug.LogError(
+                    "OpenVolumetric - network recovery retries were exhausted");
+                return true;
+            }
+            if(buffer.State != OpenVolumetricDecoder.BufferState.Ready)
+            {
+                return true;
+            }
+
+            m_network_rebuffering = false;
+            if(!m_decoder.Seek(m_network_recovery_target))
+            {
+                m_playback_state = PlaybackState.INIT_FAIL;
+                Debug.LogError(
+                    "OpenVolumetric - failed to resynchronize after network recovery");
+                return true;
+            }
+            m_playback_position = m_network_recovery_target;
+            m_decoder.UpdatePresentation(m_network_recovery_target);
+            if(m_resume_after_network_recovery)
+            {
+                Play();
+            }
+            else
+            {
+                m_playback_state = PlaybackState.PAUSED;
+            }
+            Debug.Log("OpenVolumetric - network recovery complete");
+            return true;
+        }
+
+        if(buffer.State == OpenVolumetricDecoder.BufferState.Error)
+        {
+            m_playback_state = PlaybackState.INIT_FAIL;
+            if(m_audio_source != null)
+            {
+                m_audio_source.Stop();
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
     /// Pauses all streams when native presentation remains behind the engine
     /// clock, allowing texture and geometry to catch up without losing sync.
     /// </summary>
@@ -278,12 +502,37 @@ public class OpenVolumetric : MonoBehaviour
         double target = Duration > 0.0
             ? m_playback_position % Duration
             : m_playback_position;
+
+        // Do not enter catch-up recovery during the final few frames of a
+        // loop. The decoder may already be draining end-of-stream and cannot
+        // necessarily publish another frame at this target. Allowing the
+        // managed clock to cross the boundary lets UpdatePresentation perform
+        // its synchronized seek to zero instead of waiting indefinitely near
+        // the end of the previous pass.
+        double frameDuration = m_decoder.FrameRate > 0.0
+            ? 1.0 / m_decoder.FrameRate
+            : 1.0 / 30.0;
+        if(enableLoop &&
+            Duration > 0.0 &&
+            Duration - target <= 3.0 * frameDuration)
+        {
+            m_decoder_lag_started = -1.0;
+            return false;
+        }
+
         double lag = target - presented;
         if(lag < 0.0)
         {
             lag += Duration;
         }
-        if(lag <= 0.5)
+        // Audio is driven by Unity's DSP clock while a complete visual frame
+        // may wait for both texture and geometry decoding. Keep their maximum
+        // separation near two video frames instead of allowing the previous
+        // half-second tolerance to become an audible lead.
+        double lagTolerance = m_decoder.FrameRate > 0.0
+            ? System.Math.Max(2.0 / m_decoder.FrameRate, 0.075)
+            : 0.075;
+        if(lag <= lagTolerance)
         {
             m_decoder_lag_started = -1.0;
             return false;
@@ -293,8 +542,8 @@ public class OpenVolumetric : MonoBehaviour
             m_decoder_lag_started = dspTime;
             return false;
         }
-        if(dspTime - m_decoder_lag_started < 0.5 ||
-            dspTime - m_last_decoder_recovery < 3.0)
+        if(dspTime - m_decoder_lag_started < 0.1 ||
+            dspTime - m_last_decoder_recovery < 0.5)
         {
             return false;
         }
@@ -356,18 +605,37 @@ public class OpenVolumetric : MonoBehaviour
     public void SetScheduledStart(double dspTime)
     {
         m_playback_position = 0.0;
-        m_start_time        = dspTime;
-        m_audio_start_time  = dspTime;
         m_has_scheduled_start = true;
-        m_last_dsp_time = dspTime;
-        m_has_last_dsp_time = true;
-        m_playback_state    = PlaybackState.SCHEDULED;
-        ScheduleAudio();
+        SchedulePlayback(dspTime);
     }
 
     /// <summary>
-    /// Schedules the streaming AudioClip from the current playback position.
-    /// Texture and geometry use the same DSP-derived timeline.
+    /// Arms audio and visuals against one future Unity DSP timestamp.
+    /// </summary>
+    private void SchedulePlayback(double dspTime)
+    {
+        m_start_time = System.Math.Max(
+            AudioSettings.dspTime + 0.05, dspTime);
+        m_audio_start_time = System.Math.Max(
+            AudioSettings.dspTime + 0.05,
+            m_start_time - audioOutputLatencyCompensation);
+        m_last_dsp_time = m_start_time;
+        m_has_last_dsp_time = true;
+        m_playback_state = PlaybackState.SCHEDULED;
+        ScheduleAudio();
+    }
+
+    /// <summary>Whether decoded PCM can fill Unity's complete DSP queue.</summary>
+    private bool HasRequiredAudioPreroll()
+    {
+        return m_decoder == null ||
+            !m_decoder.HasAudio ||
+            m_decoder.CurrentAudioBufferInfo.HasPreroll(
+                m_audio_preroll_duration);
+    }
+
+    /// <summary>
+    /// Schedules streaming PCM ahead of the shared visual DSP timeline.
     /// </summary>
     private void ScheduleAudio()
     {
@@ -410,16 +678,23 @@ public class OpenVolumetric : MonoBehaviour
         }
 
         m_decoder.MeshRenderer.enabled = true;
-        m_audio_start_time = AudioSettings.dspTime + 0.05;
-        m_start_time = m_audio_start_time - m_playback_position;
-        m_last_dsp_time = m_audio_start_time;
-        m_has_last_dsp_time = true;
-        m_playback_state = PlaybackState.SCHEDULED;
         if(m_audio_source != null)
         {
             m_audio_source.Stop();
         }
-        ScheduleAudio();
+        if(!HasRequiredAudioPreroll())
+        {
+            m_waiting_for_audio_preroll = true;
+            m_has_last_dsp_time = false;
+            m_playback_state = PlaybackState.PREROLLING;
+            return;
+        }
+
+        m_waiting_for_audio_preroll = false;
+        SchedulePlayback(
+            AudioSettings.dspTime +
+            0.1 +
+            audioOutputLatencyCompensation);
     }
 
     /// <summary>Freezes the shared timeline and stops audio consumption.</summary>
@@ -433,6 +708,7 @@ public class OpenVolumetric : MonoBehaviour
 
         m_playback_position = System.Math.Min(CurrentTime, Duration);
         m_has_last_dsp_time = false;
+        m_waiting_for_audio_preroll = false;
         m_playback_state = PlaybackState.PAUSED;
         if(m_audio_source != null)
         {

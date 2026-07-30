@@ -37,6 +37,7 @@ public class OpenVolumetricRuntime : ModuleRules
 					Path.Combine(NativeRoot, "src", "core", "container"),
 					Path.Combine(NativeRoot, "src", "core", "decoding"),
 					Path.Combine(NativeRoot, "src", "core", "geometry"),
+					Path.Combine(NativeRoot, "src", "core", "io"),
 					Path.Combine(NativeRoot, "src", "core", "media"),
 					Path.Combine(NativeRoot, "src", "core", "support")
 				});
@@ -45,12 +46,18 @@ public class OpenVolumetricRuntime : ModuleRules
 			PublicAdditionalLibraries.AddRange(
 				new[]
 				{
+					// The core archive owns FFmpeg, Draco, and HTTP transport;
+					// list every static dependency required by that boundary.
 					Path.Combine(NativeBuild, "src", "core", "libOpenVolumetricCore.a"),
 					Path.Combine(Installed, "lib", "libavformat.a"),
 					Path.Combine(Installed, "lib", "libavcodec.a"),
 					Path.Combine(Installed, "lib", "libswresample.a"),
 					Path.Combine(Installed, "lib", "libavutil.a"),
-					Path.Combine(Installed, "lib", "libdraco.a")
+					Path.Combine(Installed, "lib", "libdraco.a"),
+					Path.Combine(Installed, "lib", "libcurl.a"),
+					Path.Combine(Installed, "lib", "libssl.a"),
+					Path.Combine(Installed, "lib", "libcrypto.a"),
+					Path.Combine(Installed, "lib", "libz.a")
 				});
 
 			PublicFrameworks.AddRange(

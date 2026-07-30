@@ -1,5 +1,6 @@
 find_package(FFMPEG REQUIRED)
 find_package(draco CONFIG REQUIRED)
+find_package(CURL CONFIG REQUIRED)
 
 find_library(VV_SWRESAMPLE_LIBRARY
   NAMES swresample
@@ -21,6 +22,8 @@ add_library(OpenVolumetricCore STATIC
   decoding/OpenVolumetricPlayer.cpp
   geometry/DracoPointCloudDecoder.cpp
   geometry/GeometryDecoderDraco.cpp
+  io/HttpRangeByteSource.cpp
+  io/LocalFileByteSource.cpp
   media/AVDecoderFFMPEG.cpp
   support/Logger.cpp
 )
@@ -34,6 +37,7 @@ target_include_directories(OpenVolumetricCore
     "${CMAKE_CURRENT_SOURCE_DIR}/decoding"
     "${CMAKE_CURRENT_SOURCE_DIR}/container"
     "${CMAKE_CURRENT_SOURCE_DIR}/geometry"
+    "${CMAKE_CURRENT_SOURCE_DIR}/io"
     "${CMAKE_CURRENT_SOURCE_DIR}/media"
     "${CMAKE_CURRENT_SOURCE_DIR}/support"
 )
@@ -41,5 +45,6 @@ target_include_directories(OpenVolumetricCore
 target_link_libraries(OpenVolumetricCore
   PUBLIC
     OpenVolumetricFFmpeg
+    CURL::libcurl
     draco::draco
 )

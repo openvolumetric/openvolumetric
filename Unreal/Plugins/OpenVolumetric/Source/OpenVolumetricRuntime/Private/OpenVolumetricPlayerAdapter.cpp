@@ -67,6 +67,12 @@ FOpenVolumetricPlayerAdapter::GetMediaInfo() const
 	return Player.media_info();
 }
 
+openvolumetric::OpenVolumetricBufferInfo
+FOpenVolumetricPlayerAdapter::GetBufferInfo() const
+{
+	return Player.buffer_info();
+}
+
 openvolumetric::FrameMatchResult FOpenVolumetricPlayerAdapter::PollPresentation(
 	double TimeSeconds,
 	double GeometryScale,

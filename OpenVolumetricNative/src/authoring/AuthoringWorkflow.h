@@ -15,9 +15,10 @@ enum class VideoCodec
 
 enum class PlatformPreset
 {
-	DesktopQuality,
-	QuestBalanced,
-	QuestPerformance
+	DesktopLocal,
+	DesktopStreaming,
+	QuestLocal,
+	QuestStreaming
 };
 
 /// Codec settings shared by the Unity and Unreal authoring interfaces.
@@ -33,6 +34,9 @@ struct EncodingSettings
 	int texture_quantization = 12;
 	int draco_encode_speed = 5;
 	int draco_decode_speed = 5;
+	int maximum_video_bitrate_kbps = 0;
+	int video_buffer_size_kbps = 0;
+	int geometry_keyframe_interval = 0;
 };
 
 /// Result of validating matching numbered image and OBJ sequences.

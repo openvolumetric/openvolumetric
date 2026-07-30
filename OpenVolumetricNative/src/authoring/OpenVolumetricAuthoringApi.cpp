@@ -21,7 +21,7 @@ int openvolumetric_authoring_get_preset(
 	int preset,
 	OpenVolumetricAuthoringSettings* output)
 {
-	if (output == nullptr || preset < 0 || preset > 2)
+	if (output == nullptr || preset < 0 || preset > 3)
 		return -1;
 	const auto settings = openvolumetric::authoring::preset_settings(
 		static_cast<openvolumetric::authoring::PlatformPreset>(preset));
@@ -36,6 +36,11 @@ int openvolumetric_authoring_get_preset(
 	output->texture_quantization = settings.texture_quantization;
 	output->draco_encode_speed = settings.draco_encode_speed;
 	output->draco_decode_speed = settings.draco_decode_speed;
+	output->maximum_video_bitrate_kbps =
+		settings.maximum_video_bitrate_kbps;
+	output->video_buffer_size_kbps = settings.video_buffer_size_kbps;
+	output->geometry_keyframe_interval =
+		settings.geometry_keyframe_interval;
 	return 1;
 }
 
@@ -99,6 +104,12 @@ const char* openvolumetric_authoring_build_ffmpeg_arguments(
 		settings->texture_quantization;
 	request.settings.draco_encode_speed = settings->draco_encode_speed;
 	request.settings.draco_decode_speed = settings->draco_decode_speed;
+	request.settings.maximum_video_bitrate_kbps =
+		settings->maximum_video_bitrate_kbps;
+	request.settings.video_buffer_size_kbps =
+		settings->video_buffer_size_kbps;
+	request.settings.geometry_keyframe_interval =
+		settings->geometry_keyframe_interval;
 
 	std::vector<std::string> arguments;
 	if (!openvolumetric::authoring::build_ffmpeg_arguments(

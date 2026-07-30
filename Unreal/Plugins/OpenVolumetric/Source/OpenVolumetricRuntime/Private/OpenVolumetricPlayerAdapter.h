@@ -23,6 +23,7 @@ public:
 	void Close();
 
 	const openvolumetric::OpenVolumetricMediaInfo& GetMediaInfo() const;
+	openvolumetric::OpenVolumetricBufferInfo GetBufferInfo() const;
 	openvolumetric::FrameMatchResult PollPresentation(
 		double TimeSeconds,
 		double GeometryScale,

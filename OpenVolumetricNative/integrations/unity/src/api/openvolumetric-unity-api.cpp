@@ -342,6 +342,33 @@ OPENVOLUMETRIC_API double openvolumetric_get_last_presented_time(int id)
 		return -1.0;
 	return instance->last_presented_time();
 }
+
+OPENVOLUMETRIC_API int openvolumetric_get_buffer_details(
+	int id,
+	int& state,
+	int& remote,
+	long long& resource_size_bytes,
+	unsigned long long& cached_bytes,
+	unsigned long long& downloaded_bytes,
+	unsigned long long& request_count,
+	unsigned long long& recovery_count)
+{
+	InstanceAccess instance(id);
+	if (!instance)
+		return -1;
+	const openvolumetric::OpenVolumetricBufferInfo info =
+		instance->buffer_info();
+	state = static_cast<int>(info.state);
+	remote = info.remote ? 1 : 0;
+	resource_size_bytes = static_cast<long long>(info.resource_size_bytes);
+	cached_bytes = static_cast<unsigned long long>(info.cached_bytes);
+	downloaded_bytes =
+		static_cast<unsigned long long>(info.downloaded_bytes);
+	request_count = static_cast<unsigned long long>(info.request_count);
+	recovery_count = static_cast<unsigned long long>(info.recovery_count);
+	return 1;
+}
+
 OPENVOLUMETRIC_API int	openvolumetric_get_video_details(int id, int& width, int& height, double& fps, double& duration)
 {
 	LOG("openvolumetric_get_video_details - id: %d", id);
@@ -392,6 +419,25 @@ OPENVOLUMETRIC_API int openvolumetric_read_audio(
 		return -1;
 
 	return instance->read_audio(samples, sample_count);
+}
+
+OPENVOLUMETRIC_API int openvolumetric_get_audio_buffer_details(
+	int id,
+	double& read_time,
+	double& buffered_duration,
+	unsigned long long& underrun_count)
+{
+	InstanceAccess instance(id);
+	if (!instance)
+		return -1;
+
+	const openvolumetric::OpenVolumetricAudioBufferInfo info =
+		instance->audio_buffer_info();
+	read_time = info.read_time;
+	buffered_duration = info.buffered_duration;
+	underrun_count =
+		static_cast<unsigned long long>(info.underrun_count);
+	return 1;
 }
 OPENVOLUMETRIC_API int	openvolumetric_get_texture_pointers(int id, void*& yPointer, void*& uPointer, void*& vPointer)
 {

@@ -28,9 +28,10 @@ const TCHAR* SettingsSection = TEXT("OpenVolumetric.Authoring");
 
 enum class EOpenVolumetricPreset : uint8
 {
-	DesktopQuality,
-	QuestBalanced,
-	QuestPerformance
+	DesktopLocal,
+	DesktopStreaming,
+	QuestLocal,
+	QuestStreaming
 };
 
 struct FEncodingSettings
@@ -45,6 +46,9 @@ struct FEncodingSettings
 	int32 UVBits;
 	int32 EncodeSpeed;
 	int32 DecodeSpeed;
+	int32 MaximumVideoBitrateKbps;
+	int32 VideoBufferSizeKbps;
+	int32 GeometryKeyframeInterval;
 };
 
 struct FNumberedFile
@@ -100,12 +104,22 @@ struct FAuthoringState final
 FEncodingSettings GetPreset(EOpenVolumetricPreset Preset)
 {
 	using openvolumetric::authoring::PlatformPreset;
-	const PlatformPreset NativePreset =
-		Preset == EOpenVolumetricPreset::DesktopQuality
-			? PlatformPreset::DesktopQuality
-			: Preset == EOpenVolumetricPreset::QuestPerformance
-				? PlatformPreset::QuestPerformance
-				: PlatformPreset::QuestBalanced;
+	PlatformPreset NativePreset = PlatformPreset::QuestLocal;
+	switch (Preset)
+	{
+	case EOpenVolumetricPreset::DesktopLocal:
+		NativePreset = PlatformPreset::DesktopLocal;
+		break;
+	case EOpenVolumetricPreset::DesktopStreaming:
+		NativePreset = PlatformPreset::DesktopStreaming;
+		break;
+	case EOpenVolumetricPreset::QuestStreaming:
+		NativePreset = PlatformPreset::QuestStreaming;
+		break;
+	case EOpenVolumetricPreset::QuestLocal:
+	default:
+		break;
+	}
 	const openvolumetric::authoring::EncodingSettings Settings =
 		openvolumetric::authoring::preset_settings(NativePreset);
 	return {
@@ -120,7 +134,10 @@ FEncodingSettings GetPreset(EOpenVolumetricPreset Preset)
 		Settings.normal_quantization,
 		Settings.texture_quantization,
 		Settings.draco_encode_speed,
-		Settings.draco_decode_speed};
+		Settings.draco_decode_speed,
+		Settings.maximum_video_bitrate_kbps,
+		Settings.video_buffer_size_kbps,
+		Settings.geometry_keyframe_interval};
 }
 
 FString Quote(const FString& Value)
@@ -287,7 +304,7 @@ class SOpenVolumetricEncoderWindow::FImpl
 public:
 	TSharedRef<FAuthoringState, ESPMode::ThreadSafe> State =
 		MakeShared<FAuthoringState, ESPMode::ThreadSafe>();
-	EOpenVolumetricPreset Preset = EOpenVolumetricPreset::QuestBalanced;
+	EOpenVolumetricPreset Preset = EOpenVolumetricPreset::QuestLocal;
 	TArray<TSharedPtr<FString>> PresetNames;
 	TSharedPtr<FString> SelectedPreset;
 	TSharedPtr<SEditableTextBox> Images;
@@ -304,10 +321,11 @@ public:
 	FImpl()
 	{
 		PresetNames = {
-			MakeShared<FString>(TEXT("Desktop Quality")),
-			MakeShared<FString>(TEXT("Quest Balanced")),
-			MakeShared<FString>(TEXT("Quest Performance"))};
-		SelectedPreset = PresetNames[1];
+			MakeShared<FString>(TEXT("Desktop Local")),
+			MakeShared<FString>(TEXT("Desktop Streaming")),
+			MakeShared<FString>(TEXT("Quest Local")),
+			MakeShared<FString>(TEXT("Quest Streaming"))};
+		SelectedPreset = PresetNames[2];
 	}
 
 	void Load()
@@ -488,9 +506,13 @@ public:
 		const bool bReplace = bOverwrite;
 		const bool bCompressGeometry = bGeometryCompression;
 		const int32 MaximumGeometryKeyframeInterval =
-			bCompressGeometry && bLimitGeometryKeyframeInterval
-				? FCString::Atoi(
-					*MaximumGeometryFrames->GetText().ToString())
+			bCompressGeometry &&
+				(Settings.GeometryKeyframeInterval > 0 ||
+				 bLimitGeometryKeyframeInterval)
+				? (Settings.GeometryKeyframeInterval > 0
+					? Settings.GeometryKeyframeInterval
+					: FCString::Atoi(
+						*MaximumGeometryFrames->GetText().ToString()))
 				: 0;
 		if (MaximumGeometryKeyframeInterval < 0 ||
 			(bCompressGeometry && bLimitGeometryKeyframeInterval &&
@@ -602,6 +624,12 @@ public:
 						Settings.Keyframes;
 					Request.settings.reference_frames = Settings.References;
 					Request.settings.disable_sao = Settings.bDisableSao;
+					Request.settings.maximum_video_bitrate_kbps =
+						Settings.MaximumVideoBitrateKbps;
+					Request.settings.video_buffer_size_kbps =
+						Settings.VideoBufferSizeKbps;
+					Request.settings.geometry_keyframe_interval =
+						Settings.GeometryKeyframeInterval;
 					std::vector<std::string> NativeArguments;
 					std::string ArgumentError;
 					if (!openvolumetric::authoring::build_ffmpeg_arguments(

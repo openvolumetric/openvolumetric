@@ -6,7 +6,7 @@ namespace OpenVolumetric
 {
 
 /// <summary>
-/// Minimal headset diagnostics and controller-operated playback controls.
+/// Minimal runtime diagnostics and controller/keyboard playback controls.
 /// The overlay uses a camera-attached TextMesh and does not require a Canvas,
 /// EventSystem, controller rays, or scene setup.
 /// </summary>
@@ -46,7 +46,7 @@ public sealed class OpenVolumetricDeveloperOverlay : MonoBehaviour
         CreateActions();
     }
 
-    /// <summary>Creates controller actions and the camera-attached display.</summary>
+    /// <summary>Creates input actions and the camera-attached display.</summary>
     private void Start()
     {
         CreateDisplay();
@@ -120,26 +120,46 @@ public sealed class OpenVolumetricDeveloperOverlay : MonoBehaviour
         }
     }
 
-    /// <summary>Creates lightweight actions using direct XR control paths.</summary>
+    /// <summary>
+    /// Creates lightweight actions with matching XR and desktop bindings.
+    /// </summary>
     private void CreateActions()
     {
         m_togglePlayback = ButtonAction(
-            "PlayPause", "<XRController>{RightHand}/primaryButton");
+            "PlayPause",
+            "<XRController>{RightHand}/primaryButton",
+            "<Keyboard>/space");
         m_toggleLoop = ButtonAction(
-            "Loop", "<XRController>{RightHand}/secondaryButton");
+            "Loop",
+            "<XRController>{RightHand}/secondaryButton",
+            "<Keyboard>/l");
         m_seekBackward = ButtonAction(
-            "SeekBack", "<XRController>{LeftHand}/primaryButton");
+            "SeekBack",
+            "<XRController>{LeftHand}/primaryButton",
+            "<Keyboard>/leftArrow");
         m_seekForward = ButtonAction(
-            "SeekForward", "<XRController>{LeftHand}/secondaryButton");
+            "SeekForward",
+            "<XRController>{LeftHand}/secondaryButton",
+            "<Keyboard>/rightArrow");
         m_toggleOverlay = ButtonAction(
-            "Overlay", "<XRController>{LeftHand}/menuButton");
+            "Overlay",
+            "<XRController>{LeftHand}/menuButton",
+            "<Keyboard>/h");
     }
 
-    /// <summary>Creates one button action with a single binding.</summary>
-    private static InputAction ButtonAction(string name, string binding)
+    /// <summary>Creates one button action with platform-equivalent bindings.</summary>
+    private static InputAction ButtonAction(
+        string name,
+        string controllerBinding,
+        string keyboardBinding)
     {
-        return new InputAction(
-            name, InputActionType.Button, binding, interactions: "Press");
+        InputAction action = new InputAction(
+            name,
+            InputActionType.Button,
+            controllerBinding,
+            interactions: "Press");
+        action.AddBinding(keyboardBinding, interactions: "Press");
+        return action;
     }
 
     /// <summary>Enables or disables every overlay action as a group.</summary>
@@ -206,13 +226,28 @@ public sealed class OpenVolumetricDeveloperOverlay : MonoBehaviour
         long memoryMb = Profiler.GetTotalAllocatedMemoryLong() /
             (1024L * 1024L);
         string error = m_player.LastError;
+        OpenVolumetricDecoder.BufferInfo buffer = m_player.InputBufferInfo;
+        string network = buffer.IsRemote
+            ? string.Format(
+                "\nHTTP {0} cache:{1:F1} MB downloaded:{2:F1} MB " +
+                "requests:{3} recoveries:{4}",
+                buffer.State,
+                buffer.CachedBytes / (1024.0 * 1024.0),
+                buffer.DownloadedBytes / (1024.0 * 1024.0),
+                buffer.RequestCount,
+                buffer.RecoveryCount)
+            : string.Empty;
+        string controls = Application.isMobilePlatform
+            ? "A Play/Pause  B Loop\n" +
+              "X -10s  Y +10s  Menu Hide"
+            : "Space Play/Pause  L Loop\n" +
+              "Left -10s  Right +10s  H Hide";
         m_text.text = string.Format(
             "OPENVOLUMETRIC\n" +
             "{0}  {1:F1}/{2:F1}s  Loop:{3}\n" +
             "{4:F1} fps  {5:F2} ms  Memory:{6} MB\n" +
-            "{7} | {8}{9}\n" +
-            "A Play/Pause  B Loop\n" +
-            "X -10s  Y +10s  Menu Hide",
+            "{7} | {8}{9}{10}\n" +
+            "{11}",
             m_player.State,
             m_player.CurrentTime,
             m_player.Duration,
@@ -222,7 +257,9 @@ public sealed class OpenVolumetricDeveloperOverlay : MonoBehaviour
             memoryMb,
             SystemInfo.graphicsDeviceType,
             SystemInfo.deviceModel,
-            string.IsNullOrEmpty(error) ? string.Empty : "\nERROR: " + error);
+            network,
+            string.IsNullOrEmpty(error) ? string.Empty : "\nERROR: " + error,
+            controls);
     }
 }
 

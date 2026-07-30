@@ -40,6 +40,8 @@ public:
 	int render();
 
 	const OpenVolumetricMediaInfo& media_info() const;
+	OpenVolumetricBufferInfo buffer_info() const;
+	OpenVolumetricAudioBufferInfo audio_buffer_info() const;
 	const std::string& error() const;
 	int read_audio(float* output, int sample_count);
 	double last_presented_time() const;

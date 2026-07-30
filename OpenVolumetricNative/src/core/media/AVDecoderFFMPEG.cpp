@@ -31,6 +31,9 @@ AVDecoderFFMPEG::AVDecoderFFMPEG()
 	m_audio_resampler		= nullptr;
 	m_audio_read_position.store(0);
 	m_audio_write_position.store(0);
+	m_audio_timeline_origin_position.store(0);
+	m_audio_timeline_origin_time.store(0.0);
+	m_audio_underrun_count.store(0);
 
 	// Embedded geometry
 	m_geometry_stream_index = -1;
@@ -154,6 +157,9 @@ bool AVDecoderFFMPEG::init_audio_context()
 		static_cast<size_t>(m_audio_info.channels) * 4u);
 	m_audio_read_position.store(0, std::memory_order_relaxed);
 	m_audio_write_position.store(0, std::memory_order_relaxed);
+	m_audio_timeline_origin_position.store(0, std::memory_order_relaxed);
+	m_audio_timeline_origin_time.store(0.0, std::memory_order_relaxed);
+	m_audio_underrun_count.store(0, std::memory_order_relaxed);
 
 	LOG("AVDecoderFFMPEG::init_audio_context - Audio Stream: %d", stream);
 	LOG("AVDecoderFFMPEG::init_audio_context - Codec: %s",
@@ -182,7 +188,12 @@ bool AVDecoderFFMPEG::init_geometry_context()
 }
 bool AVDecoderFFMPEG::init_ffmpeg_context(const char* filepath)
 {
-	LOG("AVDecoderFFMPEG::init_ffmpeg_context - file: %s", filepath);
+	const bool remote_source =
+		filepath != nullptr &&
+		is_http_url(filepath);
+	LOG(
+		"AVDecoderFFMPEG::init_ffmpeg_context - file: %s",
+		remote_source ? "<remote HTTP source>" : filepath);
 
 	if (!m_container->open(filepath))
 	{
@@ -288,7 +299,12 @@ bool AVDecoderFFMPEG::init_video_context()
 }
 bool AVDecoderFFMPEG::init(const char* filepath)
 {
-	LOG("AVDecoderFFMPEG::init - file: %s", filepath);
+	const bool remote_source =
+		filepath != nullptr &&
+		is_http_url(filepath);
+	LOG(
+		"AVDecoderFFMPEG::init - file: %s",
+		remote_source ? "<remote HTTP source>" : filepath);
 
 	// check if context is 
 	if (this->m_initialised)
@@ -418,6 +434,16 @@ bool AVDecoderFFMPEG::stop_decoding()
 	m_decoder_state = STOP;
 
 	return true;
+}
+
+void AVDecoderFFMPEG::cancel_pending_io()
+{
+	m_container->cancel_pending_io();
+}
+
+ByteSourceDiagnostics AVDecoderFFMPEG::source_diagnostics() const
+{
+	return m_container->source_diagnostics();
 }
 bool AVDecoderFFMPEG::decode()
 {
@@ -830,9 +856,39 @@ int AVDecoderFFMPEG::read_audio(float* output, int sample_count)
 	for (int i = 0; i < count; ++i)
 		output[i] = m_audio_samples[(read + i) % m_audio_samples.size()];
 	if (count < sample_count)
+	{
 		std::fill(output + count, output + sample_count, 0.0f);
+		m_audio_underrun_count.fetch_add(1, std::memory_order_relaxed);
+	}
 	m_audio_read_position.store(read + count, std::memory_order_release);
 	return count;
+}
+
+IAVDecoder::AudioBufferInfo AVDecoderFFMPEG::audio_buffer_info() const
+{
+	AudioBufferInfo result;
+	if (!m_audio_info.is_enabled ||
+		m_audio_info.sample_rate <= 0 ||
+		m_audio_info.channels <= 0)
+		return result;
+
+	const uint64_t read =
+		m_audio_read_position.load(std::memory_order_acquire);
+	const uint64_t write =
+		m_audio_write_position.load(std::memory_order_acquire);
+	const uint64_t origin =
+		m_audio_timeline_origin_position.load(std::memory_order_acquire);
+	const double samples_per_second =
+		static_cast<double>(m_audio_info.sample_rate) *
+		static_cast<double>(m_audio_info.channels);
+	result.read_time =
+		m_audio_timeline_origin_time.load(std::memory_order_acquire) +
+		static_cast<double>(read - origin) / samples_per_second;
+	result.buffered_duration =
+		static_cast<double>(write - read) / samples_per_second;
+	result.underrun_count =
+		m_audio_underrun_count.load(std::memory_order_relaxed);
+	return result;
 }
 
 void AVDecoderFFMPEG::flush_audio()
@@ -1034,6 +1090,12 @@ bool AVDecoderFFMPEG::perform_seek(double time)
 	m_pending_geometry_packets.clear();
 	m_deferred_packet.reset();
 	flush_audio();
+	const uint64_t audio_origin =
+		m_audio_read_position.load(std::memory_order_acquire);
+	m_audio_timeline_origin_position.store(
+		audio_origin, std::memory_order_release);
+	m_audio_timeline_origin_time.store(time, std::memory_order_release);
+	m_audio_underrun_count.store(0, std::memory_order_release);
 	m_audio_discard_before = time;
 	m_playback_generation.fetch_add(1, std::memory_order_acq_rel);
 	m_last_video_packet_time = -1.0;

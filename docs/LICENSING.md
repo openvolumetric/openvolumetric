@@ -110,6 +110,19 @@ Draco is licensed under Apache 2.0 and is compatible with OpenVolumetric's
 chosen project license. Binary and source distributions must still retain
 Draco's copyright, license, and attribution notices.
 
+## HTTP and TLS dependencies
+
+Milestone 12 HTTP range input uses libcurl. The vcpkg configuration currently
+builds libcurl with OpenSSL and zlib for portable HTTPS support. These
+dependencies retain their respective curl, Apache 2.0, and zlib licenses.
+Source and binary distributions must include their license and copyright
+notices in `THIRD_PARTY_NOTICES.md` and the release compliance bundle.
+
+Published native binaries statically link these libraries alongside the other
+runtime dependencies. Release records must therefore identify the exact
+libcurl, OpenSSL, and zlib versions, vcpkg features, target triplet, sources,
+patches, and build instructions used for each platform.
+
 ## Engine integrations
 
 OpenVolumetric's Unity and Unreal integration source is Apache 2.0. This does

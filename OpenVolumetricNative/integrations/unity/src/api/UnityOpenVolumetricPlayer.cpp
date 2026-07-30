@@ -92,6 +92,16 @@ const OpenVolumetricMediaInfo& UnityOpenVolumetricPlayer::media_info() const
 	return m_player.media_info();
 }
 
+OpenVolumetricBufferInfo UnityOpenVolumetricPlayer::buffer_info() const
+{
+	return m_player.buffer_info();
+}
+
+OpenVolumetricAudioBufferInfo UnityOpenVolumetricPlayer::audio_buffer_info() const
+{
+	return m_player.audio_buffer_info();
+}
+
 const std::string& UnityOpenVolumetricPlayer::error() const
 {
 	return m_player.error();

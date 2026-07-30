@@ -37,7 +37,9 @@ Authoring
 =========
 numbered images --> FFmpeg --> HEVC/H.264 texture video --+
 optional audio ---> FFmpeg --> AAC audio -----------------+
-numbered OBJ -----> Draco + topology analysis ------------+
+numbered OBJ -----> canonical topology classification ----+
+                         | complete mesh / position update |
+                         +-------------> Draco ------------+
                                                           |
                                                           v
                                               OpenVolumetric MP4 packer
@@ -85,15 +87,16 @@ The source tree separates the system into four primary layers:
 | Layer | Responsibility |
 | --- | --- |
 | `OpenVolumetricCore` | Container access, FFmpeg decoding, Draco decoding, buffering, timestamps, synchronization, seeking, and engine-neutral mesh data |
-| `OpenVolumetricAuthoringCore` | Draco encoding, MP4 packaging, and output verification |
-| `integrations/unity` | C ABI, Unity lifecycle, graphics API access, and native GPU uploads |
+| `OpenVolumetricAuthoringCore` | Shared presets and validation, FFmpeg argument construction, Draco encoding, MP4 packaging, and output verification |
+| `integrations/unity` | Thin `UnityOpenVolumetricPlayer` adapter, thread-safe C ABI registry, graphics API access, and native GPU uploads |
 | `Unreal/Plugins/OpenVolumetric` | Unreal runtime component, core adapter, dynamic mesh/texture/audio output, and Editor authoring interface |
 
 The core deliberately contains no Unity or Unreal headers or types. Graphics
 operations are represented through engine-neutral presentations and, for the
 Unity native path, abstract interfaces such as `ITexture` and `IMeshBuffer`.
-An engine adapter supplies host resources and invokes the common player or
-presentation coordinator.
+`OpenVolumetricPlayer` owns media/geometry decoding, seek state, timestamp
+matching, and complete CPU-side presentations. An engine adapter supplies host
+resources and invokes this single common player.
 
 The implemented Unreal plug-in demonstrates that this boundary supports a
 second engine without duplicating container, codec, synchronization, or seek
@@ -142,6 +145,12 @@ corresponding declaration within the MP4 `moov` structure.
 This does not change sample offsets or box sizes, but it is provisional. It
 depends on the generated MP4 structure and has not yet been standardized or
 tested against a broad set of MP4 implementations.
+
+The final packaging pass enables FFmpeg's `faststart` MP4 mode. FFmpeg
+relocates `moov` ahead of `mdat` when the trailer is written, after which the
+authoring verifier explicitly checks the top-level box order. Outputs whose
+metadata still follows their media payload are rejected rather than
+published.
 
 ### 3.3 Geometry packet format
 
@@ -270,16 +279,28 @@ authoring library.
 
 Both authoring interfaces presently provide:
 
-- **Desktop Quality:** HEVC CRF 20, three reference frames, and balanced Draco
-  speed.
-- **Quest Balanced:** HEVC CRF 25, no B-frames, one reference frame, SAO
-  disabled, and high Draco decode speed.
-- **Quest Performance:** H.264 CRF 23, no B-frames, one reference frame,
-  reduced geometry precision, and maximum Draco decode speed.
+- **Desktop Local:** HEVC CRF 20, three reference frames, and balanced Draco
+  speed without a network-rate ceiling.
+- **Desktop Streaming:** HEVC CRF 23 constrained to 16 Mbps with a 32 Mbps
+  encoder buffer, 60-frame video GOPs, and 60-frame geometry reference
+  windows.
+- **Quest Local:** H.264 CRF 23, no B-frames, one reference frame, reduced
+  geometry precision, and maximum Draco decode speed.
+- **Quest Streaming:** HEVC CRF 27 constrained to 8 Mbps with a 16 Mbps
+  encoder buffer, one-second video GOPs, one-second full-geometry reference
+  windows, and maximum Draco decode speed.
 - **Custom:** explicit video and geometry controls.
 
-These presets primarily trade compression efficiency and precision for lower
-decoder complexity. They do not resize the input imagery.
+These presets trade compression efficiency, precision, decoder complexity,
+and network-rate consistency. They do not resize the input imagery. The
+streaming ceilings cover the texture-video track rather than the geometry
+and audio streams, so the final container rate is higher.
+
+Preset values, numbered-source validation, and FFmpeg argument construction
+are implemented once in `AuthoringWorkflow`. Unity consumes them through the
+authoring C ABI, while the Unreal Editor module links the same C++ authoring
+core. The engine windows retain only host-specific file pickers, progress
+reporting, process launching, and UI state.
 
 ### 4.5 Packaging
 
@@ -320,6 +341,16 @@ verification.
 `IVolumetricContainer` defines an engine-independent packet interface. Its
 current implementation, `FFmpegMp4VolumetricContainer`, exclusively owns the
 `AVFormatContext`.
+
+Container bytes are supplied through the engine-independent `IByteSource`
+contract. Current path-based playback creates a seekable
+`LocalFileByteSource`; FFmpeg reads and seeks it through a custom
+`AVIOContext`. HTTP and HTTPS inputs use `HttpRangeByteSource`, whose dedicated
+libcurl worker fills an 8 MiB LRU cache in 256 KiB ranges. FFmpeg remains on
+the demux thread and waits for cache blocks rather than performing socket I/O.
+The source contract provides terminal cross-thread cancellation so player
+destruction can interrupt an outstanding request before joining the demux
+worker. No transport code enters Unity or Unreal.
 
 Packets crossing this interface contain:
 
@@ -387,7 +418,14 @@ Atomic monotonic read and write positions allow the FFmpeg worker to produce
 samples while Unity's audio thread consumes them without a mutex.
 
 If the callback requests more data than is available, the remainder is filled
-with silence.
+with silence. The decoder records these partial reads as underruns.
+
+The ring also publishes an engine-neutral audio timeline snapshot: the media
+timestamp represented by its read head, the duration of queued PCM, and the
+underrun count. A timeline origin pairs a monotonic ring position with the
+media timestamp established at open or seek. This permits integrations to
+make readiness and recovery decisions without depending on FFmpeg structures
+or inferring buffered time from wall-clock delays.
 
 During seeking, buffered PCM is discarded by advancing the read position to
 the current write position. The counters are deliberately not reset to zero
@@ -421,9 +459,9 @@ Queue capacities are:
 - 128 compressed geometry samples in the media decoder before transfer to the
   Draco worker.
 
-The coordinator submits geometry up to four seconds ahead of the requested
-presentation time so meshes are normally decoded before their matching texture
-frame is required.
+`OpenVolumetricPlayer` submits geometry up to four seconds ahead of the
+requested presentation time so meshes are normally decoded before their
+matching texture frame is required.
 
 ### 5.6 Presentation matching
 
@@ -474,13 +512,11 @@ seeking.
 
 ### 6.1 Ownership hierarchy
 
-Each playback instance owns:
-
-- One combined-media decoder.
-- One geometry decoder.
-- One texture uploader.
-- One mesh-buffer uploader.
-- Platform-specific graphics state.
+Each engine-neutral `OpenVolumetricPlayer` owns one combined-media decoder and
+one geometry decoder. Unity's `UnityOpenVolumetricPlayer` additionally owns one
+texture uploader and one mesh-buffer uploader plus their platform-specific
+graphics state. Unreal instead owns its engine objects in
+`UOpenVolumetricComponent` and its private player adapter.
 
 More specifically:
 
@@ -554,9 +590,11 @@ returning. This is an implementation-specific optimization attempt, not part
 of the core architecture, and may be less efficient than a persistent worker
 or direct copies for small workloads.
 
-The global Unity instance list is not mutex-protected. The integration
-therefore assumes that creation and destruction are serialized by Unity and do
-not race with outstanding render events.
+The Unity native registry owns players with `std::unique_ptr` and is protected
+by a `std::shared_mutex`. API calls and render events retain a shared lock for
+the complete instance operation; creation and destruction take the exclusive
+lock. Destruction therefore cannot invalidate a player while an outstanding
+render callback or audio/API call is using it.
 
 ## 8. Engine integrations
 
@@ -577,7 +615,12 @@ Operations include:
 - Render-event retrieval.
 
 Instances receive integer identifiers used by both managed calls and Unity
-render events.
+render events. Each registry entry is a `UnityOpenVolumetricPlayer`, a thin
+adapter around `OpenVolumetricPlayer` that publishes the requested engine
+clock, uploads only complete matched presentations, and atomically publishes
+the most recently presented timestamp. Metal, D3D11, and Vulkan therefore
+share identical presentation and lifecycle policy rather than implementing
+separate platform coordinators.
 
 ### 8.2 Unity managed component
 
@@ -618,13 +661,31 @@ the GPU.
 
 ### 8.4 Playback clock
 
-The managed player uses Unity's DSP time as the primary playback clock. Visual
-presentation targets and streaming audio are started from the same scheduled
-timestamp.
+Before initial playback, Unity holds the presentation at timestamp zero until
+both a complete texture/geometry presentation and sufficient decoded PCM are
+ready. The PCM requirement is derived from Unity's configured DSP buffer
+length and buffer count with a scheduling margin. Audio and visuals are then
+released at one future DSP timestamp.
 
-The clock is advanced from DSP-time deltas rather than from Unity frame
-counters. This reduces drift between audio and visual playback and avoids
-coupling encoded sample rate to Unity's render frame rate.
+Unity supplies decoded PCM through a streaming `AudioClip`. Unity's
+procedural-audio producer queue leads audible output by a stable amount that
+is not exposed by `AudioSettings.GetDSPBufferSize`. The integration therefore
+schedules audio ahead of the visual DSP start using an explicit, editable
+output-latency compensation value. The value validated for the current macOS
+and Quest configurations is 0.55 seconds.
+
+The managed player advances visual media time from monotonic DSP-time deltas.
+The native PCM status supplies buffer readiness and underrun evidence; it does
+not introduce a second independent playback clock. Seeks and loop resets are
+performed for every native stream as one generation so queued PCM and visual
+presentations cannot intentionally cross a timeline boundary.
+
+If rendering is suspended long enough for a large forward DSP discontinuity,
+as can occur when a desktop window is minimized, Unity audio may continue
+while the managed visual update stops. On resume, the integration reads the
+procedural clip's media position and performs a unified seek. This flushes
+audio, texture, and geometry queues and restarts them in one new generation
+instead of allowing a permanent offset.
 
 Looping is controlled by the managed clock. At the loop boundary, Unity
 requests a unified native seek rather than independently resetting the
@@ -800,6 +861,13 @@ It provides:
 
 No Draco submodule or standalone encoder executable is required.
 
+### 11.4 HTTP transport
+
+libcurl is acquired through vcpkg with TLS enabled and is linked into the
+runtime core. The current portable build uses OpenSSL and zlib transitively.
+libcurl performs metadata and bounded byte-range transfers only on the
+`HttpRangeByteSource` worker; it does not replace FFmpeg's demuxing role.
+
 ## 12. Streaming model
 
 OpenVolumetric's container structure is conceptually compatible with streaming
@@ -807,19 +875,29 @@ because video, audio, and geometry are timestamped and interleaved in one MP4.
 The decoder also processes packets incrementally and uses bounded queues rather
 than loading an entire sequence into memory.
 
-However, the current implementation is not a network streaming system.
+The runtime now supports the first progressive-download layer. Its
+engine-independent byte-source boundary accepts local seekable files and
+HTTP/HTTPS resources with byte-range support. Network reads are performed by
+a dedicated libcurl worker and retained in a bounded block cache. FFmpeg
+continues to demux through a custom `AVIOContext`; it does not own the network
+transport. Cancellation interrupts an active transfer before player teardown
+joins the demux worker.
 
-It assumes:
+Newly authored conventional MP4 outputs are fast-start files, so track
+metadata is available before media payloads. This permits progressive startup
+and seeking through byte ranges without first caching the complete asset.
+Servers must expose a stable content length and support range requests.
 
-- A complete, locally accessible file.
-- A seekable FFmpeg input.
-- A conventional MP4 with metadata available when the file is opened.
-- Filesystem access for native decoding.
+Unity's optional `videoUrl` and Unreal's optional `SourceUrl` pass HTTP(S)
+locations to the same core `OpenVolumetricPlayer::open()` entry point used by
+local paths. Each integration exposes a thread-safe snapshot containing the
+resource size, bounded-cache occupancy, cumulative downloaded bytes, and
+range-request count. URL query strings are not written to native diagnostic
+logs.
 
-It does not currently provide:
+The runtime does not yet provide:
 
-- HTTP range-request handling.
-- Progressive download management.
+- Predictive buffered-duration or rebuffer-state diagnostics.
 - Fragmented MP4/CMAF authoring.
 - Live geometry ingest.
 - Adaptive bitrate selection.
@@ -827,10 +905,10 @@ It does not currently provide:
 - Network jitter buffers.
 - Recovery from missing network segments.
 
-A future streaming implementation could preserve the OpenVolumetric track model while
-adding fragmented MP4 packaging and a byte-source abstraction beneath the
-container. Random access would also require geometry samples or dependency
-windows aligned with fragment and seek boundaries.
+The next streaming layer will add fragmented MP4 packaging and segment
+scheduling above the implemented byte-source transport. Random access also
+requires geometry samples or dependency windows aligned with fragment and
+seek boundaries.
 
 ## 13. Performance characteristics
 
@@ -913,13 +991,14 @@ an RHI-specific path behind the same boundary.
 - Platform-specific media stacks.
 - Test or synthetic decoders.
 
-The current FFmpeg and Draco implementations are still fairly closely
-connected to coordinator behavior, so further dependency injection and public
-factory APIs would improve practical replaceability.
+The current FFmpeg and Draco implementations are still constructed directly by
+`OpenVolumetricPlayer`, so further dependency injection and public factory
+APIs would improve practical replaceability.
 
 ### 14.3 Container evolution
 
-The version 2 `VVGF` header already identifies complete topology keyframes,
+The version 2 `VVGF` header—the only on-disk version supported by the current
+development runtime—identifies complete topology keyframes,
 dependent position updates, topology IDs, referenced keyframes, decoded
 vertex/triangle counts, and the payload codec. Its header-size and flags
 fields leave room for compatible extensions.
@@ -991,7 +1070,7 @@ novelty claims:
 - A four-second audio ring.
 - Specific queue capacities.
 - Eight FFmpeg decode threads.
-- Unity's DSP clock.
+- Unity's scheduled DSP clock and procedural-audio latency compensation.
 - D3D11, Metal, and Vulkan upload implementations.
 - Unity `GL.IssuePluginEvent`.
 - Unreal `UDynamicMeshComponent`, transient `UTexture2D`, and
@@ -1015,7 +1094,11 @@ The most significant limitations of the current system are:
 - Audio is normalized to stereo float PCM; richer channel layouts are not
   exposed.
 - Runtime video decoding is software-based, including on Quest.
-- The player requires a complete local or cached file.
+- Progressive HTTP currently requires a known resource length and byte-range
+  server support. Bounded retry, rebuffer-state publication, presentation
+  freezing, audio suspension, and synchronized seek recovery are implemented,
+  but Quest disconnect/reconnect and retry-exhaustion validation remain
+  outstanding.
 - Fragmented MP4, adaptive streaming, and live playback are not implemented.
 - The authoring tool depends on an external FFmpeg executable.
 - macOS and Quest validation is manual rather than an automated conformance
@@ -1026,7 +1109,6 @@ The most significant limitations of the current system are:
   outstanding.
 - D3D11 contains short-lived per-presentation copy threads.
 - Some upload paths could reuse staging allocations more aggressively.
-- Global Unity instance management assumes serialized lifecycle operations.
 - The public runtime interface is optimized for continuous engine playback
   rather than arbitrary offline frame evaluation.
 - Unreal currently uses CPU YUV-to-BGRA conversion and whole dynamic-mesh
