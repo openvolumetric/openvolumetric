@@ -118,6 +118,19 @@ public class OpenVolumetric : MonoBehaviour
     {
         get { return m_decoder != null ? m_decoder.DspAudioTime : -1.0; }
     }
+    /// <summary>AudioSource carrying the decoded native DSP stream.</summary>
+    public AudioSource AudioOutput { get { return m_audio_source; } }
+
+    /// <summary>Returns the latest decoded geometry centroid in local space.</summary>
+    public bool TryGetGeometryCentroid(out Vector3 centroid)
+    {
+        if(m_decoder != null)
+        {
+            return m_decoder.TryGetGeometryCentroid(out centroid);
+        }
+        centroid = Vector3.zero;
+        return false;
+    }
     /// <summary>Current playback position in seconds.</summary>
     public double CurrentTime
     {
@@ -200,10 +213,22 @@ public class OpenVolumetric : MonoBehaviour
         }
         else if(m_decoder.HasAudio)
         {
-            m_audio_source = gameObject.GetComponent<AudioSource>();
-            if(m_audio_source == null)
+            OpenVolumetricGeometryAudioFollower follower =
+                gameObject.GetComponent<OpenVolumetricGeometryAudioFollower>();
+            if(follower != null)
             {
-                m_audio_source = gameObject.AddComponent<AudioSource>();
+                GameObject audioObject = new GameObject(
+                    "OpenVolumetric Spatial Audio");
+                audioObject.transform.SetParent(transform, false);
+                m_audio_source = audioObject.AddComponent<AudioSource>();
+            }
+            else
+            {
+                m_audio_source = gameObject.GetComponent<AudioSource>();
+                if(m_audio_source == null)
+                {
+                    m_audio_source = gameObject.AddComponent<AudioSource>();
+                }
             }
             m_audio_source.playOnAwake = false;
             m_audio_source.loop = enableLoop;

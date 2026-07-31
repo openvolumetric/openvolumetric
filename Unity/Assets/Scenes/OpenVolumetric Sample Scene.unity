@@ -129,6 +129,7 @@ GameObject:
   m_Component:
   - component: {fileID: 160012004}
   - component: {fileID: 160012003}
+  - component: {fileID: 160012005}
   m_Layer: 0
   m_Name: OpenVolumetric - quest stream
   m_TagString: Untagged
@@ -172,6 +173,20 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &160012005
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 160012002}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7ac582970f944f328a9a98d70563c2ab, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::OpenVolumetric.OpenVolumetricGeometryAudioFollower
+  spatialBlend: 1
+  smoothTime: 0.05
 --- !u!1 &924422021
 GameObject:
   m_ObjectHideFlags: 0
@@ -594,6 +609,7 @@ GameObject:
   m_Component:
   - component: {fileID: 2024382032}
   - component: {fileID: 2024382031}
+  - component: {fileID: 2024382033}
   m_Layer: 0
   m_Name: OpenVolumetric  - quest local
   m_TagString: Untagged
@@ -637,6 +653,20 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2024382033
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2024382030}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7ac582970f944f328a9a98d70563c2ab, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::OpenVolumetric.OpenVolumetricGeometryAudioFollower
+  spatialBlend: 1
+  smoothTime: 0.05
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

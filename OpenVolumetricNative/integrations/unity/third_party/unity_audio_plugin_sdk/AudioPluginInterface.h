@@ -47,7 +47,20 @@ enum UnityAudioEffectStateFlags
 };
 
 struct UnityAudioEffectState;
-struct UnityAudioSpatializerData;
+/// Stable prefix of Unity's spatializer metadata structure.
+///
+/// Unity owns a larger instance. OpenVolumetric only reads fields preceding
+/// the optional distance-attenuation callback, so the ABI prefix is sufficient
+/// and remains compatible with the pinned Audio Spatializer SDK.
+struct UnityAudioSpatializerData
+{
+	float listenermatrix[16];
+	float sourcematrix[16];
+	float spatialblend;
+	float reverbzonemix;
+	float spread;
+	float stereopan;
+};
 struct UnityAudioAmbisonicData;
 
 using UnityAudioEffect_CreateCallback =

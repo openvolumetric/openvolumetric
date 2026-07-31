@@ -25,6 +25,11 @@ The component creates and owns its dynamic mesh, transient texture, unlit
 material instance, procedural sound wave, and audio component. Playback
 operations are also available to Blueprints:
 
+The Unreal audio component currently provides synchronized PCM playback only.
+Unity's optional geometry-centroid following and lightweight native stereo
+spatialisation, validated on Quest for both local and HTTP-streamed input, have
+not yet been implemented in the Unreal integration.
+
 - `Open`
 - `Play`
 - `Pause`

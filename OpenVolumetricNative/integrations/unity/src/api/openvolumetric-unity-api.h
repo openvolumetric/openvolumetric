@@ -45,6 +45,12 @@ extern "C"
 	OPENVOLUMETRIC_API const char* openvolumetric_get_last_error(int id);
 	/// Returns the timestamp most recently uploaded by the render thread.
 	OPENVOLUMETRIC_API double openvolumetric_get_last_presented_time(int id);
+	/// Retrieves the vertex centroid of the most recently uploaded geometry.
+	OPENVOLUMETRIC_API int openvolumetric_get_geometry_centroid(
+		int id,
+		float& x,
+		float& y,
+		float& z);
 	/// Retrieves input transport, cache, download, and request counters.
 	OPENVOLUMETRIC_API int openvolumetric_get_buffer_details(
 		int id,

@@ -60,6 +60,13 @@ public class OpenVolumetricDecoder : IDisposable
     [DllImport(PluginName, EntryPoint = "openvolumetric_get_last_presented_time")]
     private static extern double openvolumetric_get_last_presented_time(int id);
 
+    [DllImport(PluginName, EntryPoint = "openvolumetric_get_geometry_centroid")]
+    private static extern int openvolumetric_get_geometry_centroid(
+        int id,
+        ref float x,
+        ref float y,
+        ref float z);
+
     [DllImport(PluginName, EntryPoint = "openvolumetric_get_buffer_details")]
     private static extern int openvolumetric_get_buffer_details(
         int id,
@@ -265,6 +272,28 @@ public class OpenVolumetricDecoder : IDisposable
                 ? openvolumetric_get_last_presented_time(m_instance_id)
                 : -1.0;
         }
+    }
+
+    /// <summary>
+    /// Returns the local-space vertex centroid of the latest uploaded mesh.
+    /// </summary>
+    public bool TryGetGeometryCentroid(out Vector3 centroid)
+    {
+        centroid = Vector3.zero;
+        if(m_instance_id < 0)
+        {
+            return false;
+        }
+        float x = 0.0F;
+        float y = 0.0F;
+        float z = 0.0F;
+        if(openvolumetric_get_geometry_centroid(
+            m_instance_id, ref x, ref y, ref z) != 1)
+        {
+            return false;
+        }
+        centroid = new Vector3(x, y, z);
+        return true;
     }
 
     /// <summary>Immutable native input/cache counter snapshot.</summary>

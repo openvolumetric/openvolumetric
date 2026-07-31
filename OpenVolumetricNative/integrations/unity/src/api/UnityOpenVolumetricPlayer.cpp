@@ -24,6 +24,7 @@ UnityOpenVolumetricPlayer::~UnityOpenVolumetricPlayer()
 bool UnityOpenVolumetricPlayer::open(const char* path)
 {
 	m_last_presented_time.store(-1.0, std::memory_order_release);
+	m_centroid_sequence.store(0, std::memory_order_release);
 	return m_player.open(path);
 }
 
@@ -43,6 +44,7 @@ bool UnityOpenVolumetricPlayer::seek(double time)
 	if (!m_player.seek(time))
 		return false;
 	m_last_presented_time.store(-1.0, std::memory_order_release);
+	m_centroid_sequence.store(0, std::memory_order_release);
 	return true;
 }
 
@@ -54,6 +56,7 @@ void UnityOpenVolumetricPlayer::close()
 	if (m_mesh_buffer)
 		m_mesh_buffer->destroy();
 	m_last_presented_time.store(-1.0, std::memory_order_release);
+	m_centroid_sequence.store(0, std::memory_order_release);
 }
 
 void UnityOpenVolumetricPlayer::set_presentation_time(double time)
@@ -76,6 +79,28 @@ int UnityOpenVolumetricPlayer::render()
 		presentation.v.data());
 	if (!m_mesh_buffer->update(&presentation.mesh))
 		return -1;
+
+	if (!presentation.mesh.verts.empty())
+	{
+		double x = 0.0;
+		double y = 0.0;
+		double z = 0.0;
+		for (const Vertex& vertex : presentation.mesh.verts)
+		{
+			x += vertex.pos[0];
+			y += vertex.pos[1];
+			z += vertex.pos[2];
+		}
+		const double scale = 1.0 /
+			static_cast<double>(presentation.mesh.verts.size());
+		const std::uint64_t sequence =
+			m_centroid_sequence.load(std::memory_order_relaxed);
+		m_centroid_sequence.store(sequence + 1, std::memory_order_release);
+		m_centroid_x.store(static_cast<float>(x * scale), std::memory_order_relaxed);
+		m_centroid_y.store(static_cast<float>(y * scale), std::memory_order_relaxed);
+		m_centroid_z.store(static_cast<float>(z * scale), std::memory_order_relaxed);
+		m_centroid_sequence.store(sequence + 2, std::memory_order_release);
+	}
 
 	m_last_presented_time.store(
 		presentation.presentation_time,
@@ -115,6 +140,33 @@ int UnityOpenVolumetricPlayer::read_audio(float* output, int sample_count)
 double UnityOpenVolumetricPlayer::last_presented_time() const
 {
 	return m_last_presented_time.load(std::memory_order_acquire);
+}
+
+bool UnityOpenVolumetricPlayer::geometry_centroid(
+	float& x,
+	float& y,
+	float& z) const
+{
+	for (int attempt = 0; attempt < 3; ++attempt)
+	{
+		const std::uint64_t before =
+			m_centroid_sequence.load(std::memory_order_acquire);
+		if (before == 0 || (before & 1) != 0)
+			continue;
+		const float current_x = m_centroid_x.load(std::memory_order_relaxed);
+		const float current_y = m_centroid_y.load(std::memory_order_relaxed);
+		const float current_z = m_centroid_z.load(std::memory_order_relaxed);
+		const std::uint64_t after =
+			m_centroid_sequence.load(std::memory_order_acquire);
+		if (before == after)
+		{
+			x = current_x;
+			y = current_y;
+			z = current_z;
+			return true;
+		}
+	}
+	return false;
 }
 
 } // namespace openvolumetric::unity

@@ -345,6 +345,18 @@ OPENVOLUMETRIC_API double openvolumetric_get_last_presented_time(int id)
 	return instance->last_presented_time();
 }
 
+OPENVOLUMETRIC_API int openvolumetric_get_geometry_centroid(
+	int id,
+	float& x,
+	float& y,
+	float& z)
+{
+	InstanceAccess instance(id);
+	if (!instance)
+		return -1;
+	return instance->geometry_centroid(x, y, z) ? 1 : 0;
+}
+
 OPENVOLUMETRIC_API int openvolumetric_get_buffer_details(
 	int id,
 	int& state,

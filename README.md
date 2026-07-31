@@ -38,7 +38,9 @@ The Unity 6 project contains:
 
 - the `OpenVolumetric.OpenVolumetric` playback component;
 - Metal, D3D11, and Vulkan native rendering paths;
-- synchronized streaming audio;
+- synchronized streaming audio, with optional geometry-centroid following and
+  lightweight native stereo spatialisation validated on Quest for local and
+  HTTP-streamed input;
 - a Quest controller-operated developer overlay; and
 - **Tools > OpenVolumetric > Encoder** for authoring.
 

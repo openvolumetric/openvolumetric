@@ -721,6 +721,21 @@ with Unity's output rate; this is required for 44.1 kHz media on Quest's 48 kHz
 mixer. Visual presentation advances from the same DSP timeline, so no
 empirical output-latency correction is required.
 
+Unity optionally publishes the vertex centroid of each uploaded decoded mesh
+and places a child `AudioSource` at that local-space position. The existing
+native DSP callback then applies inexpensive equal-power stereo panning from
+Unity's source and inverse-listener transforms after selecting synchronized
+PCM. Unity retains control of AudioSource distance attenuation. This provides
+directional centroid-following audio without changing the audio clock or
+decode queues, and has passed seek, loop, pause/resume, and synchronization
+tests on Quest with both local-file and HTTP-streamed input. It is lightweight
+stereo panning rather than a full HRTF renderer.
+
+This centroid-following spatial-audio path is currently implemented only by
+the Unity integration. Unreal continues to output synchronized PCM through
+`USoundWaveProcedural` and `UAudioComponent`, but does not yet publish the mesh
+centroid to its audio component or apply equivalent spatialisation.
+
 The native DSP bridge currently supports one active OpenVolumetric player and
 occupies Unity's project-wide spatializer plug-in slot. These are integration
 constraints rather than core decoder limitations. A dedicated native
@@ -1320,6 +1335,8 @@ The most significant limitations of the current system are:
 - Only planar 8-bit YUV420 video output is supported by the rendering path.
 - Audio is normalized to stereo float PCM; richer channel layouts are not
   exposed.
+- Geometry-centroid following and native stereo spatialisation are currently
+  Unity-only; Unreal spatial audio is not implemented.
 - Runtime video decoding is software-based, including on Quest.
 - Progressive HTTP currently requires a known resource length and byte-range
   server support. Bounded retry, rebuffer-state publication, presentation
@@ -1330,9 +1347,9 @@ The most significant limitations of the current system are:
 - Fixed-quality fragmented authoring, whole-resource playback, and bounded
   in-file fragment scheduling are implemented. Quest playback, bidirectional
   seeking, and brief Wi-Fi interruption recovery have passed manual testing;
-  Unreal interruption and synchronized recovery have also passed. Controlled
-  retry exhaustion remains outstanding. Manifests, adaptive streaming, and
-  live playback are not implemented.
+  Unreal interruption and synchronized recovery have also passed. Quest
+  controlled retry exhaustion and corruption tests pass. Manifests, adaptive
+  streaming, and live playback are not implemented.
 - The authoring tool depends on an external FFmpeg executable.
 - macOS and Quest validation is manual rather than an automated conformance
   suite.
