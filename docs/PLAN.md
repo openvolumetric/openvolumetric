@@ -71,8 +71,9 @@ See [GEOMETRY_PACKET.md](GEOMETRY_PACKET.md) for the normative field layout.
 - [x] Confirm the geometry track can be identified unambiguously.
 - [x] Confirm every sample retains its exact payload, PTS, duration, and order.
 - [x] Confirm `av_seek_frame()` can reach the expected geometry sample.
-- [x] Confirm ordinary video players ignore the geometry track and still play
-      the video and audio.
+- [x] Confirm the initial conventional-file fixture plays video and audio in
+      selected ordinary players. Fragmented-file limitations are documented
+      separately and are not covered by this historical proof-of-concept test.
 - [x] Decide whether stock FFmpeg can author the chosen metadata entry.
 
 Stock FFmpeg cannot directly author the chosen `vvge` entry. The current
@@ -353,6 +354,8 @@ seeking rules, validation matrix, and phased implementation are recorded in
 
 ## Milestone 12: Streamable input and fragmented packaging
 
+**Status: complete (31 July 2026).**
+
 The complete progressive-download, fragmented-MP4, adaptive-selection,
 threading, recovery, authoring, and validation design is recorded in
 [STREAMING_AND_ADAPTATION.md](STREAMING_AND_ADAPTATION.md).
@@ -366,28 +369,37 @@ threading, recovery, authoring, and validation design is recorded in
       asset.
 - [x] Author initialization segments and aligned fragmented-MP4 media
       segments for a single fixed-quality representation.
-- [ ] Add a bounded segment scheduler/cache with explicit opening, buffering,
+- [x] Add a bounded segment scheduler/cache with explicit opening, buffering,
       playing, rebuffering, ended, and error states.
 - [x] Ensure video and geometry random-access points align with every
       independently addressable segment.
 - [x] Align topology keyframes with segment boundaries when temporal geometry
       coding is used.
+- [x] Resolve or formally document ordinary-player interoperability for
+      fragmented files containing the custom `vvge` track. VLC currently stops
+      at the first fragment boundary, although equivalent fragmented
+      video/audio-only remuxes play. The limitation, diagnostic variants,
+      preview-remux workflow, and future standardized timed-metadata options
+      are documented in
+      [CONTAINER_COMPATIBILITY.md](CONTAINER_COMPATIBILITY.md).
 - [x] Expose URL input and buffer diagnostics through the core API, Unity, and
       Unreal without placing transport logic in either engine adapter.
 - [x] On a network outage, enter a defined rebuffer/error state, freeze the
       last complete presentation, silence audio, and recover from a valid
       synchronized access point after connectivity returns.
-- [ ] Validate outage recovery, retry exhaustion, and synchronized resume on
-      Quest and Unreal using controlled disconnects.
+- [x] Validate outage recovery and synchronized resume on Quest and Unreal,
+      plus controlled retry exhaustion and corruption handling on Quest.
 
 ### Milestone 12 exit criteria
 
-- Local-file playback remains unchanged.
-- Playback can start and seek over HTTP without first caching the complete
+- [x] Local-file playback remains unchanged.
+- [x] Playback can start and seek over HTTP without first caching the complete
   conventional MP4.
-- A fixed fragmented representation plays across every segment boundary with
+- [x] A fixed fragmented representation plays across every segment boundary with
   synchronized texture, geometry, and optional audio.
-- Network cancellation, retries, cache limits, seeking, looping, and corrupt
+- [x] Conventional video and audio remain extractable without re-encoding, and
+  generic-player limitations are documented with a preview workflow.
+- [x] Network cancellation, retries, cache limits, seeking, looping, and corrupt
   segment handling pass controlled tests.
 
 ## Milestone 13: Adaptive volumetric streaming
@@ -426,7 +438,7 @@ threading, recovery, authoring, and validation design is recorded in
 - [x] MP4 with HEVC, AAC, and geometry.
 - [x] MP4 with HEVC and geometry but no audio.
 - [ ] First, middle, and final geometry samples decode correctly.
-- [ ] Payload corruption produces a controlled error.
+- [x] Payload corruption produces a controlled error.
 - [ ] Missing geometry samples follow documented behavior.
 - [ ] Geometry and video frame-count mismatch is detected by the packer.
 - [x] Continuous playback remains synchronized.

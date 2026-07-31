@@ -13,8 +13,19 @@ seeking, looping, and pause/resume have been manually validated over HTTP in
 Unity on macOS, Unity on Quest over Wi-Fi, and Unreal Editor on macOS. Unity
 and Unreal expose optional HTTP(S) URL fields plus core-owned resource-size,
 cache, download, request-count, and transport-state diagnostics. Fixed-quality
-fragmented MP4 authoring and whole-resource playback are implemented; independent
-segment scheduling, manifests, and adaptive representation switching are not.
+fragmented MP4 authoring and whole-resource playback are implemented. The HTTP
+source now reads the terminal `mfra`/`tfra` index, schedules complete forward
+fragments within its byte budget, and allows demanded demux reads to pre-empt
+speculative downloads. Manifests and adaptive representation switching are not
+yet implemented.
+
+The bounded fragment scheduler has been manually validated on Quest over
+Wi-Fi for uninterrupted playback, forward and backward seeking, and recovery
+after a brief network interruption. Network interruption and synchronized
+recovery have also passed manual testing in Unreal. Controlled retry
+exhaustion and deterministic geometry-packet corruption have subsequently
+passed on Quest: retries terminated in the defined error state, corruption was
+contained without a crash, and clean input reopened normally.
 
 For current progressive-file testing:
 
@@ -309,7 +320,25 @@ fragmented MP4 mode with 1-, 2-, or 4-second durations. It writes one file
 containing an initialization `moov` and aligned `moof`/`mdat` fragments,
 forces closed video GOPs and independent geometry at every boundary, and
 verifies fragment count, box order, access-point alignment, payloads,
-timestamps, and seeking. The remaining adaptive-package work is to:
+timestamps, and seeking.
+
+Fragment muxing also limits consecutive packets from one track. This is a
+runtime requirement, not only a file-layout preference: a long video-only run
+can fill a bounded video queue before the demuxer reaches the audio or geometry
+packets needed for the same presentation. The authoring verifier rejects such
+sparse track interleave.
+
+The fixed-representation scheduler discovers fragment byte ranges from the
+terminal MP4 random-access index rather than adding top-level `sidx` boxes.
+This preserves the unified FFmpeg seek behaviour of the custom geometry track.
+It fills the active and following complete fragments up to the configured
+32 MB cache budget, evicts old data by recent use, and immediately yields to a
+new demanded block after a seek. Conventional non-fragmented MP4 files retain
+the smaller sequential block read-ahead path. Core diagnostics report whether
+the input is fragmented, total and active fragment indices, and the number of
+complete fragments currently cached; Unity and Unreal expose the same values.
+
+The remaining adaptive-package work is to:
 
 1. Validate source duration, timestamps, and frame correspondence.
 2. Encode each requested video/geometry quality representation.
@@ -400,8 +429,10 @@ failures with bounded exponential backoff, retains the last complete
 synchronized mesh/texture, and stops engine audio. When transport becomes
 ready, the engine seeks every stream back to the last presented timestamp and
 resumes only from that synchronized access point. Exhausted retries publish
-`Error`. A failure-injection test covering two HTTP 503 responses passes;
-Quest disconnect/reconnect and retry-exhaustion validation remain outstanding.
+`Error`. Failure injection covering transient HTTP 503 responses, permanent
+503 retry exhaustion, and deterministic geometry-packet corruption has passed.
+Brief disconnect/reconnect recovery has passed on Quest and Unreal; exhaustion
+and corruption were validated on Quest.
 
 ### Fixed-quality fragmented MP4 validation findings
 
@@ -413,10 +444,24 @@ pause/resume, repeated looping, and non-looping end-to-start restart.
 
 The same file passed progressive HTTP startup, forward/backward seeking,
 pause/resume, and repeated looping without first downloading the complete
-resource. A conventional media player played its video and audio while
-ignoring the `vvge` track. Native structural verification had already covered
-one-, two-, and four-second fragment durations. The same two-second fragmented
-output subsequently passed playback validation in Unreal Editor on macOS.
+resource. A video/audio-only stream-copy remux played in VLC, while direct
+playback of the complete file stops at its first fragment boundary because VLC
+does not ignore `vvge` correctly. This limitation and its diagnostic variants
+are recorded in
+[CONTAINER_COMPATIBILITY.md](CONTAINER_COMPATIBILITY.md). Native structural
+verification had already covered one-, two-, and four-second fragment
+durations. The same two-second fragmented output subsequently passed playback
+validation in Unreal Editor on macOS.
+
+An experiment with FFmpeg's `global_sidx` option was rejected. FFmpeg emitted
+one index per video, audio, and custom `vvge` track, but stream-agnostic
+backward seeks repeatedly resolved to the first fragment instead of the
+requested synchronized fragment. This caused Unity seek/synchronization
+failures and unstable conventional-player playback. Fixed-quality authoring
+therefore retains ordinary `moof`/`mdat` discovery. The verifier now exercises
+forward and backward stream-agnostic seeks so this failure cannot silently
+return. A future scheduler needs one explicitly coupled multimodal index or
+manifest rather than treating FFmpeg's per-track global indexes as atomic.
 
 ## Implementation phases
 
@@ -431,9 +476,9 @@ output subsequently passed playback validation in Unreal Editor on macOS.
 
 ### Phase 2: Fragmented single-representation VOD
 
-- Author aligned initialization and fragmented-media segments.
-- Add the segment scheduler and cache.
-- Play one fixed representation through the existing synchronization core.
+- [x] Author aligned initialization and fragmented-media segments.
+- [x] Add the bounded in-file fragment scheduler and cache.
+- [x] Play one fixed representation through the existing synchronization core.
 - Validate every segment as an independent access boundary.
 
 ### Phase 3: Adaptive package and switching

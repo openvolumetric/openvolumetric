@@ -144,6 +144,10 @@ OpenVolumetricBufferInfo OpenVolumetricPlayer::buffer_info() const
 	result.downloaded_bytes = source.downloaded_bytes;
 	result.request_count = source.request_count;
 	result.recovery_count = source.recovery_count;
+	result.fragmented = source.fragmented;
+	result.fragment_count = source.fragment_count;
+	result.active_fragment = source.active_fragment;
+	result.cached_fragment_count = source.cached_fragment_count;
 	return result;
 }
 

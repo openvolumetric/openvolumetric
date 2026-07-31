@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IByteSource.h"
+#include "FragmentedMp4Index.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -75,7 +76,12 @@ private:
 
 	void worker_loop();
 	bool discover_resource(void* handle);
+	void discover_fragment_index(void* handle);
 	bool download_block(void* handle, std::uint64_t block_index);
+	void prefetch_fragment_window(void* handle, std::uint64_t demanded_block);
+	std::optional<std::size_t> fragment_for_block(
+		std::uint64_t block_index) const;
+	std::uint64_t cached_fragment_count() const;
 	bool wait_for_block(std::uint64_t block_index);
 	void insert_block(
 		std::uint64_t block_index,
@@ -90,7 +96,9 @@ private:
 	mutable std::mutex m_mutex;
 	std::condition_variable m_condition;
 	std::map<std::uint64_t, CacheBlock> m_cache;
+	std::vector<Mp4FragmentRange> m_fragments;
 	std::optional<std::uint64_t> m_requested_block;
+	std::optional<std::size_t> m_active_fragment;
 	std::thread m_worker;
 	std::atomic<bool> m_cancelled{false};
 	std::int64_t m_size = -1;

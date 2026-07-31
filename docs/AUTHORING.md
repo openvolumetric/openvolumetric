@@ -68,7 +68,9 @@ number of source frames. When enabled, the shared workflow:
 - forces an independent Draco mesh at the same boundary, even when topology
   could otherwise be reused across it;
 - writes an initialization `moov` followed by `moof`/`mdat` media fragments
-  in the output MP4; and
+  in the output MP4;
+- limits consecutive samples from one track so video cannot starve audio or
+  geometry in bounded runtime queues; and
 - verifies fragment count, initialization-box order, aligned video/geometry
   access points, every geometry payload and timestamp, and representative
   seeking before publishing the output.
@@ -136,7 +138,9 @@ keyframes and reported a 77.23% geometry-payload reduction for that fixture.
 Unity subsequently authored a two-second fragmented sequence with geometry
 compression and audio. Local and progressive HTTP playback passed initial
 startup, synchronization, forward/backward boundary seeks, pause/resume,
-looping, and non-looping restart tests. Its conventional video and audio also
-played correctly in a standard media player.
+looping, and non-looping restart tests. Its conventional video and audio were
+also verified independently. Direct VLC playback of the complete fragmented
+file is a documented `vvge` compatibility limitation; an A/V-only stream-copy
+remux plays correctly without re-encoding.
 The two-second fragmented output also played successfully in Unreal Editor on
-macOS.
+macOS and in Unity on Quest/Android.

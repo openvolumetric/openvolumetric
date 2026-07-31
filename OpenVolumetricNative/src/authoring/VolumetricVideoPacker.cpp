@@ -18,6 +18,7 @@ extern "C"
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -702,6 +703,10 @@ bool mux_file(
 				"movflags",
 				"+frag_keyframe+empty_moov+default_base_moof+omit_tfhd_offset",
 				0);
+			// Keep multiplexed tracks close in file and demux order. A long run
+			// from one track can starve audio or geometry behind the runtime's
+			// bounded queue for that track.
+			av_dict_set(&mux_options, "frag_interleave", "1", 0);
 		}
 		else
 		{
@@ -1163,8 +1168,21 @@ bool verify_file(
 
 		std::size_t geometry_index = 0;
 		std::int64_t previous_pts = AV_NOPTS_VALUE;
+		int previous_stream_index = -1;
+		std::size_t consecutive_stream_packets = 0;
+		std::size_t maximum_consecutive_stream_packets = 0;
 		while ((result = av_read_frame(input, packet)) >= 0)
 		{
+			if (packet->stream_index == previous_stream_index)
+				++consecutive_stream_packets;
+			else
+			{
+				previous_stream_index = packet->stream_index;
+				consecutive_stream_packets = 1;
+			}
+			maximum_consecutive_stream_packets = std::max(
+				maximum_consecutive_stream_packets,
+				consecutive_stream_packets);
 			if (packet->stream_index == geometry_stream_index)
 			{
 				if (geometry_index >= geometry.size())
@@ -1239,6 +1257,89 @@ bool verify_file(
 			std::cerr << "Geometry sample count mismatch: expected "
 				<< geometry.size() << ", read " << geometry_index << '\n';
 			goto cleanup;
+		}
+		if (fragment_frame_interval > 0 &&
+			maximum_consecutive_stream_packets > 8)
+		{
+			std::cerr << "Fragmented MP4 track interleave is too sparse: "
+				<< maximum_consecutive_stream_packets
+				<< " consecutive packets from one track\n";
+			goto cleanup;
+		}
+
+		// Exercise the same stream-agnostic seek used by the runtime. Seeking a
+		// single track is insufficient validation: per-track MP4 indexes can be
+		// individually readable while directing a unified backward seek to the
+		// wrong fragment for audio, video, or geometry.
+		if (fragment_frame_interval > 0)
+		{
+			const int audio_stream_index = av_find_best_stream(
+				input, AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
+			const auto verify_unified_seek = [&](double target) -> bool
+			{
+				const std::int64_t timestamp = static_cast<std::int64_t>(
+					std::llround(target * static_cast<double>(AV_TIME_BASE)));
+				if (av_seek_frame(
+						input, -1, timestamp, AVSEEK_FLAG_BACKWARD) < 0)
+				{
+					return false;
+				}
+				avformat_flush(input);
+				av_packet_unref(packet);
+				bool found_video = false;
+				bool found_audio = audio_stream_index < 0;
+				bool found_geometry = false;
+				constexpr double maximum_fragment_preroll = 4.1;
+				for (int count = 0; count < 512 &&
+					!(found_video && found_audio && found_geometry); ++count)
+				{
+					if (av_read_frame(input, packet) < 0)
+						break;
+					const int stream_index = packet->stream_index;
+					if (stream_index == video_stream_index ||
+						stream_index == audio_stream_index ||
+						stream_index == geometry_stream_index)
+					{
+						const std::int64_t packet_timestamp = packet->pts != AV_NOPTS_VALUE
+							? packet->pts
+							: packet->dts;
+						if (packet_timestamp == AV_NOPTS_VALUE)
+							return false;
+						const double packet_time =
+							packet_timestamp * av_q2d(
+								input->streams[stream_index]->time_base);
+						if (packet_time < target - maximum_fragment_preroll ||
+							packet_time > target + maximum_fragment_preroll)
+						{
+							return false;
+						}
+						found_video = found_video ||
+							stream_index == video_stream_index;
+						found_audio = found_audio ||
+							stream_index == audio_stream_index;
+						found_geometry = found_geometry ||
+							stream_index == geometry_stream_index;
+					}
+					av_packet_unref(packet);
+				}
+				return found_video && found_audio && found_geometry;
+			};
+
+			const double duration = video_timing.back().pts *
+				av_q2d(video_time_base);
+			const std::array<double, 3> seek_targets{{
+				duration * 0.75,
+				duration * 0.25,
+				duration * 0.50}};
+			for (double target : seek_targets)
+			{
+				if (!verify_unified_seek(target))
+				{
+					std::cerr << "Unified fragmented MP4 seek validation failed at "
+						<< target << " seconds\n";
+					goto cleanup;
+				}
+			}
 		}
 
 		const GeometryInput& seek_input = geometry[geometry.size() / 2];

@@ -130,7 +130,7 @@ GameObject:
   - component: {fileID: 160012004}
   - component: {fileID: 160012003}
   m_Layer: 0
-  m_Name: OpenVolumetric (3)
+  m_Name: OpenVolumetric - quest stream
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -183,7 +183,7 @@ GameObject:
   - component: {fileID: 924422023}
   - component: {fileID: 924422022}
   m_Layer: 0
-  m_Name: OpenVolumetric (1)
+  m_Name: OpenVolumetric - desktop stream
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -542,7 +542,7 @@ GameObject:
   - component: {fileID: 1772797575}
   - component: {fileID: 1772797574}
   m_Layer: 0
-  m_Name: OpenVolumetric
+  m_Name: OpenVolumetric - desktop local
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -595,7 +595,7 @@ GameObject:
   - component: {fileID: 2024382032}
   - component: {fileID: 2024382031}
   m_Layer: 0
-  m_Name: OpenVolumetric (2)
+  m_Name: OpenVolumetric  - quest local
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -613,7 +613,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0f19b987d80146544bbfbba8a5206081, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::OpenVolumetric.OpenVolumetric
-  videoFilename: volumetric_video_quest_streaming_fragmented.mp4
+  videoFilename: quest_local.mp4
   videoUrl: 
   luminanceCorrection: 0
   blueProjectionCorrection: 0
@@ -643,7 +643,7 @@ SceneRoots:
   m_Roots:
   - {fileID: 1149713620}
   - {fileID: 1772797575}
-  - {fileID: 2024382032}
   - {fileID: 924422023}
+  - {fileID: 2024382032}
   - {fileID: 160012004}
   - {fileID: 1347143973}

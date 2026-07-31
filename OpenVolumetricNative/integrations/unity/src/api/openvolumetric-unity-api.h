@@ -55,6 +55,13 @@ extern "C"
 		unsigned long long& downloaded_bytes,
 		unsigned long long& request_count,
 		unsigned long long& recovery_count);
+	/// Retrieves fragmented-input scheduler and bounded-cache progress.
+	OPENVOLUMETRIC_API int openvolumetric_get_fragment_details(
+		int id,
+		int& fragmented,
+		long long& active_fragment,
+		unsigned long long& fragment_count,
+		unsigned long long& cached_fragment_count);
 
 	/// Retrieves decoded dimensions, nominal FPS, and duration in seconds.
 	OPENVOLUMETRIC_API int	openvolumetric_get_video_details(int id, int& width, int& height, double& fps, double& duration);

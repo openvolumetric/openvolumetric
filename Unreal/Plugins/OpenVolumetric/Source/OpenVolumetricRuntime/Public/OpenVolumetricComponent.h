@@ -31,7 +31,8 @@ enum class EOpenVolumetricInputState : uint8
 	Ready,
 	Rebuffering,
 	Error,
-	Cancelled
+	Cancelled,
+	Ended
 };
 
 /**
@@ -145,6 +146,18 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status|Buffer")
 	int64 NetworkRecoveryCount = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status|Buffer")
+	bool bFragmentedInput = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status|Buffer")
+	int64 ActiveFragment = -1;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status|Buffer")
+	int64 FragmentCount = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status|Buffer")
+	int64 CachedFragmentCount = 0;
 
 	/** Opens SourceUrl or SourceFile and prepares native and engine resources. */
 	UFUNCTION(BlueprintCallable, Category = "OpenVolumetric|Playback")

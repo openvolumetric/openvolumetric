@@ -71,6 +71,14 @@ public class OpenVolumetricDecoder : IDisposable
         ref ulong requestCount,
         ref ulong recoveryCount);
 
+    [DllImport(PluginName, EntryPoint = "openvolumetric_get_fragment_details")]
+    private static extern int openvolumetric_get_fragment_details(
+        int id,
+        ref int fragmented,
+        ref long activeFragment,
+        ref ulong fragmentCount,
+        ref ulong cachedFragmentCount);
+
     [DllImport(PluginName, EntryPoint = "openvolumetric_get_video_details")]
     private static extern int openvolumetric_get_video_details(int id, ref int width, ref int height, ref double fps, ref double duration);
 
@@ -269,6 +277,10 @@ public class OpenVolumetricDecoder : IDisposable
         public ulong DownloadedBytes;
         public ulong RequestCount;
         public ulong RecoveryCount;
+        public bool IsFragmented;
+        public long ActiveFragment;
+        public ulong FragmentCount;
+        public ulong CachedFragmentCount;
     }
 
     public enum BufferState
@@ -277,7 +289,8 @@ public class OpenVolumetricDecoder : IDisposable
         Ready = 1,
         Rebuffering = 2,
         Error = 3,
-        Cancelled = 4
+        Cancelled = 4,
+        Ended = 5
     }
 
     /// <summary>Current transport and bounded-cache diagnostics.</summary>
@@ -303,6 +316,14 @@ public class OpenVolumetricDecoder : IDisposable
                 ref info.RecoveryCount);
             info.State = (BufferState)state;
             info.IsRemote = remote != 0;
+            int fragmented = 0;
+            openvolumetric_get_fragment_details(
+                m_instance_id,
+                ref fragmented,
+                ref info.ActiveFragment,
+                ref info.FragmentCount,
+                ref info.CachedFragmentCount);
+            info.IsFragmented = fragmented != 0;
             return info;
         }
     }

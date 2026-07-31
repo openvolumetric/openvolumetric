@@ -237,6 +237,14 @@ public sealed class OpenVolumetricDeveloperOverlay : MonoBehaviour
                 buffer.RequestCount,
                 buffer.RecoveryCount)
             : string.Empty;
+        if(buffer.IsFragmented)
+        {
+            network += string.Format(
+                "\nFragments active:{0}/{1} cached:{2}",
+                buffer.ActiveFragment >= 0 ? buffer.ActiveFragment + 1 : 0,
+                buffer.FragmentCount,
+                buffer.CachedFragmentCount);
+        }
         string controls = Application.isMobilePlatform
             ? "A Play/Pause  B Loop\n" +
               "X -10s  Y +10s  Menu Hide"

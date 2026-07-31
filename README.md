@@ -27,9 +27,10 @@ An OpenVolumetric MP4 contains:
 - a timed `vvge` track containing versioned Draco geometry packets; and
 - an optional conventional audio track.
 
-Ordinary media players ignore the geometry track and continue to play the
-video and audio. OpenVolumetric matches texture and geometry using MP4
-presentation timestamps.
+OpenVolumetric matches texture and geometry using MP4 presentation timestamps.
+The conventional video and audio remain valid and can be remuxed for ordinary
+preview, but not every generic player ignores the custom track correctly; see
+[container compatibility](docs/CONTAINER_COMPATIBILITY.md).
 
 ## Unity
 
@@ -70,6 +71,7 @@ data/                   Local sample content
 - [Building](docs/BUILDING.md)
 - [Licensing and distribution](docs/LICENSING.md)
 - [Technical overview](docs/TECHNICAL_OVERVIEW.md)
+- [Container compatibility](docs/CONTAINER_COMPATIBILITY.md)
 - [Native core](docs/CORE.md)
 - [Authoring architecture](docs/AUTHORING.md)
 - [Engine integration boundary](docs/ENGINE_INTEGRATION.md)
@@ -86,8 +88,11 @@ data/                   Local sample content
 - Geometry compression reuses matching topology through Draco position-only
   updates, but its compression, reconstruction quality, and keyframe-interval
   defaults still need broader evaluation.
-- Playback requires a complete local or cached MP4.
+- Local, progressive HTTP, and fixed fragmented HTTP playback are supported;
+  adaptive multi-representation streaming is not yet implemented.
 - The format is project-specific and has not yet been standardized.
+- VLC does not reliably ignore `vvge` in fragmented files; video/audio-only
+  stream-copy previews remain available without re-encoding.
 - Quest video decoding is software-based.
 - Windows, Quest 3S, and Unreal packaged-build validation remain outstanding.
 - Automated conformance and performance testing is still limited.

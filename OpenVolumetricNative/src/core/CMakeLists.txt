@@ -22,6 +22,7 @@ add_library(OpenVolumetricCore STATIC
   decoding/OpenVolumetricPlayer.cpp
   geometry/DracoPointCloudDecoder.cpp
   geometry/GeometryDecoderDraco.cpp
+  io/FragmentedMp4Index.cpp
   io/HttpRangeByteSource.cpp
   io/LocalFileByteSource.cpp
   media/AVDecoderFFMPEG.cpp

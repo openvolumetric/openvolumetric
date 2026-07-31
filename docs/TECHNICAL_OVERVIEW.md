@@ -47,10 +47,11 @@ and `docs/ENGINE_INTEGRATION.md`.
 | Unity macOS and Quest playback | Implemented | Manual local and progressive HTTP tests; sustained Quest 2 local test |
 | Unreal Editor playback on macOS | Implemented | Manual local and progressive HTTP tests |
 | Progressive HTTP byte-range delivery | Implemented | Manual startup, seek, loop, pause/resume, and playback tests |
-| Automatic recovery from network outages | Partially implemented | Recovery observed, but not yet consistently automatic on Quest |
+| Network recovery and bounded failure | Implemented | Quest and Unreal recovery; Quest retry exhaustion and corruption tests passed |
 | Fixed-quality fragmented MP4 authoring | Implemented | Native verification for 1-, 2-, and 4-second fragments; two-second Unity round trip |
 | Fixed-quality fragmented MP4 playback | Implemented through the existing byte source | Unity local/progressive HTTP and Unreal Editor tests |
-| Independent segment scheduling and adaptive switching | Proposed | Design and evaluation plan only |
+| Fixed-representation fragment scheduling | Implemented | `mfra`/`tfra` index; Quest playback/seeking/recovery and Unreal recovery validated manually |
+| Adaptive representation switching | Proposed | Design and evaluation plan only |
 | Windows and Unreal packaged deployment | Partially implemented | Current clean-build/runtime validation pending |
 | Nuke integration | Proposed | Architectural feasibility only |
 
@@ -957,24 +958,27 @@ transport uses 12 retries with delays from 250 ms to 4 s. Cancellation and
 player destruction interrupt both active transfers and retry waits.
 
 This implemented mode is progressive access to one fixed-quality, fast-start
-MP4; it is not segmented adaptive streaming. It has been manually exercised
+or fragmented MP4; it is not adaptive streaming. Fragmented HTTP input uses
+the terminal `mfra`/`tfra` index to schedule complete forward fragments within
+the bounded cache without adding incompatible per-track global indexes. It has
+been manually exercised
 with local HTTP range servers in Unity on macOS, Unity on Quest over Wi-Fi,
 and Unreal Editor on macOS. Startup, forward/backward seeking, pause/resume,
-looping, and sustained playback have worked in those tests. Brief Quest Wi-Fi
-outages no longer crash the player and recovery has improved, but fully
-automatic recovery has not yet been consistently demonstrated without user
-intervention. Controlled retry-exhaustion and impairment tests remain
-outstanding.
+looping, and sustained playback have worked in those tests. Brief Wi-Fi
+interruption and synchronized recovery have passed on Quest and Unreal without
+a crash. Controlled retry exhaustion and deterministic geometry-packet
+corruption have also passed on Quest. Broader network-impairment evaluation
+remains future experimental work rather than an implementation blocker.
 
-The progressive runtime does not yet provide:
+The runtime does not yet provide:
 
 - A forward playable-duration estimate derived from complete multimodal
   presentations.
-- Independent fragment/segment scheduling and delivery-object caching.
+- Separately addressable delivery-object caching outside a single MP4.
 - Live geometry ingest.
 - Adaptive bitrate selection.
 - Representation switching.
-- A segment scheduler or segment-level integrity checking.
+- Segment-level integrity checking.
 
 ### 12.2 Proposed adaptive delivery model (future work)
 
@@ -1256,9 +1260,14 @@ around their composition and the resulting abstraction.
    are transformed into a single deliverable through an engine-facing tool
    that verifies payload identity, timestamp correspondence, and seeking
    before committing the output.
-7. **Compatibility with ordinary media players.** Unknown geometry data is
-   ignored while conventional video and audio remain playable, providing
-   graceful degradation and straightforward preview behavior.
+7. **Graceful-degradation container design.** The video and audio tracks are
+   conventional and remain valid when remuxed without the geometry track.
+   Direct ordinary-player interoperability is not yet universal: VLC currently
+   stops at the first fragment boundary when the custom `vvge` track is
+   present, although equivalent fragmented video/audio-only files play. The
+   limitation, diagnostic evidence, and no-reencode preview workflow are
+   documented in `CONTAINER_COMPATIBILITY.md`; standardized timed metadata
+   remains a possible future format revision.
 8. **Bounded topology reuse within the timed geometry track.** Complete Draco
    reference meshes and absolute position-only updates share one packet
    format, while author-controlled keyframe intervals bound dependency and
@@ -1315,12 +1324,15 @@ The most significant limitations of the current system are:
 - Progressive HTTP currently requires a known resource length and byte-range
   server support. Bounded retry, rebuffer-state publication, presentation
   freezing, audio suspension, and synchronized seek recovery are implemented,
-  but automatic Quest disconnect/reconnect recovery has not yet been fully
-  reliable in manual tests, and controlled retry-exhaustion validation remains
-  outstanding.
-- Fixed-quality fragmented authoring and whole-resource playback are
-  implemented, but independent segment scheduling, manifests, adaptive
-  streaming, and live playback are not.
+  and brief Quest and Unreal disconnect/reconnect recovery has passed manual
+  testing. Quest retry-exhaustion and deterministic geometry-corruption tests
+  also terminate safely in the documented state.
+- Fixed-quality fragmented authoring, whole-resource playback, and bounded
+  in-file fragment scheduling are implemented. Quest playback, bidirectional
+  seeking, and brief Wi-Fi interruption recovery have passed manual testing;
+  Unreal interruption and synchronized recovery have also passed. Controlled
+  retry exhaustion remains outstanding. Manifests, adaptive streaming, and
+  live playback are not implemented.
 - The authoring tool depends on an external FFmpeg executable.
 - macOS and Quest validation is manual rather than an automated conformance
   suite.

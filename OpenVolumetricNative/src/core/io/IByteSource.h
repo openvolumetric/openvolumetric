@@ -23,7 +23,8 @@ enum class ByteSourceState
 	Ready = 1,
 	Rebuffering = 2,
 	Error = 3,
-	Cancelled = 4
+	Cancelled = 4,
+	Ended = 5
 };
 
 /// Thread-safe transport/cache snapshot suitable for engine diagnostics.
@@ -36,6 +37,10 @@ struct ByteSourceDiagnostics
 	std::uint64_t downloaded_bytes = 0;
 	std::uint64_t request_count = 0;
 	std::uint64_t recovery_count = 0;
+	bool fragmented = false;
+	std::uint64_t fragment_count = 0;
+	std::int64_t active_fragment = -1;
+	std::uint64_t cached_fragment_count = 0;
 };
 
 /// Recognizes the supported remote schemes without imposing URL case rules.

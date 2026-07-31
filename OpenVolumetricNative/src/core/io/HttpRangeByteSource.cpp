@@ -201,7 +201,10 @@ std::int64_t HttpRangeByteSource::read(
 				m_size < 0 || m_position < 0)
 				return -1;
 			if (m_position >= m_size)
+			{
+				m_state = ByteSourceState::Ended;
 				break;
+			}
 			block_index = static_cast<std::uint64_t>(
 				m_position / static_cast<std::int64_t>(m_options.block_size));
 			block_offset = static_cast<std::size_t>(
@@ -263,6 +266,8 @@ std::int64_t HttpRangeByteSource::seek(
 	if (target < 0 || target > m_size)
 		return -1;
 	m_position = target;
+	if (m_state == ByteSourceState::Ended)
+		m_state = ByteSourceState::Ready;
 	return m_position;
 }
 
@@ -309,6 +314,12 @@ ByteSourceDiagnostics HttpRangeByteSource::diagnostics() const
 	result.downloaded_bytes = m_downloaded_bytes;
 	result.request_count = m_request_count;
 	result.recovery_count = m_recovery_count;
+	result.fragmented = !m_fragments.empty();
+	result.fragment_count = m_fragments.size();
+	result.active_fragment = m_active_fragment.has_value()
+		? static_cast<std::int64_t>(*m_active_fragment)
+		: -1;
+	result.cached_fragment_count = cached_fragment_count();
 	return result;
 }
 
@@ -338,10 +349,12 @@ void HttpRangeByteSource::worker_loop()
 		curl_easy_cleanup(handle);
 		return;
 	}
+	discover_fragment_index(handle);
 
 	while (!is_cancelled())
 	{
 		std::uint64_t block_index = 0;
+		bool block_is_cached = false;
 		{
 			std::unique_lock<std::mutex> lock(m_mutex);
 			m_condition.wait(lock, [&]()
@@ -352,16 +365,19 @@ void HttpRangeByteSource::worker_loop()
 				break;
 			block_index = *m_requested_block;
 			m_requested_block.reset();
-			if (m_cache.find(block_index) != m_cache.end())
-				continue;
+			block_is_cached = m_cache.find(block_index) != m_cache.end();
 		}
-		if (!download_block(handle, block_index))
+		if (!block_is_cached && !download_block(handle, block_index))
 			break;
 
-		// MP4 demux is predominantly sequential. Fetch a small bounded window
-		// after every demanded block so the demux thread consumes cached bytes
-		// instead of paying one Wi-Fi round trip per megabyte. A new explicit
-		// request always takes priority over further speculative downloads.
+		if (!m_fragments.empty())
+		{
+			prefetch_fragment_window(handle, block_index);
+			continue;
+		}
+
+		// Conventional MP4 input retains bounded sequential read-ahead. A new
+		// explicit demux request always supersedes speculative downloads.
 		for (std::size_t read_ahead = 0;
 			read_ahead < m_options.sequential_read_ahead_blocks &&
 			!is_cancelled();
@@ -424,6 +440,126 @@ bool HttpRangeByteSource::discover_resource(void* raw_handle)
 		m_size = static_cast<std::int64_t>(content_length);
 	}
 	return download_block(handle, 0);
+}
+
+void HttpRangeByteSource::discover_fragment_index(void* handle)
+{
+	std::uint64_t last_block = 0;
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		if (m_size <= 0 || m_cache.empty())
+			return;
+		const auto& first = m_cache.begin()->second.bytes;
+		constexpr std::uint8_t mvex[] = {'m', 'v', 'e', 'x'};
+		const bool fragmented = std::search(
+			first.begin(), first.end(),
+			std::begin(mvex), std::end(mvex)) != first.end();
+		if (!fragmented)
+			return;
+		last_block = static_cast<std::uint64_t>(m_size - 1) /
+			m_options.block_size;
+	}
+	if (last_block != 0 && !download_block(handle, last_block))
+		return;
+
+	std::lock_guard<std::mutex> lock(m_mutex);
+	const auto iterator = m_cache.find(last_block);
+	if (iterator == m_cache.end())
+		return;
+	const std::uint64_t tail_offset = last_block * m_options.block_size;
+	m_fragments = parse_fragmented_mp4_index(
+		iterator->second.bytes.data(),
+		iterator->second.bytes.size(),
+		tail_offset,
+		static_cast<std::uint64_t>(m_size));
+	if (!m_fragments.empty())
+	{
+		// Schedule the first fragment after index discovery. The initialization
+		// block is normally already cached; the worker still uses it to select
+		// and fill the first bounded fragment window in the background.
+		if (!m_requested_block.has_value())
+		{
+			m_requested_block =
+				m_fragments.front().offset / m_options.block_size;
+		}
+		m_condition.notify_all();
+	}
+}
+
+std::optional<std::size_t> HttpRangeByteSource::fragment_for_block(
+	std::uint64_t block_index) const
+{
+	const std::uint64_t offset = block_index * m_options.block_size;
+	for (std::size_t index = 0; index < m_fragments.size(); ++index)
+	{
+		const Mp4FragmentRange& fragment = m_fragments[index];
+		if (offset < fragment.offset + fragment.size &&
+			offset + m_options.block_size > fragment.offset)
+			return index;
+	}
+	return std::nullopt;
+}
+
+void HttpRangeByteSource::prefetch_fragment_window(
+	void* handle,
+	std::uint64_t demanded_block)
+{
+	const std::optional<std::size_t> active = fragment_for_block(demanded_block);
+	if (!active.has_value())
+		return;
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_active_fragment = active;
+	}
+
+	std::uint64_t scheduled_bytes = 0;
+	for (std::size_t index = *active; index < m_fragments.size(); ++index)
+	{
+		const Mp4FragmentRange& fragment = m_fragments[index];
+		if (index != *active &&
+			scheduled_bytes + fragment.size > m_options.maximum_cache_bytes)
+			break;
+		scheduled_bytes += fragment.size;
+		const std::uint64_t first_block = fragment.offset /
+			m_options.block_size;
+		const std::uint64_t last_block =
+			(fragment.offset + fragment.size - 1) / m_options.block_size;
+		for (std::uint64_t block = first_block; block <= last_block; ++block)
+		{
+			bool missing = false;
+			{
+				std::lock_guard<std::mutex> lock(m_mutex);
+				if (m_requested_block.has_value())
+					return;
+				missing = m_cache.find(block) == m_cache.end();
+			}
+			if (missing && !download_block(handle, block))
+				return;
+		}
+	}
+}
+
+std::uint64_t HttpRangeByteSource::cached_fragment_count() const
+{
+	std::uint64_t count = 0;
+	for (const Mp4FragmentRange& fragment : m_fragments)
+	{
+		const std::uint64_t first = fragment.offset / m_options.block_size;
+		const std::uint64_t last =
+			(fragment.offset + fragment.size - 1) / m_options.block_size;
+		bool complete = true;
+		for (std::uint64_t block = first; block <= last; ++block)
+		{
+			if (m_cache.find(block) == m_cache.end())
+			{
+				complete = false;
+				break;
+			}
+		}
+		if (complete)
+			++count;
+	}
+	return count;
 }
 
 bool HttpRangeByteSource::download_block(

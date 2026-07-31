@@ -34,6 +34,10 @@ struct OpenVolumetricBufferInfo
 	std::uint64_t downloaded_bytes = 0;
 	std::uint64_t request_count = 0;
 	std::uint64_t recovery_count = 0;
+	bool fragmented = false;
+	std::uint64_t fragment_count = 0;
+	std::int64_t active_fragment = -1;
+	std::uint64_t cached_fragment_count = 0;
 };
 
 /// Engine-facing snapshot of decoded PCM readiness and consumption.

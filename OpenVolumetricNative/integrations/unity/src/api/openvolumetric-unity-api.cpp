@@ -371,6 +371,26 @@ OPENVOLUMETRIC_API int openvolumetric_get_buffer_details(
 	return 1;
 }
 
+OPENVOLUMETRIC_API int openvolumetric_get_fragment_details(
+	int id,
+	int& fragmented,
+	long long& active_fragment,
+	unsigned long long& fragment_count,
+	unsigned long long& cached_fragment_count)
+{
+	InstanceAccess instance(id);
+	if (!instance)
+		return -1;
+	const openvolumetric::OpenVolumetricBufferInfo info =
+		instance->buffer_info();
+	fragmented = info.fragmented ? 1 : 0;
+	active_fragment = static_cast<long long>(info.active_fragment);
+	fragment_count = static_cast<unsigned long long>(info.fragment_count);
+	cached_fragment_count =
+		static_cast<unsigned long long>(info.cached_fragment_count);
+	return 1;
+}
+
 OPENVOLUMETRIC_API int	openvolumetric_get_video_details(int id, int& width, int& height, double& fps, double& duration)
 {
 	LOG("openvolumetric_get_video_details - id: %d", id);

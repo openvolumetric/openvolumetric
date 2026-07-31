@@ -369,6 +369,10 @@ void UOpenVolumetricComponent::Close()
 	DownloadedBytes = 0;
 	HttpRequestCount = 0;
 	NetworkRecoveryCount = 0;
+	bFragmentedInput = false;
+	ActiveFragment = -1;
+	FragmentCount = 0;
+	CachedFragmentCount = 0;
 	InputState = EOpenVolumetricInputState::Opening;
 	bNetworkRebuffering = false;
 	bResumeAfterNetworkRecovery = false;
@@ -392,6 +396,10 @@ void UOpenVolumetricComponent::UpdateBufferDiagnostics()
 	DownloadedBytes = static_cast<int64>(Info.downloaded_bytes);
 	HttpRequestCount = static_cast<int64>(Info.request_count);
 	NetworkRecoveryCount = static_cast<int64>(Info.recovery_count);
+	bFragmentedInput = Info.fragmented;
+	ActiveFragment = static_cast<int64>(Info.active_fragment);
+	FragmentCount = static_cast<int64>(Info.fragment_count);
+	CachedFragmentCount = static_cast<int64>(Info.cached_fragment_count);
 }
 
 bool UOpenVolumetricComponent::HandleNetworkRecovery()
