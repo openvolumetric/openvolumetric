@@ -6,10 +6,9 @@ set(VV_UNITY_API_SOURCES
 )
 
 set(VV_UNITY_INCLUDE_DIRS
-  "${CMAKE_CURRENT_SOURCE_DIR}/include"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/api"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/audio"
-  "${CMAKE_CURRENT_SOURCE_DIR}/third_party/unity_audio_plugin_sdk"
+  "${CMAKE_CURRENT_SOURCE_DIR}/third_party/unity_native_plugin_sdk/include"
 )
 
 if(WIN32)

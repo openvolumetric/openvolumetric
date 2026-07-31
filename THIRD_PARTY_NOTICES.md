@@ -75,15 +75,18 @@ applicable Unity terms for their engine installation and application.
 
 - Product information and terms: <https://unity.com/legal>
 
-The Unity integration vendors a minimal ABI declaration derived from Unity
-Technologies' NativeAudioPlugins SDK `AudioPluginInterface.h` for its native
-DSP audio path.
+The Unity integration vendors the native graphics interface headers and a
+minimal `AudioPluginInterface.h` ABI declaration derived from Unity
+Technologies' native plug-in SDKs. They are kept together under the private
+`unity_native_plugin_sdk` dependency tree and are not part of OpenVolumetric's
+public API.
 
 - Project: <https://github.com/Unity-Technologies/NativeAudioPlugins>
+- Graphics example/API: <https://github.com/Unity-Technologies/NativeRenderingPlugin>
 - License: MIT
 - Copyright: Unity Technologies
 - Vendored license:
-  `OpenVolumetricNative/integrations/unity/third_party/unity_audio_plugin_sdk/LICENSE`
+  `OpenVolumetricNative/integrations/unity/third_party/unity_native_plugin_sdk/LICENSE`
 
 ## Unreal Engine
 
