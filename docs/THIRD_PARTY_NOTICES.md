@@ -90,22 +90,14 @@ public API.
 
 ## Unreal Engine
 
-The Unreal integration builds against Unreal Engine APIs. Unreal Engine is
-not distributed under the OpenVolumetric license. Users and distributors
-remain responsible for complying with the applicable Unreal Engine license
-and marketplace/distribution terms.
+The Unreal integration builds against Unreal Engine APIs. Unreal Engine is not distributed under the OpenVolumetric license. Users and distributors remain responsible for complying with the applicable Unreal Engine license and marketplace/distribution terms.
 
 - Product information and license: <https://www.unrealengine.com/eula>
 
 ## Operating-system and graphics APIs
 
-OpenVolumetric uses platform SDK APIs including Metal, Vulkan, D3D11, Android,
-and operating-system media/framework libraries. Those SDKs and APIs remain
-subject to their respective platform terms.
+OpenVolumetric uses platform SDK APIs including Metal, Vulkan, D3D11, Android, and operating-system media/framework libraries. Those SDKs and APIs remain subject to their respective platform terms.
 
 ## Media codecs and patents
 
-The software copyright licenses listed above do not grant third-party patent
-rights for H.264/AVC, H.265/HEVC, AAC, or other media technologies. Users and
-distributors are responsible for determining whether patent licenses or
-royalties apply to their use and jurisdiction.
+The software copyright licenses listed above do not grant third-party patent rights for H.264/AVC, H.265/HEVC, AAC, or other media technologies. Users and distributors are responsible for determining whether patent licenses or royalties apply to their use and jurisdiction.
