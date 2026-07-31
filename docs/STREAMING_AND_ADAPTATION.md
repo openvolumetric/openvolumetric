@@ -9,11 +9,12 @@ through this boundary. `HttpRangeByteSource` now provides cancellable
 HTTP/HTTPS range requests on a dedicated worker with a bounded block cache.
 New authoring outputs place `moov` before `mdat` and reject packaging if that
 fast-start invariant is absent. Progressive container opening, packet reads,
-and midpoint seeking have been validated over a local HTTP range server.
-Unity and Unreal now expose optional HTTP(S) URL fields plus core-owned
-resource-size, cache, download, and request-count diagnostics. Fragmented MP4,
-segment scheduling, and adaptive representation switching are not yet
-implemented.
+seeking, looping, and pause/resume have been manually validated over HTTP in
+Unity on macOS, Unity on Quest over Wi-Fi, and Unreal Editor on macOS. Unity
+and Unreal expose optional HTTP(S) URL fields plus core-owned resource-size,
+cache, download, request-count, and transport-state diagnostics. Fixed-quality
+fragmented MP4 authoring and whole-resource playback are implemented; independent
+segment scheduling, manifests, and adaptive representation switching are not.
 
 For current progressive-file testing:
 
@@ -303,20 +304,25 @@ the target, preferably at the segment boundary.
 
 ## Authoring and packaging
 
-The authoring pipeline should gain a streaming-package mode:
+The shared Unity and Unreal authoring pipeline now supports a fixed-quality
+fragmented MP4 mode with 1-, 2-, or 4-second durations. It writes one file
+containing an initialization `moov` and aligned `moof`/`mdat` fragments,
+forces closed video GOPs and independent geometry at every boundary, and
+verifies fragment count, box order, access-point alignment, payloads,
+timestamps, and seeking. The remaining adaptive-package work is to:
 
 1. Validate source duration, timestamps, and frame correspondence.
 2. Encode each requested video/geometry quality representation.
-3. Force aligned video and geometry random-access points.
-4. Fragment and segment the interleaved media.
+3. Reuse the implemented aligned video and geometry random-access rules.
+4. Emit independently addressable delivery objects where required.
 5. Write the manifest/descriptor.
 6. Reopen and verify every initialization/media segment.
 7. Verify every representation switch boundary.
 8. Produce a size, bitrate, keyframe, and compatibility report.
 
 The current Desktop Streaming and Quest Streaming presets create one
-fast-start MP4 with bounded texture-video rate and bounded video/geometry
-reference windows. A future adaptive packaging mode should extend this
+fast-start or optionally fragmented MP4 with bounded texture-video rate and
+bounded video/geometry reference windows. A future adaptive packaging mode should extend this
 platform-and-delivery model to define a representation ladder, segment
 duration, aligned switch points, geometry precision, and decoder-capability
 constraints rather than only one output file.
@@ -379,11 +385,15 @@ loss, and temporary outages. Tests should report:
 
 ### Progressive HTTP validation findings
 
-Quest testing on 29 July 2026 confirmed forward/backward range seeking and
-repeated looping. Temporarily disconnecting Wi-Fi did not crash the player,
-but playback did not recover: the engine clock continued advancing, audio
-became unavailable, and incomplete/random-looking visual presentations were
-shown after reconnection.
+Quest testing from 29–31 July 2026 confirmed progressive startup,
+forward/backward range seeking, pause/resume, repeated looping, and sustained
+playback using a streaming-oriented representation. Unreal Editor playback
+over the same progressive HTTP path was also manually validated on macOS.
+Temporarily disconnecting Quest Wi-Fi did not crash the player. Early tests
+failed to recover and could show incomplete visual presentations; after the
+recovery changes, playback recovered in a later test but required a manual
+pause/play action before it became stable. Fully automatic recovery is
+therefore not yet considered validated.
 
 The recovery path now publishes `Rebuffering`, retries transient range
 failures with bounded exponential backoff, retains the last complete
@@ -392,6 +402,21 @@ ready, the engine seeks every stream back to the last presented timestamp and
 resumes only from that synchronized access point. Exhausted retries publish
 `Error`. A failure-injection test covering two HTTP 503 responses passes;
 Quest disconnect/reconnect and retry-exhaustion validation remain outstanding.
+
+### Fixed-quality fragmented MP4 validation findings
+
+Unity testing on 31 July 2026 validated a two-second fragmented output with
+topology compression and audio. The complete Editor workflow succeeded, and
+the resulting file passed local startup, synchronized texture/geometry/audio
+playback, forward and backward seeks across fragment boundaries,
+pause/resume, repeated looping, and non-looping end-to-start restart.
+
+The same file passed progressive HTTP startup, forward/backward seeking,
+pause/resume, and repeated looping without first downloading the complete
+resource. A conventional media player played its video and audio while
+ignoring the `vvge` track. Native structural verification had already covered
+one-, two-, and four-second fragment durations. The same two-second fragmented
+output subsequently passed playback validation in Unreal Editor on macOS.
 
 ## Implementation phases
 

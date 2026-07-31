@@ -42,7 +42,9 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         int encodeSpeed,
         int decodeSpeed,
         int enableTopologyCompression,
-        int maximumGeometryKeyframeInterval);
+        int maximumGeometryKeyframeInterval,
+        int fragmentDurationSeconds,
+        int fragmentFrameInterval);
 
     [DllImport(
         AuthoringLibrary,
@@ -86,6 +88,7 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         public int MaximumVideoBitrateKbps;
         public int VideoBufferSizeKbps;
         public int GeometryKeyframeInterval;
+        public int FragmentDurationSeconds;
     }
 
     [DllImport(
@@ -135,6 +138,13 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         H264
     }
 
+    private enum FragmentDuration
+    {
+        OneSecond = 1,
+        TwoSeconds = 2,
+        FourSeconds = 4
+    }
+
     [SerializeField] private EncodingPreset encodingPreset =
         EncodingPreset.QuestLocal;
     [SerializeField] private string imageDirectory = "";
@@ -156,6 +166,9 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
     [SerializeField] private bool geometryCompression = true;
     [SerializeField] private bool limitGeometryKeyframeInterval;
     [SerializeField] private int maximumGeometryKeyframeInterval = 60;
+    [SerializeField] private bool fragmentedMp4;
+    [SerializeField] private FragmentDuration fragmentDuration =
+        FragmentDuration.TwoSeconds;
     [SerializeField] private bool showAdvanced;
     [SerializeField] private string ffmpegPath = "";
 
@@ -189,6 +202,10 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             PreferencePrefix + "LimitGeometryKeyframeInterval", false);
         maximumGeometryKeyframeInterval = EditorPrefs.GetInt(
             PreferencePrefix + "MaximumGeometryKeyframeInterval", 60);
+        fragmentedMp4 = EditorPrefs.GetBool(
+            PreferencePrefix + "FragmentedMp4", false);
+        fragmentDuration = (FragmentDuration)EditorPrefs.GetInt(
+            PreferencePrefix + "FragmentDuration", 2);
     }
 
     /// <summary>Persists current paths before the window is destroyed.</summary>
@@ -231,6 +248,19 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
                     "Source Frame Rate",
                     "Controls image-sequence encoding. Geometry timing is read back from the encoded video samples."),
                 frameRate);
+            fragmentedMp4 = EditorGUILayout.Toggle(
+                new GUIContent(
+                    "Fragmented MP4",
+                    "Write an initialization section followed by independently addressable MP4 fragments with aligned video and geometry keyframes."),
+                fragmentedMp4);
+            using (new EditorGUI.DisabledScope(!fragmentedMp4))
+            {
+                fragmentDuration = (FragmentDuration)EditorGUILayout.EnumPopup(
+                    new GUIContent(
+                        "Fragment Duration",
+                        "Select 1, 2, or 4 second aligned fragments."),
+                    fragmentDuration);
+            }
             geometryCompression = EditorGUILayout.Toggle(
                 new GUIContent(
                     "Geometry Compression",
@@ -505,6 +535,10 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
                         ? (settings.GeometryKeyframeInterval > 0
                             ? settings.GeometryKeyframeInterval
                             : maximumGeometryKeyframeInterval)
+                        : 0,
+                    fragmentedMp4 ? (int)fragmentDuration : 0,
+                    fragmentedMp4
+                        ? FragmentFrameInterval(frameRate, fragmentDuration)
                         : 0) != 1)
                 {
                     string error = Marshal.PtrToStringAnsi(GetAuthoringError());
@@ -568,6 +602,8 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             imageDirectory,
             "%0" + first.FrameText.Length + "d" + first.Extension);
         NativeEncodingSettings nativeSettings = settings.ToNative();
+        nativeSettings.FragmentDurationSeconds =
+            fragmentedMp4 ? (int)fragmentDuration : 0;
         IntPtr result = BuildNativeFFmpegArguments(
             imagePattern,
             audioFile ?? String.Empty,
@@ -599,6 +635,10 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         if (frameRate <= 0.0f)
         {
             throw new InvalidOperationException("Frame rate must be greater than zero.");
+        }
+        if (fragmentedMp4)
+        {
+            FragmentFrameInterval(frameRate, fragmentDuration);
         }
         if (geometryCompression &&
             limitGeometryKeyframeInterval &&
@@ -644,6 +684,30 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
                 "Image and OBJ frame numbers must match exactly.");
         }
         return new EncodingInputs(images, geometry);
+    }
+
+    /// <summary>
+    /// Converts the selected duration to an exact source-frame boundary.
+    /// Fragmented authoring rejects fractional frame counts so every video
+    /// and geometry access point shares an unambiguous frame index.
+    /// </summary>
+    private static int FragmentFrameInterval(
+        double sourceFrameRate,
+        FragmentDuration duration)
+    {
+        if(!Enum.IsDefined(typeof(FragmentDuration), duration))
+        {
+            throw new InvalidOperationException(
+                "Fragment duration must be 1, 2, or 4 seconds.");
+        }
+        double exact = sourceFrameRate * (int)duration;
+        int frames = (int)Math.Round(exact);
+        if(frames <= 0 || Math.Abs(exact - frames) > 0.000001)
+        {
+            throw new InvalidOperationException(
+                "Fragment duration must contain an integral number of source frames.");
+        }
+        return frames;
     }
 
     /// <summary>
@@ -903,6 +967,10 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         EditorPrefs.SetInt(
             PreferencePrefix + "MaximumGeometryKeyframeInterval",
             maximumGeometryKeyframeInterval);
+        EditorPrefs.SetBool(
+            PreferencePrefix + "FragmentedMp4", fragmentedMp4);
+        EditorPrefs.SetInt(
+            PreferencePrefix + "FragmentDuration", (int)fragmentDuration);
     }
 
     /// <summary>Maps the selected platform preset to concrete codec settings.</summary>

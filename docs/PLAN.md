@@ -1,6 +1,6 @@
 # Open Volumetric Development Plan
 
-Last updated: 29 July 2026
+Last updated: 31 July 2026
 
 ## Current objective
 
@@ -364,13 +364,13 @@ threading, recovery, authoring, and validation design is recorded in
 - [x] Connect FFmpeg custom I/O to the network byte source.
 - [x] Validate progressive startup and seeking without downloading the whole
       asset.
-- [ ] Author initialization segments and aligned fragmented-MP4 media
+- [x] Author initialization segments and aligned fragmented-MP4 media
       segments for a single fixed-quality representation.
 - [ ] Add a bounded segment scheduler/cache with explicit opening, buffering,
       playing, rebuffering, ended, and error states.
-- [ ] Ensure video and geometry random-access points align with every
+- [x] Ensure video and geometry random-access points align with every
       independently addressable segment.
-- [ ] Align topology keyframes with segment boundaries when temporal geometry
+- [x] Align topology keyframes with segment boundaries when temporal geometry
       coding is used.
 - [x] Expose URL input and buffer diagnostics through the core API, Unity, and
       Unreal without placing transport logic in either engine adapter.
@@ -424,7 +424,7 @@ threading, recovery, authoring, and validation design is recorded in
 ## Test matrix
 
 - [x] MP4 with HEVC, AAC, and geometry.
-- [ ] MP4 with HEVC and geometry but no audio.
+- [x] MP4 with HEVC and geometry but no audio.
 - [ ] First, middle, and final geometry samples decode correctly.
 - [ ] Payload corruption produces a controlled error.
 - [ ] Missing geometry samples follow documented behavior.
@@ -445,8 +445,10 @@ threading, recovery, authoring, and validation design is recorded in
 - [ ] Windowed same-topology geometry seeks from every keyframe boundary.
 - [ ] Whole-sequence topology reuse survives long playback and looping.
 - [ ] Corrupt dependent geometry recovers at the next keyframe.
-- [ ] Progressive HTTP startup and byte-range seeking.
-- [ ] Fragmented MP4 playback across every segment boundary.
+- [x] Progressive HTTP startup and byte-range seeking in Unity on macOS and
+      Quest, and in Unreal Editor on macOS.
+- [x] Fixed-quality fragmented MP4 playback across segment boundaries in
+      Unity, locally and over progressive HTTP.
 - [ ] Adaptive switching under controlled bandwidth, latency, and outages.
 - [ ] Texture and geometry remain compatible and synchronized after every
       representation change.

@@ -1,5 +1,6 @@
 #include "VolumetricVideoPacker.h"
 
+#include "AuthoringWorkflow.h"
 #include "DracoMeshEncoder.h"
 #include "DracoPointCloudEncoder.h"
 #include "TopologyAnalyzer.h"
@@ -59,6 +60,7 @@ struct VideoSampleTiming
 {
 	std::int64_t pts;
 	std::int64_t duration;
+	bool keyframe = false;
 };
 
 /// Converts one FFmpeg error code into readable text.
@@ -308,6 +310,7 @@ bool prepare_geometry_packets(
 			*active_keyframe_input, active_keyframe_obj);
 	};
 
+	std::size_t frame_index = 0;
 	for (GeometryInput& input : geometry)
 	{
 		const fs::path obj_path =
@@ -335,6 +338,8 @@ bool prepare_geometry_packets(
 			!options.enable_topology_compression ||
 			!has_previous ||
 			!topology_matches(previous, current) ||
+			(options.fragment_frame_interval > 0 &&
+				frame_index % options.fragment_frame_interval == 0) ||
 			(options.maximum_geometry_keyframe_interval > 0 &&
 				active_window_length >=
 					options.maximum_geometry_keyframe_interval);
@@ -404,6 +409,7 @@ bool prepare_geometry_packets(
 		input.packet.keyframe_frame_number = active_keyframe;
 		previous = std::move(current);
 		has_previous = true;
+		++frame_index;
 	}
 	if (!finish_active_keyframe())
 		return false;
@@ -464,7 +470,10 @@ bool collect_video_timing(
 				av_packet_free(&packet);
 				return false;
 			}
-			timing.push_back({pts, packet->duration});
+			timing.push_back({
+				pts,
+				packet->duration,
+				(packet->flags & AV_PKT_FLAG_KEY) != 0});
 		}
 		av_packet_unref(packet);
 	}
@@ -683,10 +692,23 @@ bool mux_file(
 			output_open = true;
 		}
 
-		// The MP4 muxer normally writes its movie metadata after all samples.
-		// Fast-start performs a final relocation pass in av_write_trailer() so
-		// HTTP clients can parse track tables before downloading media data.
-		av_dict_set(&mux_options, "movflags", "+faststart", 0);
+		if (options.fragment_duration_seconds > 0)
+		{
+			// Video and geometry keyframes have already been aligned to the
+			// selected duration. Fragment on those video access points and write
+			// an initialization moov before the first moof/mdat pair.
+			av_dict_set(
+				&mux_options,
+				"movflags",
+				"+frag_keyframe+empty_moov+default_base_moof+omit_tfhd_offset",
+				0);
+		}
+		else
+		{
+			// Conventional output relocates movie metadata before media data so
+			// HTTP range clients can start without downloading the whole file.
+			av_dict_set(&mux_options, "movflags", "+faststart", 0);
+		}
 		result = avformat_write_header(output, &mux_options);
 		av_dict_free(&mux_options);
 		if (result < 0)
@@ -809,9 +831,14 @@ std::uint32_t read_be32(const std::uint8_t* value)
 		static_cast<std::uint32_t>(value[3]);
 }
 
-/// Confirms that MP4 movie metadata precedes the first media-data box.
-bool verify_fast_start(const fs::path& path)
+/// Confirms initialization metadata and, when requested, fragment structure.
+bool verify_mp4_layout(
+	const fs::path& path,
+	bool fragmented,
+	std::size_t expected_fragments,
+	std::size_t& fragment_count)
 {
+	fragment_count = 0;
 	std::ifstream file(path, std::ios::binary | std::ios::ate);
 	if (!file)
 	{
@@ -829,6 +856,8 @@ bool verify_fast_start(const fs::path& path)
 	std::uint64_t offset = 0;
 	std::uint64_t moov_offset = std::numeric_limits<std::uint64_t>::max();
 	std::uint64_t mdat_offset = std::numeric_limits<std::uint64_t>::max();
+	std::uint64_t first_moof_offset = std::numeric_limits<std::uint64_t>::max();
+	bool fragment_waiting_for_media = false;
 
 	while (offset + 8 <= file_size)
 	{
@@ -871,10 +900,27 @@ bool verify_fast_start(const fs::path& path)
 			moov_offset = offset;
 		}
 		else if (header[4] == 'm' && header[5] == 'd' &&
-			header[6] == 'a' && header[7] == 't' &&
-			mdat_offset == std::numeric_limits<std::uint64_t>::max())
+			header[6] == 'a' && header[7] == 't')
 		{
-			mdat_offset = offset;
+			if (mdat_offset == std::numeric_limits<std::uint64_t>::max())
+				mdat_offset = offset;
+			fragment_waiting_for_media = false;
+		}
+		else if (header[4] == 'm' && header[5] == 'o' &&
+			header[6] == 'o' && header[7] == 'f')
+		{
+			if (fragment_waiting_for_media)
+			{
+				std::cerr << "MP4 fragment has no following media-data box\n";
+				return false;
+			}
+			if (first_moof_offset ==
+				std::numeric_limits<std::uint64_t>::max())
+			{
+				first_moof_offset = offset;
+			}
+			++fragment_count;
+			fragment_waiting_for_media = true;
 		}
 		offset += box_size;
 	}
@@ -888,6 +934,31 @@ bool verify_fast_start(const fs::path& path)
 	if (moov_offset > mdat_offset)
 	{
 		std::cerr << "MP4 metadata follows media data; fast-start failed\n";
+		return false;
+	}
+	if (fragment_waiting_for_media)
+	{
+		std::cerr << "Final MP4 fragment has no media-data box\n";
+		return false;
+	}
+	if (fragmented)
+	{
+		if (first_moof_offset == std::numeric_limits<std::uint64_t>::max() ||
+			moov_offset > first_moof_offset ||
+			fragment_count != expected_fragments)
+		{
+			std::cerr << "Fragmented MP4 layout mismatch: expected "
+				<< expected_fragments << " fragments, found "
+				<< fragment_count << '\n';
+			return false;
+		}
+		std::cout << "Verified fragmented MP4 initialization and "
+			<< fragment_count << " media fragments\n";
+		return true;
+	}
+	if (fragment_count != 0)
+	{
+		std::cerr << "Conventional MP4 unexpectedly contains fragments\n";
 		return false;
 	}
 
@@ -1008,7 +1079,8 @@ bool replace_geometry_sample_entry(const fs::path& path)
 /// Reopens the output and verifies tracks, timestamps, payloads, and seeking.
 bool verify_file(
 	const fs::path& path,
-	const std::vector<GeometryInput>& geometry)
+	const std::vector<GeometryInput>& geometry,
+	std::uint32_t fragment_frame_interval)
 {
 	AVFormatContext* input = nullptr;
 	AVPacket* packet = nullptr;
@@ -1067,6 +1139,21 @@ bool verify_file(
 		}
 		const AVRational video_time_base =
 			input->streams[video_stream_index]->time_base;
+		if (fragment_frame_interval > 0)
+		{
+			for (std::size_t index = 0;
+				index < video_timing.size();
+				index += fragment_frame_interval)
+			{
+				if (!video_timing[index].keyframe ||
+					geometry[index].packet.coding_mode !=
+						openvolumetric::GeometryCodingMode::IndependentMesh)
+				{
+					std::cerr << "Video/geometry fragment access points are not aligned\n";
+					goto cleanup;
+				}
+			}
+		}
 
 		packet = av_packet_alloc();
 		if (packet == nullptr)
@@ -1258,6 +1345,14 @@ bool pack_openvolumetric(
 		std::cerr << "Media, geometry, and output paths are required\n";
 		return false;
 	}
+	if (!is_supported_fragment_duration(
+			static_cast<int>(options.fragment_duration_seconds)) ||
+		(options.fragment_duration_seconds > 0 &&
+			options.fragment_frame_interval == 0))
+	{
+		std::cerr << "Fragment duration must be disabled or set to 1, 2, or 4 seconds\n";
+		return false;
+	}
 
 	if (!fs::is_regular_file(options.media_path))
 	{
@@ -1282,6 +1377,22 @@ bool pack_openvolumetric(
 	{
 		return false;
 	}
+	if (options.fragment_frame_interval > 0)
+	{
+		for (std::size_t index = 0;
+			index < geometry.size();
+			index += options.fragment_frame_interval)
+		{
+			if (geometry[index].packet.coding_mode !=
+					openvolumetric::GeometryCodingMode::IndependentMesh ||
+				(geometry[index].packet.flags &
+					openvolumetric::kGeometryPacketKeyframe) == 0)
+			{
+				std::cerr << "Fragment boundary geometry is not independently decodable\n";
+				return false;
+			}
+		}
+	}
 
 	fs::path temporary_path = options.output_path;
 	temporary_path += ".authoring-tmp.mp4";
@@ -1290,14 +1401,28 @@ bool pack_openvolumetric(
 
 	std::cout << "Packing " << geometry.size()
 		<< " geometry samples into MP4\n";
+	const std::size_t expected_fragments =
+		options.fragment_frame_interval > 0
+			? (geometry.size() + options.fragment_frame_interval - 1) /
+				options.fragment_frame_interval
+			: 0;
+	std::size_t fragment_count = 0;
 	if (!mux_file(options, geometry, temporary_path) ||
 		!replace_geometry_sample_entry(temporary_path) ||
-		!verify_fast_start(temporary_path) ||
-		!verify_file(temporary_path, geometry))
+		!verify_mp4_layout(
+			temporary_path,
+			options.fragment_duration_seconds > 0,
+			expected_fragments,
+			fragment_count) ||
+		!verify_file(
+			temporary_path,
+			geometry,
+			options.fragment_frame_interval))
 	{
 		fs::remove(temporary_path, ignored);
 		return false;
 	}
+	result_statistics.fragment_count = fragment_count;
 
 	fs::rename(temporary_path, options.output_path);
 	if (statistics != nullptr)

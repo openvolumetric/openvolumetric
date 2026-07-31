@@ -119,6 +119,59 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!1 &160012002
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 160012004}
+  - component: {fileID: 160012003}
+  m_Layer: 0
+  m_Name: OpenVolumetric (3)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &160012003
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 160012002}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0f19b987d80146544bbfbba8a5206081, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::OpenVolumetric.OpenVolumetric
+  videoFilename: 
+  videoUrl: http://192.168.0.34:18765/volumetric_video_quest_streaming_fragmented.mp4
+  luminanceCorrection: 0
+  blueProjectionCorrection: 0
+  redProjectionCorrection: 0
+  enableLoop: 1
+  enableScriptedStart: 0
+  enableDeveloperOverlay: 1
+  debug: 0
+--- !u!4 &160012004
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 160012002}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &924422021
 GameObject:
   m_ObjectHideFlags: 0
@@ -135,7 +188,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &924422022
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -146,9 +199,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 0f19b987d80146544bbfbba8a5206081, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::OpenVolumetric.OpenVolumetric
-  videoFilename:
+  videoFilename: 
   videoUrl: http://192.168.0.34:18765/volumetric_video_quest_streaming.mp4
   luminanceCorrection: 0
   blueProjectionCorrection: 0
@@ -531,11 +584,66 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &2024382030
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2024382032}
+  - component: {fileID: 2024382031}
+  m_Layer: 0
+  m_Name: OpenVolumetric (2)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 0
+--- !u!114 &2024382031
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2024382030}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0f19b987d80146544bbfbba8a5206081, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::OpenVolumetric.OpenVolumetric
+  videoFilename: volumetric_video_quest_streaming_fragmented.mp4
+  videoUrl: 
+  luminanceCorrection: 0
+  blueProjectionCorrection: 0
+  redProjectionCorrection: 0
+  enableLoop: 1
+  enableScriptedStart: 0
+  enableDeveloperOverlay: 1
+  debug: 0
+--- !u!4 &2024382032
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2024382030}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
   - {fileID: 1149713620}
   - {fileID: 1772797575}
+  - {fileID: 2024382032}
   - {fileID: 924422023}
+  - {fileID: 160012004}
   - {fileID: 1347143973}

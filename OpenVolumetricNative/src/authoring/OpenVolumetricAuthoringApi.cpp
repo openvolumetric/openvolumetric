@@ -41,6 +41,8 @@ int openvolumetric_authoring_get_preset(
 	output->video_buffer_size_kbps = settings.video_buffer_size_kbps;
 	output->geometry_keyframe_interval =
 		settings.geometry_keyframe_interval;
+	output->fragment_duration_seconds =
+		settings.fragment_duration_seconds;
 	return 1;
 }
 
@@ -110,6 +112,8 @@ const char* openvolumetric_authoring_build_ffmpeg_arguments(
 		settings->video_buffer_size_kbps;
 	request.settings.geometry_keyframe_interval =
 		settings->geometry_keyframe_interval;
+	request.settings.fragment_duration_seconds =
+		settings->fragment_duration_seconds;
 
 	std::vector<std::string> arguments;
 	if (!openvolumetric::authoring::build_ffmpeg_arguments(
@@ -191,7 +195,9 @@ int openvolumetric_authoring_pack(
 	int encode_speed,
 	int decode_speed,
 	int enable_topology_compression,
-	int maximum_geometry_keyframe_interval)
+	int maximum_geometry_keyframe_interval,
+	int fragment_duration_seconds,
+	int fragment_frame_interval)
 {
 	last_error.clear();
 	last_report.clear();
@@ -203,10 +209,13 @@ int openvolumetric_authoring_pack(
 		last_error = "Media, geometry, and output paths are required.";
 		return -1;
 	}
-	if (maximum_geometry_keyframe_interval < 0)
+	if (maximum_geometry_keyframe_interval < 0 ||
+		fragment_frame_interval < 0 ||
+		!openvolumetric::authoring::is_supported_fragment_duration(
+			fragment_duration_seconds) ||
+		(fragment_duration_seconds > 0 && fragment_frame_interval == 0))
 	{
-		last_error =
-			"Maximum geometry keyframe interval cannot be negative.";
+		last_error = "Geometry keyframe or fragment settings are invalid.";
 		return -1;
 	}
 
@@ -222,6 +231,10 @@ int openvolumetric_authoring_pack(
 		options.maximum_geometry_keyframe_interval =
 			static_cast<std::uint32_t>(
 				maximum_geometry_keyframe_interval);
+		options.fragment_duration_seconds =
+			static_cast<std::uint32_t>(fragment_duration_seconds);
+		options.fragment_frame_interval =
+			static_cast<std::uint32_t>(fragment_frame_interval);
 		options.draco_options.position_quantization =
 			position_quantization;
 		options.draco_options.normal_quantization =
@@ -259,6 +272,12 @@ int openvolumetric_authoring_pack(
 			<< statistics.independent_payload_bytes << " bytes; "
 			<< std::fixed << std::setprecision(2)
 			<< reduction << "% payload reduction.";
+		if (statistics.fragment_count > 0)
+		{
+			report << "\nFragmented MP4: "
+				<< statistics.fragment_count << " fragments at "
+				<< fragment_duration_seconds << " seconds.";
+		}
 		last_report = report.str();
 		return 1;
 	}

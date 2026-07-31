@@ -29,6 +29,7 @@ struct OpenVolumetricAuthoringSettings
 	int maximum_video_bitrate_kbps;
 	int video_buffer_size_kbps;
 	int geometry_keyframe_interval;
+	int fragment_duration_seconds;
 };
 
 /// Writes one shared preset into output. Presets are Desktop Local (0),
@@ -80,7 +81,9 @@ OPENVOLUMETRIC_AUTHORING_API int openvolumetric_authoring_pack(
 	int encode_speed,
 	int decode_speed,
 	int enable_topology_compression,
-	int maximum_geometry_keyframe_interval);
+	int maximum_geometry_keyframe_interval,
+	int fragment_duration_seconds,
+	int fragment_frame_interval);
 
 /// Returns a short description of the most recent failure on this thread.
 OPENVOLUMETRIC_AUTHORING_API const char* openvolumetric_authoring_last_error();

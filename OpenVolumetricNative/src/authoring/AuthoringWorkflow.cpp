@@ -5,6 +5,7 @@
 #include <cmath>
 #include <exception>
 #include <iomanip>
+#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
@@ -137,6 +138,31 @@ EncodingSettings preset_settings(PlatformPreset preset)
 	}
 }
 
+bool is_supported_fragment_duration(int value)
+{
+	return value == 0 || value == 1 || value == 2 || value == 4;
+}
+
+int fragment_frame_interval(double frame_rate, int duration_seconds)
+{
+	if (duration_seconds == 0)
+		return 0;
+	if (!is_supported_fragment_duration(duration_seconds) ||
+		!std::isfinite(frame_rate) || frame_rate <= 0.0)
+	{
+		return 0;
+	}
+	const double exact = frame_rate * duration_seconds;
+	const long long rounded = std::llround(exact);
+	if (rounded <= 0 ||
+		std::abs(exact - static_cast<double>(rounded)) > 1e-6 ||
+		rounded > std::numeric_limits<int>::max())
+	{
+		return 0;
+	}
+	return static_cast<int>(rounded);
+}
+
 bool validate_source_sequences(
 	const std::filesystem::path& image_directory,
 	const std::filesystem::path& geometry_directory,
@@ -200,13 +226,17 @@ bool build_ffmpeg_arguments(
 		return false;
 	}
 	const EncodingSettings& settings = request.settings;
+	const int fragment_frames = fragment_frame_interval(
+		request.frame_rate, settings.fragment_duration_seconds);
 	if (settings.crf < 0 ||
 		settings.video_keyframe_interval <= 0 ||
 		settings.reference_frames <= 0 ||
 		settings.maximum_video_bitrate_kbps < 0 ||
 		settings.video_buffer_size_kbps < 0 ||
 		((settings.maximum_video_bitrate_kbps == 0) !=
-			(settings.video_buffer_size_kbps == 0)))
+			(settings.video_buffer_size_kbps == 0)) ||
+		!is_supported_fragment_duration(settings.fragment_duration_seconds) ||
+		(settings.fragment_duration_seconds > 0 && fragment_frames == 0))
 	{
 		error = "Codec, bitrate, or keyframe settings are invalid.";
 		return false;
@@ -236,9 +266,15 @@ bool build_ffmpeg_arguments(
 			"-bufsize",
 			std::to_string(settings.video_buffer_size_kbps) + "k"});
 	}
+	const int keyframe_interval = fragment_frames > 0
+		? fragment_frames
+		: settings.video_keyframe_interval;
 	const std::string codec_parameters =
-		"keyint=" + std::to_string(settings.video_keyframe_interval) +
-		":min-keyint=1:bframes=0:ref=" +
+		"keyint=" + std::to_string(keyframe_interval) +
+		":min-keyint=" + std::to_string(
+			fragment_frames > 0 ? keyframe_interval : 1) +
+		(fragment_frames > 0 ? ":scenecut=0" : "") +
+		":bframes=0:ref=" +
 		std::to_string(settings.reference_frames) +
 		(settings.codec == VideoCodec::HEVC && settings.disable_sao
 			? ":no-sao=1"

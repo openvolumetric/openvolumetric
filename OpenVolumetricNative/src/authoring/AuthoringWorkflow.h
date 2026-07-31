@@ -37,7 +37,17 @@ struct EncodingSettings
 	int maximum_video_bitrate_kbps = 0;
 	int video_buffer_size_kbps = 0;
 	int geometry_keyframe_interval = 0;
+	/// Zero writes a conventional fast-start MP4. Supported non-zero values
+	/// write aligned fragmented MP4 with this fragment duration in seconds.
+	int fragment_duration_seconds = 0;
 };
+
+/// Returns whether value selects one of the supported fragment durations.
+bool is_supported_fragment_duration(int value);
+
+/// Converts an enabled fragment duration to an integral frame interval.
+/// Returns zero for conventional MP4 or when rate/duration is invalid.
+int fragment_frame_interval(double frame_rate, int duration_seconds);
 
 /// Result of validating matching numbered image and OBJ sequences.
 struct SourceSequenceInfo

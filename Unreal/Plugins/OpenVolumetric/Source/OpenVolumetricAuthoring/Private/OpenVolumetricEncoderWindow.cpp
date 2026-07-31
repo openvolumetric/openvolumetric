@@ -314,9 +314,11 @@ public:
 	TSharedPtr<SEditableTextBox> FFmpeg;
 	TSharedPtr<SEditableTextBox> FrameRate;
 	TSharedPtr<SEditableTextBox> MaximumGeometryFrames;
+	TSharedPtr<SEditableTextBox> FragmentDuration;
 	bool bOverwrite = false;
 	bool bGeometryCompression = true;
 	bool bLimitGeometryKeyframeInterval = false;
+	bool bFragmentedMp4 = false;
 
 	FImpl()
 	{
@@ -357,6 +359,13 @@ public:
 			GEditorPerProjectIni);
 		MaximumGeometryFrames->SetText(FText::FromString(LoadValue(
 			TEXT("MaximumGeometryKeyframeInterval"), TEXT("60"))));
+		GConfig->GetBool(
+			SettingsSection,
+			TEXT("FragmentedMp4"),
+			bFragmentedMp4,
+			GEditorPerProjectIni);
+		FragmentDuration->SetText(FText::FromString(LoadValue(
+			TEXT("FragmentDurationSeconds"), TEXT("2"))));
 	}
 
 	void Save() const
@@ -390,6 +399,16 @@ public:
 			SettingsSection,
 			TEXT("MaximumGeometryKeyframeInterval"),
 			*MaximumGeometryFrames->GetText().ToString(),
+			GEditorPerProjectIni);
+		GConfig->SetBool(
+			SettingsSection,
+			TEXT("FragmentedMp4"),
+			bFragmentedMp4,
+			GEditorPerProjectIni);
+		GConfig->SetString(
+			SettingsSection,
+			TEXT("FragmentDurationSeconds"),
+			*FragmentDuration->GetText().ToString(),
 			GEditorPerProjectIni);
 		GConfig->Flush(false, GEditorPerProjectIni);
 	}
@@ -502,6 +521,29 @@ public:
 		const FString FFmpegPath = FFmpeg->GetText().ToString();
 		const double FPS =
 			FCString::Atod(*FrameRate->GetText().ToString());
+		const int32 FragmentDurationSeconds = bFragmentedMp4
+			? FCString::Atoi(*FragmentDuration->GetText().ToString())
+			: 0;
+		const double ExactFragmentFrames =
+			FPS * static_cast<double>(FragmentDurationSeconds);
+		const int32 FragmentFrameInterval =
+			FMath::RoundToInt(ExactFragmentFrames);
+		if (bFragmentedMp4 &&
+			((FragmentDurationSeconds != 1 &&
+			  FragmentDurationSeconds != 2 &&
+			  FragmentDurationSeconds != 4) ||
+			 FragmentFrameInterval <= 0 ||
+			 !FMath::IsNearlyEqual(
+				 ExactFragmentFrames,
+				 static_cast<double>(FragmentFrameInterval),
+				 1.0e-6)))
+		{
+			const FString Message = TEXT(
+				"Fragment duration must be 1, 2, or 4 seconds and contain an integral number of source frames.");
+			State->SetStatus(Message);
+			State->Append(TEXT("Cannot encode: ") + Message);
+			return;
+		}
 		const FEncodingSettings Settings = GetPreset(Preset);
 		const bool bReplace = bOverwrite;
 		const bool bCompressGeometry = bGeometryCompression;
@@ -538,7 +580,8 @@ public:
 		Async(EAsyncExecution::ThreadPool,
 			[Job, Inputs = MoveTemp(Inputs), ImageDirectory, AudioFile,
 			 OutputFile, FFmpegPath, FPS, Settings, bReplace,
-			 bCompressGeometry, MaximumGeometryKeyframeInterval]
+			 bCompressGeometry, MaximumGeometryKeyframeInterval,
+			 FragmentDurationSeconds, FragmentFrameInterval]
 			{
 				const FString TempDirectory =
 					FPaths::ProjectIntermediateDir() /
@@ -630,6 +673,8 @@ public:
 						Settings.VideoBufferSizeKbps;
 					Request.settings.geometry_keyframe_interval =
 						Settings.GeometryKeyframeInterval;
+					Request.settings.fragment_duration_seconds =
+						FragmentDurationSeconds;
 					std::vector<std::string> NativeArguments;
 					std::string ArgumentError;
 					if (!openvolumetric::authoring::build_ffmpeg_arguments(
@@ -689,6 +734,11 @@ public:
 					Options.maximum_geometry_keyframe_interval =
 						static_cast<std::uint32_t>(
 							MaximumGeometryKeyframeInterval);
+					Options.fragment_duration_seconds =
+						static_cast<std::uint32_t>(
+							FragmentDurationSeconds);
+					Options.fragment_frame_interval =
+						static_cast<std::uint32_t>(FragmentFrameInterval);
 					Options.draco_options.position_quantization =
 						Settings.PositionBits;
 					Options.draco_options.normal_quantization =
@@ -735,6 +785,14 @@ public:
 							static_cast<unsigned long long>(
 								Statistics.independent_payload_bytes),
 							Reduction));
+						if (Statistics.fragment_count > 0)
+						{
+							Job->Append(FString::Printf(
+								TEXT("Fragmented MP4: %llu fragments at %d seconds."),
+								static_cast<unsigned long long>(
+									Statistics.fragment_count),
+								FragmentDurationSeconds));
+						}
 					}
 				}
 
@@ -937,6 +995,55 @@ void SOpenVolumetricEncoderWindow::Construct(const FArguments&)
 							TEXT("Choose FFmpeg"),
 							TEXT("All files|*.*"));
 					})
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 3)
+			[
+				SNew(SCheckBox)
+					.IsChecked_Lambda(
+						[this]
+						{
+							return Impl->bFragmentedMp4
+								? ECheckBoxState::Checked
+								: ECheckBoxState::Unchecked;
+						})
+					.ToolTipText(NSLOCTEXT(
+						"OpenVolumetricAuthoring",
+						"FragmentedMp4Tooltip",
+						"Write aligned independently addressable MP4 fragments with full video and geometry access points."))
+					.OnCheckStateChanged_Lambda(
+						[this](ECheckBoxState State)
+						{
+							Impl->bFragmentedMp4 =
+								State == ECheckBoxState::Checked;
+						})
+				[
+					SNew(STextBlock)
+						.Text(NSLOCTEXT(
+							"OpenVolumetricAuthoring",
+							"FragmentedMp4",
+							"Fragmented MP4"))
+				]
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[
+					SNew(SBox).WidthOverride(180)
+					[
+						SNew(STextBlock).Text(NSLOCTEXT(
+							"OpenVolumetricAuthoring",
+							"FragmentDuration",
+							"Fragment Duration (1/2/4 s)"))
+					]
+				]
+				+ SHorizontalBox::Slot().FillWidth(1)
+				[
+					SAssignNew(Impl->FragmentDuration, SEditableTextBox)
+						.Text(FText::FromString(TEXT("2")))
+						.IsEnabled_Lambda(
+							[this] { return Impl->bFragmentedMp4; })
+				]
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 3)
 			[

@@ -1,5 +1,10 @@
 # OpenVolumetric: Technical Overview
 
+**Implementation snapshot:** 31 July 2026. Statements marked as implemented
+describe the repository at this date. Sections explicitly labelled proposed
+or future work describe the research and engineering roadmap and should not
+be reported as evaluated functionality in a paper.
+
 ## 1. System purpose
 
 OpenVolumetric is an open-source volumetric-video authoring and playback
@@ -22,13 +27,37 @@ The current implementation consists of:
 
 The Unity integration has been exercised on macOS using Metal and on Meta
 Quest using Android/Vulkan. The Unreal integration has been exercised in
-Unreal Editor 5.8 on macOS with synchronized geometry, texture, and audio. A
+Unreal Editor 5.8 on macOS with synchronized geometry, texture, and audio.
+Progressive HTTP playback, seeking, and looping have been exercised through
+the common core from both Unity/Quest and Unreal/macOS. A
 Windows D3D11 implementation exists but still requires clean-build validation
 on the current renamed repository. Unreal packaged builds and a Nuke
 integration remain planned.
 
 The main source-level boundaries are documented in `OpenVolumetricNative/src/core`
 and `docs/ENGINE_INTEGRATION.md`.
+
+### 1.1 Evidence status for paper use
+
+| Capability | Implementation status | Evidence available at this snapshot |
+| --- | --- | --- |
+| Unified MP4 with texture, geometry, and optional audio | Implemented | Authoring round-trip verification and manual playback |
+| Timestamp-matched geometry and texture presentation | Implemented | Manual Unity and Unreal playback, loop, and seek tests |
+| Topology-reused geometry with bounded keyframe windows | Implemented | Functional authoring/playback tests; broad quantitative evaluation pending |
+| Unity macOS and Quest playback | Implemented | Manual local and progressive HTTP tests; sustained Quest 2 local test |
+| Unreal Editor playback on macOS | Implemented | Manual local and progressive HTTP tests |
+| Progressive HTTP byte-range delivery | Implemented | Manual startup, seek, loop, pause/resume, and playback tests |
+| Automatic recovery from network outages | Partially implemented | Recovery observed, but not yet consistently automatic on Quest |
+| Fixed-quality fragmented MP4 authoring | Implemented | Native verification for 1-, 2-, and 4-second fragments; two-second Unity round trip |
+| Fixed-quality fragmented MP4 playback | Implemented through the existing byte source | Unity local/progressive HTTP and Unreal Editor tests |
+| Independent segment scheduling and adaptive switching | Proposed | Design and evaluation plan only |
+| Windows and Unreal packaged deployment | Partially implemented | Current clean-build/runtime validation pending |
+| Nuke integration | Proposed | Architectural feasibility only |
+
+The distinction between functional validation and controlled experimental
+evidence is important. Manual tests establish feasibility; they do not by
+themselves establish compression gains, scalability, robustness, or
+performance generality.
 
 ## 2. Architectural overview
 
@@ -302,6 +331,12 @@ authoring C ABI, while the Unreal Editor module links the same C++ authoring
 core. The engine windows retain only host-specific file pickers, progress
 reporting, process launching, and UI state.
 
+Both interfaces also provide optional fixed-quality fragmented MP4 authoring
+with 1-, 2-, or 4-second durations. This option overrides the video GOP length
+with the corresponding integral frame count, disables scene-cut keyframes,
+and forces an independent geometry packet at every matching boundary.
+Conventional fast-start output remains the default.
+
 ### 4.5 Packaging
 
 Once the media MP4 and Draco sequence exist, `OpenVolumetricAuthoringCore`:
@@ -313,7 +348,8 @@ Once the media MP4 and Draco sequence exist, `OpenVolumetricAuthoringCore`:
 5. Creates a binary data stream.
 6. Wraps each Draco payload in a `VVGF` packet.
 7. Interleaves geometry using the corresponding video timing.
-8. Finalizes the MP4.
+8. Finalizes either a conventional fast-start MP4 or an initialization
+   `moov` followed by `moof`/`mdat` fragments.
 9. Replaces the generic data sample entry with `vvge`.
 10. Reopens and verifies the completed result.
 
@@ -328,6 +364,9 @@ Verification checks:
 - Every serialized geometry packet against the packet prepared by the packer.
 - Geometry PTS and duration against the corresponding video sample.
 - Stream identity.
+- Fragment count and initialization/fragment box order when fragmentation is
+  enabled.
+- Independently decodable video and geometry at every fragment boundary.
 - A representative seek near the middle of the sequence.
 
 This transactional process is an important reliability feature: an existing
@@ -346,7 +385,8 @@ Container bytes are supplied through the engine-independent `IByteSource`
 contract. Current path-based playback creates a seekable
 `LocalFileByteSource`; FFmpeg reads and seeks it through a custom
 `AVIOContext`. HTTP and HTTPS inputs use `HttpRangeByteSource`, whose dedicated
-libcurl worker fills an 8 MiB LRU cache in 256 KiB ranges. FFmpeg remains on
+libcurl worker fills a 32 MiB LRU cache in 1 MiB ranges and reads ahead three
+blocks by default. FFmpeg remains on
 the demux thread and waits for cache blocks rather than performing socket I/O.
 The source contract provides terminal cross-thread cancellation so player
 destruction can interrupt an outstanding request before joining the demux
@@ -799,9 +839,9 @@ fallback.
 | --- | --- | --- |
 | Unity 6 on macOS | Metal | Implemented and manually validated |
 | Unity on Windows x64 | D3D11 | Implemented; clean current-repository validation remains outstanding |
-| Unity on Meta Quest/Android ARM64 | Vulkan | Implemented and validated on Quest 2 |
+| Unity on Meta Quest/Android ARM64 | Vulkan | Local and progressive HTTP playback implemented and manually validated on Quest 2 |
 | Unity on Meta Quest 3S | Vulkan | Intended target; final physical-device profiling remains outstanding |
-| Unreal Engine 5.8 Editor on macOS | Dynamic Mesh, transient BGRA texture, procedural audio | Implemented and manually validated |
+| Unreal Engine 5.8 Editor on macOS | Dynamic Mesh, transient BGRA texture, procedural audio | Local and progressive HTTP playback implemented and manually validated |
 | Unreal packaged applications | Initial macOS target | Dependency staging and packaged-build validation outstanding |
 | Linux | Core only | Native core can build; no engine rendering integration |
 | Nuke | Feasibility planned | Not implemented |
@@ -882,6 +922,8 @@ libcurl performs metadata and bounded byte-range transfers only on the
 
 ## 12. Streaming model
 
+### 12.1 Implemented progressive HTTP playback
+
 OpenVolumetric's container structure is conceptually compatible with streaming
 because video, audio, and geometry are timestamped and interleaved in one MP4.
 The decoder also processes packets incrementally and uses bounded queues rather
@@ -907,20 +949,176 @@ resource size, bounded-cache occupancy, cumulative downloaded bytes, and
 range-request count. URL query strings are not written to native diagnostic
 logs.
 
-The runtime does not yet provide:
+Transient transport failures enter an explicit rebuffering state. The player
+freezes the last complete texture/geometry presentation, suspends audio,
+performs bounded exponential-backoff retries, and seeks all streams to one
+synchronized recovery point after the source becomes ready. The default
+transport uses 12 retries with delays from 250 ms to 4 s. Cancellation and
+player destruction interrupt both active transfers and retry waits.
 
-- Predictive buffered-duration or rebuffer-state diagnostics.
-- Fragmented MP4/CMAF authoring.
+This implemented mode is progressive access to one fixed-quality, fast-start
+MP4; it is not segmented adaptive streaming. It has been manually exercised
+with local HTTP range servers in Unity on macOS, Unity on Quest over Wi-Fi,
+and Unreal Editor on macOS. Startup, forward/backward seeking, pause/resume,
+looping, and sustained playback have worked in those tests. Brief Quest Wi-Fi
+outages no longer crash the player and recovery has improved, but fully
+automatic recovery has not yet been consistently demonstrated without user
+intervention. Controlled retry-exhaustion and impairment tests remain
+outstanding.
+
+The progressive runtime does not yet provide:
+
+- A forward playable-duration estimate derived from complete multimodal
+  presentations.
+- Independent fragment/segment scheduling and delivery-object caching.
 - Live geometry ingest.
 - Adaptive bitrate selection.
 - Representation switching.
-- Network jitter buffers.
-- Recovery from missing network segments.
+- A segment scheduler or segment-level integrity checking.
 
-The next streaming layer will add fragmented MP4 packaging and segment
-scheduling above the implemented byte-source transport. Random access also
-requires geometry samples or dependency windows aligned with fragment and
-seek boundaries.
+### 12.2 Proposed adaptive delivery model (future work)
+
+Adaptive delivery is planned as a package rather than as one self-contained
+file:
+
+```text
+manifest
+|-- initialization segment(s)
+|-- representation 0: aligned media segments
+|-- representation 1: aligned media segments
+`-- additional texture/geometry quality representations
+```
+
+Each representation retains the OpenVolumetric track model—texture video,
+optional conventional audio, and timed `vvge` geometry—but uses fragmented
+MP4 media segments. MPEG-DASH is the initial manifest candidate because its
+representation and adaptation-set model can describe a quality ladder. The
+custom geometry sample entry is not a standardized DASH or CMAF media type;
+its signaling and interoperability must be documented and evaluated rather
+than implied by the use of fragmented MP4.
+
+Every independently addressable segment must begin at a common random-access
+boundary across all representations. It must contain:
+
+- An independently decodable video access point.
+- An `IndependentMesh` packet establishing complete geometry topology.
+- No position-update dependency on an earlier segment.
+- An aligned audio timeline or sufficient declared audio preroll.
+- The same segment start, duration, and presentation timeline as every
+  switch-compatible representation.
+
+This constraint links adaptive delivery directly to temporal geometry
+compression. Even if topology remains unchanged for a long sequence, the
+authoring pipeline must repeat a full geometry keyframe at each segment
+boundary. Segment duration therefore trades request/manifest overhead and
+repeated topology cost against startup latency, seek cost, outage recovery,
+and switching responsiveness. Initial experiments should compare 1, 2, and
+4 second segments.
+
+### 12.3 Proposed representation and switching model
+
+A representation describes both delivery cost and decode cost. Candidate
+dimensions include texture resolution and bitrate, video codec/profile,
+geometry quantization, geometry frame rate, Draco settings, and topology
+keyframe interval. A Quest may have enough network bandwidth for a stream
+whose software video or geometry decode cost exceeds its real-time budget;
+selection must therefore consider device capability and observed decoding
+time as well as throughput.
+
+The first implementation should treat texture and geometry as one coupled
+presentation representation. A quality change is committed only when the
+complete compatible target segment is downloaded and decoded. At the switch
+timestamp, texture and geometry change atomically while the continuous audio
+clock is preserved. The player must never combine a texture from one quality
+level with incompatible geometry from another. Independent texture and
+geometry adaptation is possible later only when the manifest explicitly
+declares compatibility, for example when multiple texture qualities share
+identical geometry.
+
+Downloads, decoded samples, and representation switches will carry the same
+generation concept already used for seeking. A seek or abandoned quality
+change increments the generation so late network or decode results cannot be
+presented. A failed upgrade continues at the old quality; lack of a playable
+current or lower representation enters `Rebuffering` while retaining the last
+complete presentation and silencing audio.
+
+The initial automatic policy should be deliberately conservative:
+
+1. Estimate throughput from completed segments using a smoothed estimator.
+2. Apply a safety margin and filter representations by declared device and
+   codec capability.
+3. Step down when the complete-presentation buffer approaches a low
+   watermark.
+4. Step up only after sustained throughput, decode, and buffer headroom.
+5. Commit changes at the next aligned video/geometry random-access boundary.
+
+Manual representation selection and a maximum-quality cap are also required
+for experiments and user control.
+
+### 12.4 Proposed adaptive runtime and authoring architecture
+
+The adaptive components belong in the engine-neutral core:
+
+```text
+OpenVolumetricPlayer
+        |
+AdaptivePresentation
+|-- manifest/profile parser
+|-- adaptation controller
+|-- segment scheduler
+`-- byte-budgeted segment cache
+        |
+fragment-capable MP4 demux
+        |
+existing video/audio/geometry decoding and atomic presentation matching
+```
+
+Network workers download and validate segments; a scheduler maintains the
+forward buffer and chooses requests; the demux worker retains sole ownership
+of FFmpeg container and codec mutation. Unity and Unreal expose source,
+quality cap, selected representation, buffer state, throughput, stalls, and
+errors, but do not implement separate adaptation algorithms.
+
+Adaptive authoring will extend the existing shared workflow to encode an
+aligned representation ladder, force video and geometry access points, write
+initialization and media segments, generate the manifest/profile, and verify
+every segment and legal switch boundary. Verification must reject mismatched
+timelines, cross-segment topology dependencies, incompatible representation
+pairs, missing access points, and invalid sample sizes before publishing the
+package.
+
+### 12.5 Adaptive-streaming research questions and evaluation
+
+For an academic paper, adaptive streaming should be evaluated as a systems
+contribution rather than reported only as feature completion. The principal
+questions are:
+
+1. How much overhead results from repeating full geometry topology at segment
+   boundaries, and how does this vary with segment duration and topology
+   stability?
+2. Does atomic coupled adaptation prevent visible texture/geometry mismatch
+   under bandwidth variation compared with independently scheduled streams?
+3. How should bandwidth and device decode capacity be combined when selecting
+   volumetric representations on desktop and standalone VR?
+4. What segment and buffer configuration minimizes startup and rebuffering
+   while retaining acceptable memory use and quality?
+5. How do temporal geometry compression and adaptive random-access
+   requirements interact in compression ratio, seek latency, and recovery?
+
+Experiments should use repeatable bandwidth ramps, latency, jitter, outages,
+and failed requests on desktop and Quest-class hardware. Report startup time,
+rebuffer count and duration, selected quality over time, switch latency,
+unused downloaded bytes, cache high-water mark, video and geometry decode
+cost, dropped presentations, texture/geometry timestamp error, audio/visual
+error, geometry distortion, texture quality, and end-to-end bitrate. Baselines
+should include local playback, fixed-quality progressive HTTP, fixed-quality
+fragmented playback, and independent-mesh geometry without topology reuse.
+
+The full engineering plan and validation matrix are maintained in
+[STREAMING_AND_ADAPTATION.md](STREAMING_AND_ADAPTATION.md). None of the
+fragmented packaging, manifest processing, automatic selection, or
+representation-switching behavior in Sections 12.2–12.5 is implemented at
+the date of this snapshot.
 
 ## 13. Performance characteristics
 
@@ -1066,6 +1264,14 @@ around their composition and the resulting abstraction.
    format, while author-controlled keyframe intervals bound dependency and
    future streaming seek cost.
 
+One further prospective contribution is **atomic multimodal adaptive
+switching**: selecting a compatible texture/geometry representation as a unit
+and changing both only at aligned random-access boundaries while preserving
+the audio clock. This is a research objective, not a contribution demonstrated
+by the current implementation. It should move into the implemented-contribution
+list only after segmented packaging, representation switching, and controlled
+evaluation are complete.
+
 These should be presented as design contributions subject to comparison with
 related volumetric container and engine-integration systems, rather than
 asserted as unprecedented without a literature review.
@@ -1109,9 +1315,12 @@ The most significant limitations of the current system are:
 - Progressive HTTP currently requires a known resource length and byte-range
   server support. Bounded retry, rebuffer-state publication, presentation
   freezing, audio suspension, and synchronized seek recovery are implemented,
-  but Quest disconnect/reconnect and retry-exhaustion validation remain
+  but automatic Quest disconnect/reconnect recovery has not yet been fully
+  reliable in manual tests, and controlled retry-exhaustion validation remains
   outstanding.
-- Fragmented MP4, adaptive streaming, and live playback are not implemented.
+- Fixed-quality fragmented authoring and whole-resource playback are
+  implemented, but independent segment scheduling, manifests, adaptive
+  streaming, and live playback are not.
 - The authoring tool depends on an external FFmpeg executable.
 - macOS and Quest validation is manual rather than an automated conformance
   suite.
@@ -1142,9 +1351,17 @@ authoring, and engine-integration design that treats dynamic geometry as timed
 media alongside texture and audio.
 
 The implementation demonstrates the complete path from numbered images and
-OBJ meshes to a verified MP4 and synchronized playback in both Unity and
-Unreal, including Unity standalone VR. The next steps needed for an academic
-release are format stabilization, controlled cross-platform evaluation,
-clean Windows and Unreal packaged-build validation, broader datasets, and
-quantitative comparison of compression, decode cost, synchronization, memory
-use, and sustained performance.
+OBJ meshes to a verified MP4 and synchronized local or progressive HTTP
+playback in both Unity and Unreal, including Unity standalone VR. The next
+steps needed for an academic release are format stabilization, controlled
+cross-platform evaluation, clean Windows and Unreal packaged-build
+validation, broader datasets, and quantitative comparison of compression,
+decode cost, synchronization, memory use, and sustained performance.
+
+The planned adaptive-streaming work extends rather than replaces this
+architecture: fragmented representations will reuse the same timed tracks,
+decoder ownership, playback generations, and atomic presentation matcher.
+The paper should distinguish the demonstrated progressive transport from the
+future adaptive contribution and report the latter only after aligned
+segment authoring, coupled representation switching, and network/device
+experiments have been completed.
