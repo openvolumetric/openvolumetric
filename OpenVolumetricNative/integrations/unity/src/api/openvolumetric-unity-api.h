@@ -69,6 +69,24 @@ extern "C"
 		unsigned long long& fragment_count,
 		unsigned long long& cached_fragment_count);
 
+	/// Parses an adaptive manifest and selects Auto (0), Low (1), or High (2).
+	OPENVOLUMETRIC_API int openvolumetric_select_adaptive_representation(
+		const char* manifest_json,
+		const char* manifest_location,
+		int quality);
+	/// Loads a local or HTTP manifest and applies the same startup selection.
+	OPENVOLUMETRIC_API int openvolumetric_load_adaptive_representation(
+		const char* manifest_location,
+		int quality);
+	/// Returns the selected representation's URI exactly as stored in JSON.
+	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_resource_uri();
+	/// Returns the selected resource resolved against the manifest location.
+	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_resource();
+	/// Returns the selected representation identifier.
+	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_representation_id();
+	/// Returns the most recent manifest-selection error.
+	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_error();
+
 	/// Retrieves decoded dimensions, nominal FPS, and duration in seconds.
 	OPENVOLUMETRIC_API int	openvolumetric_get_video_details(int id, int& width, int& height, double& fps, double& duration);
 

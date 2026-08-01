@@ -237,6 +237,10 @@ public sealed class OpenVolumetricDeveloperOverlay : MonoBehaviour
                 buffer.RequestCount,
                 buffer.RecoveryCount)
             : string.Empty;
+        if(!string.IsNullOrEmpty(m_player.SelectedRepresentationId))
+        {
+            network += "\nQuality: " + m_player.SelectedRepresentationId;
+        }
         if(buffer.IsFragmented)
         {
             network += string.Format(

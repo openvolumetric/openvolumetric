@@ -100,6 +100,13 @@ fragment duration and share aligned video and full-geometry access points.
 The native verifier rejects mismatched durations, fragment counts, or audio
 layouts before writing the manifest.
 
+For playback, point **Source File** or **Source URL** at `manifest.json`,
+enable **Use Adaptive Manifest**, and select **Auto**, **Low**, or **High**.
+The runtime resolves `low.mp4` or `high.mp4` relative to the manifest and
+reports the selected representation in component status and the developer
+overlay. Selection currently occurs once during `Open()`; live switching is
+not part of this phase.
+
 The **Geometry Compression** checkbox enables topology-aware position updates.
 Clearing it emits the same packet format with every sample encoded as an
 independently decodable Draco mesh.

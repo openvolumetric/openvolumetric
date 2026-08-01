@@ -19,6 +19,7 @@ target_link_libraries(OpenVolumetricFFmpeg INTERFACE
 
 add_library(OpenVolumetricCore STATIC
   adaptive/AdaptiveManifest.cpp
+  adaptive/AdaptiveSelection.cpp
   container/FFmpegMp4VolumetricContainer.cpp
   container/GeometryPacket.cpp
   decoding/OpenVolumetricPlayer.cpp

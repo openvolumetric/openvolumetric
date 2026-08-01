@@ -1,5 +1,6 @@
 #include "OpenVolumetricComponent.h"
 
+#include "AdaptiveSelection.h"
 #include "OpenVolumetricPlayerAdapter.h"
 #include "Components/AudioComponent.h"
 #include "Components/DynamicMeshComponent.h"
@@ -242,7 +243,7 @@ bool UOpenVolumetricComponent::Open()
 	const bool bUseRemoteSource = !TrimmedUrl.IsEmpty();
 	if (!bUseRemoteSource && SourceFile.FilePath.IsEmpty())
 	{
-		LastError = TEXT("No OpenVolumetric MP4 has been selected.");
+		LastError = TEXT("No OpenVolumetric input has been selected.");
 		PlaybackState = EOpenVolumetricPlaybackState::Error;
 		UE_LOG(LogOpenVolumetricComponent, Error, TEXT("%s"), *LastError);
 		return false;
@@ -295,11 +296,47 @@ bool UOpenVolumetricComponent::Open()
 		if (!FPaths::FileExists(ResolvedPath))
 		{
 			LastError = FString::Printf(
-				TEXT("OpenVolumetric MP4 does not exist: %s"), *ResolvedPath);
+				TEXT("OpenVolumetric input does not exist: %s"), *ResolvedPath);
 			PlaybackState = EOpenVolumetricPlaybackState::Error;
 			UE_LOG(LogOpenVolumetricComponent, Error, TEXT("%s"), *LastError);
 			return false;
 		}
+	}
+
+	SelectedRepresentationId.Reset();
+	if (bUseAdaptiveManifest)
+	{
+		openvolumetric::AdaptiveSelection Selection;
+		std::string NativeError;
+		const FTCHARToUTF8 Utf8Manifest(*ResolvedPath);
+		if (!openvolumetric::load_adaptive_representation(
+				Utf8Manifest.Get(),
+				static_cast<openvolumetric::AdaptiveQuality>(AdaptiveQuality),
+				Selection,
+				NativeError))
+		{
+			LastError = UTF8_TO_TCHAR(NativeError.c_str());
+			PlaybackState = EOpenVolumetricPlaybackState::Error;
+			UE_LOG(LogOpenVolumetricComponent, Error, TEXT("%s"), *LastError);
+			return false;
+		}
+		ResolvedPath = UTF8_TO_TCHAR(Selection.resolved_resource.c_str());
+		SelectedRepresentationId = UTF8_TO_TCHAR(
+			Selection.representation.id.c_str());
+		if (!bUseRemoteSource && !FPaths::FileExists(ResolvedPath))
+		{
+			LastError = FString::Printf(
+				TEXT("Adaptive representation does not exist: %s"), *ResolvedPath);
+			PlaybackState = EOpenVolumetricPlaybackState::Error;
+			UE_LOG(LogOpenVolumetricComponent, Error, TEXT("%s"), *LastError);
+			return false;
+		}
+		UE_LOG(
+			LogOpenVolumetricComponent,
+			Log,
+			TEXT("Selected adaptive representation '%s': %s"),
+			*SelectedRepresentationId,
+			*ResolvedPath);
 	}
 
 	PlaybackState = EOpenVolumetricPlaybackState::Opening;
@@ -695,6 +732,11 @@ void UOpenVolumetricComponent::UpdateDeveloperControls(float DeltaTime)
 			ActiveFragment >= 0 ? ActiveFragment + 1 : 0,
 			FragmentCount,
 			CachedFragmentCount);
+	}
+	if (!SelectedRepresentationId.IsEmpty())
+	{
+		NetworkStatus += FString::Printf(
+			TEXT("\nquality: %s"), *SelectedRepresentationId);
 	}
 	const FString ErrorStatus = LastError.IsEmpty()
 		? FString()

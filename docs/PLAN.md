@@ -414,7 +414,9 @@ threading, recovery, authoring, and validation design is recorded in
       equivalent manifests.
 - [ ] Evaluate MPEG-DASH as the initial manifest/delivery model and document
       custom `vvge` signaling and interoperability limits.
-- [ ] Implement manual representation selection and a maximum-quality cap.
+- [x] Implement startup representation selection with Auto, Low, and High
+      choices in Unity and Unreal. Auto currently selects the highest declared
+      bandwidth; live throughput-based changes remain separate work.
 - [ ] Implement conservative throughput-based automatic selection constrained
       by device and measured decode capability.
 - [ ] Switch compatible texture and geometry atomically at aligned segment
@@ -466,6 +468,9 @@ threading, recovery, authoring, and validation design is recorded in
 - [x] Fixed-quality fragmented MP4 playback across segment boundaries in
       Unity, locally and over progressive HTTP.
 - [ ] Adaptive switching under controlled bandwidth, latency, and outages.
+- [x] Adaptive-manifest startup selection validated locally and over HTTP at
+      Low and High quality in Unity and Unreal, including seeking,
+      pause/resume, looping, and synchronized audio/texture/geometry playback.
 - [ ] Texture and geometry remain compatible and synchronized after every
       representation change.
 

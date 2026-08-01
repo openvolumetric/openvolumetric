@@ -238,6 +238,18 @@ folder and presentation name, producing
 stable relative names allow the whole directory to be copied directly to an
 HTTP origin without engine-specific renaming.
 
+The core `AdaptiveSelection` layer loads local or HTTP manifests, applies the
+same strict parser, selects the minimum- or maximum-bandwidth coupled
+representation, and resolves its resource URI relative to the manifest. Unity
+and Unreal expose **Auto**, **Low**, and **High** startup choices. Auto uses the
+highest-bandwidth representation in this initial deterministic phase; it does
+not yet measure throughput or change representation during playback.
+
+Manual startup selection was validated on 1 August 2026 in Unity and Unreal
+using both local and HTTP manifests. Low and High completed forward/backward
+seeking, pause/resume, looping, and synchronized audio, texture, and geometry
+playback without an observed error.
+
 ## Core runtime architecture
 
 Add an input boundary beneath the container:

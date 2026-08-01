@@ -41,6 +41,13 @@ fragment indexes and refuses to publish the package if they are not aligned.
 Only after this check succeeds are the two MP4 files and versioned JSON
 manifest moved into the presentation directory.
 
+To play the package, enable **Use Adaptive Manifest** on the
+`OpenVolumetric` component, set the local filename or HTTP URL to
+`<presentation>/manifest.json`, and choose **Auto**, **Low**, or **High**.
+Local resource paths and HTTP URLs are resolved relative to the manifest.
+This first runtime phase selects once before playback; it does not switch
+quality while playing.
+
 For example, these two sequences match:
 
 ```text

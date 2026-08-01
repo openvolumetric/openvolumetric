@@ -136,7 +136,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &160012003
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -150,7 +150,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::OpenVolumetric.OpenVolumetric
   videoFilename: 
-  videoUrl: http://192.168.0.34:18765/volumetric_video_quest_streaming_fragmented.mp4
+  videoUrl: http://192.168.0.34:18765/manifest.json
+  useAdaptiveManifest: 1
+  adaptiveQuality: 2
   luminanceCorrection: 0
   blueProjectionCorrection: 0
   redProjectionCorrection: 0
@@ -218,6 +220,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::OpenVolumetric.OpenVolumetric
   videoFilename: 
   videoUrl: http://192.168.0.34:18765/volumetric_video_quest_streaming.mp4
+  useAdaptiveManifest: 0
+  adaptiveQuality: 0
   luminanceCorrection: 0
   blueProjectionCorrection: 0
   redProjectionCorrection: 0
@@ -577,6 +581,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::OpenVolumetric.OpenVolumetric
   videoFilename: volumetric_video_quest_local.mp4
   videoUrl: 
+  useAdaptiveManifest: 0
+  adaptiveQuality: 0
   luminanceCorrection: 0
   blueProjectionCorrection: 0
   redProjectionCorrection: 0
@@ -616,7 +622,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &2024382031
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -629,8 +635,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0f19b987d80146544bbfbba8a5206081, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::OpenVolumetric.OpenVolumetric
-  videoFilename: quest_local.mp4
+  videoFilename: Adaptive/bbc_rachel/manifest.json
   videoUrl: 
+  useAdaptiveManifest: 1
+  adaptiveQuality: 2
   luminanceCorrection: 0
   blueProjectionCorrection: 0
   redProjectionCorrection: 0

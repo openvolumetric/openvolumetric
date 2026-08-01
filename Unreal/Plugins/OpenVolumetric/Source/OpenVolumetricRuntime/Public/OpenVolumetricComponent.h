@@ -35,6 +35,15 @@ enum class EOpenVolumetricInputState : uint8
 	Ended
 };
 
+/** Startup representation choice when the input points to an adaptive manifest. */
+UENUM(BlueprintType)
+enum class EOpenVolumetricAdaptiveQuality : uint8
+{
+	Auto,
+	Low,
+	High
+};
+
 /**
  * Blueprint-facing owner of one OpenVolumetric playback instance.
  *
@@ -61,6 +70,15 @@ public:
 	/** Optional HTTP(S) MP4 URL. When set, this takes precedence over SourceFile. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OpenVolumetric|Input")
 	FString SourceUrl;
+
+	/** Interpret SourceFile or SourceUrl as an adaptive manifest. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OpenVolumetric|Input")
+	bool bUseAdaptiveManifest = false;
+
+	/** Startup quality. Auto currently selects the highest-bandwidth entry. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OpenVolumetric|Input")
+	EOpenVolumetricAdaptiveQuality AdaptiveQuality =
+		EOpenVolumetricAdaptiveQuality::Auto;
 
 	/** Start playback automatically after a file opens successfully. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OpenVolumetric|Playback")
@@ -148,6 +166,10 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status")
 	FString LastError;
+
+	/** Representation identifier selected from the current adaptive manifest. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status")
+	FString SelectedRepresentationId;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status|Buffer")
 	bool bRemoteSource = false;

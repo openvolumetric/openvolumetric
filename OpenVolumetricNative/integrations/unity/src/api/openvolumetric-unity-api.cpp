@@ -33,6 +33,7 @@
 #endif
 #include "UnityOpenVolumetricPlayer.h"
 #include <UnityAudioBridge.h>
+#include <AdaptiveSelection.h>
 #include <Logger.h>
 
 using openvolumetric::Logger;
@@ -54,6 +55,8 @@ namespace
 /// queued render event cannot use an instance while it is being deleted.
 std::unordered_map<int, std::unique_ptr<UnityOpenVolumetricPlayer>> g_instances;
 std::shared_mutex g_instances_mutex;
+thread_local openvolumetric::AdaptiveSelection g_adaptive_selection;
+thread_local std::string g_adaptive_error;
 
 class InstanceAccess
 {
@@ -401,6 +404,69 @@ OPENVOLUMETRIC_API int openvolumetric_get_fragment_details(
 	cached_fragment_count =
 		static_cast<unsigned long long>(info.cached_fragment_count);
 	return 1;
+}
+
+OPENVOLUMETRIC_API int openvolumetric_select_adaptive_representation(
+	const char* manifest_json,
+	const char* manifest_location,
+	int quality)
+{
+	g_adaptive_selection = {};
+	g_adaptive_error.clear();
+	if (manifest_json == nullptr || manifest_location == nullptr ||
+		quality < 0 || quality > 2)
+	{
+		g_adaptive_error = "Adaptive manifest input or quality is invalid.";
+		return -1;
+	}
+	return openvolumetric::select_adaptive_representation(
+		manifest_json,
+		manifest_location,
+		static_cast<openvolumetric::AdaptiveQuality>(quality),
+		g_adaptive_selection,
+		g_adaptive_error)
+		? 1
+		: -1;
+}
+
+OPENVOLUMETRIC_API int openvolumetric_load_adaptive_representation(
+	const char* manifest_location,
+	int quality)
+{
+	g_adaptive_selection = {};
+	g_adaptive_error.clear();
+	if (manifest_location == nullptr || quality < 0 || quality > 2)
+	{
+		g_adaptive_error = "Adaptive manifest location or quality is invalid.";
+		return -1;
+	}
+	return openvolumetric::load_adaptive_representation(
+		manifest_location,
+		static_cast<openvolumetric::AdaptiveQuality>(quality),
+		g_adaptive_selection,
+		g_adaptive_error)
+		? 1
+		: -1;
+}
+
+OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_resource_uri()
+{
+	return g_adaptive_selection.representation.resource_uri.c_str();
+}
+
+OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_resource()
+{
+	return g_adaptive_selection.resolved_resource.c_str();
+}
+
+OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_representation_id()
+{
+	return g_adaptive_selection.representation.id.c_str();
+}
+
+OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_error()
+{
+	return g_adaptive_error.c_str();
 }
 
 OPENVOLUMETRIC_API int	openvolumetric_get_video_details(int id, int& width, int& height, double& fps, double& duration)

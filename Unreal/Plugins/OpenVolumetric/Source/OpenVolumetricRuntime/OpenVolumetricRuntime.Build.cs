@@ -35,6 +35,7 @@ public class OpenVolumetricRuntime : ModuleRules
 			PrivateIncludePaths.AddRange(
 				new[]
 				{
+					Path.Combine(NativeRoot, "src", "core", "adaptive"),
 					Path.Combine(NativeRoot, "src", "core", "container"),
 					Path.Combine(NativeRoot, "src", "core", "decoding"),
 					Path.Combine(NativeRoot, "src", "core", "geometry"),

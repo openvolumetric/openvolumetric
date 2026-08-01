@@ -2,6 +2,7 @@
 using System.IO;
 using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using UnityEngine;
 using UnityEngine.Serialization;
 
@@ -17,6 +18,39 @@ namespace OpenVolumetric
 /// </summary>
 public class OpenVolumetric : MonoBehaviour
 {
+    private const string PluginName = "AudioPluginOpenVolumetricUnity";
+
+    [DllImport(PluginName, EntryPoint = "openvolumetric_select_adaptive_representation")]
+    private static extern int SelectAdaptiveRepresentation(
+        string manifestJson,
+        string manifestLocation,
+        int quality);
+
+    [DllImport(PluginName, EntryPoint = "openvolumetric_load_adaptive_representation")]
+    private static extern int LoadAdaptiveRepresentation(
+        string manifestLocation,
+        int quality);
+
+    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_resource_uri")]
+    private static extern IntPtr GetAdaptiveResourceUri();
+
+    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_resource")]
+    private static extern IntPtr GetAdaptiveResource();
+
+    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_representation_id")]
+    private static extern IntPtr GetAdaptiveRepresentationId();
+
+    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_error")]
+    private static extern IntPtr GetAdaptiveError();
+
+    /// <summary>Startup representation choice for adaptive manifests.</summary>
+    public enum AdaptiveQuality
+    {
+        Auto,
+        Low,
+        High
+    }
+
     /// <summary>Combined OpenVolumetric MP4 beneath StreamingAssets.</summary>
     [Header("Volumetric Video Input")]
     [Tooltip("Volumetric video file containing geometry, texture, and audio")]
@@ -24,6 +58,12 @@ public class OpenVolumetric : MonoBehaviour
     /// <summary>Optional HTTP(S) MP4 URL; takes precedence over videoFilename.</summary>
     [Tooltip("Optional HTTP(S) URL. When set, this takes precedence over the StreamingAssets filename.")]
     public string videoUrl;
+    /// <summary>Interpret the selected local file or URL as manifest.json.</summary>
+    [Tooltip("Load an adaptive manifest and select one representation before playback starts.")]
+    public bool useAdaptiveManifest;
+    /// <summary>Manual startup quality; Auto currently selects the highest quality.</summary>
+    [Tooltip("Startup adaptive quality. Auto currently selects the highest-bandwidth representation.")]
+    public AdaptiveQuality adaptiveQuality = AdaptiveQuality.Auto;
     /// <summary>Additive correction applied to the decoded Y channel.</summary>
     [Header("Texture Settings")]
     [Tooltip("Luminance Correction - Y")]
@@ -86,6 +126,7 @@ public class OpenVolumetric : MonoBehaviour
     private double m_network_settle_until = -1.0;
     private bool m_waiting_for_initial_presentation;
     private bool m_play_after_initial_presentation;
+    private string m_selected_representation_id = "";
 
     /// <summary>Current managed playback state.</summary>
     public PlaybackState State { get { return m_playback_state; } }
@@ -120,6 +161,11 @@ public class OpenVolumetric : MonoBehaviour
     }
     /// <summary>AudioSource carrying the decoded native DSP stream.</summary>
     public AudioSource AudioOutput { get { return m_audio_source; } }
+    /// <summary>Representation selected from the adaptive manifest.</summary>
+    public string SelectedRepresentationId
+    {
+        get { return m_selected_representation_id; }
+    }
 
     /// <summary>Returns the latest decoded geometry centroid in local space.</summary>
     public bool TryGetGeometryCentroid(out Vector3 centroid)
@@ -149,7 +195,79 @@ public class OpenVolumetric : MonoBehaviour
             return m_playback_position;
         }
     }
-    
+
+    /// <summary>
+    /// Loads manifest JSON, asks the native core to select a representation,
+    /// and prepares its resource using the same local/HTTP path as a direct MP4.
+    /// </summary>
+    private IEnumerator ResolveAdaptiveInput(Action<string> completed)
+    {
+        string manifestJson = null;
+        string manifestLocation = null;
+        bool remote = !string.IsNullOrWhiteSpace(videoUrl);
+        if(remote)
+        {
+            Uri manifestUri;
+            if(!Uri.TryCreate(videoUrl.Trim(), UriKind.Absolute, out manifestUri) ||
+                (manifestUri.Scheme != Uri.UriSchemeHttp &&
+                 manifestUri.Scheme != Uri.UriSchemeHttps))
+            {
+                Debug.LogError(
+                    "OpenVolumetric - adaptive manifest URL must use HTTP or HTTPS");
+                completed(null);
+                yield break;
+            }
+            manifestLocation = manifestUri.AbsoluteUri;
+            if(LoadAdaptiveRepresentation(
+                manifestLocation,
+                (int)adaptiveQuality) != 1)
+            {
+                Debug.LogError(
+                    "OpenVolumetric - adaptive manifest selection failed: " +
+                    Marshal.PtrToStringAnsi(GetAdaptiveError()));
+                completed(null);
+                yield break;
+            }
+            m_selected_representation_id =
+                Marshal.PtrToStringAnsi(GetAdaptiveRepresentationId()) ?? "";
+            completed(Marshal.PtrToStringAnsi(GetAdaptiveResource()));
+            yield break;
+        }
+        else
+        {
+            yield return StreamingAssetFile.PrepareReadablePath(
+                videoFilename,
+                path => manifestLocation = path);
+            if(string.IsNullOrEmpty(manifestLocation))
+            {
+                completed(null);
+                yield break;
+            }
+            manifestJson = File.ReadAllText(manifestLocation);
+        }
+
+        if(SelectAdaptiveRepresentation(
+            manifestJson,
+            manifestLocation,
+            (int)adaptiveQuality) != 1)
+        {
+            Debug.LogError(
+                "OpenVolumetric - adaptive manifest selection failed: " +
+                Marshal.PtrToStringAnsi(GetAdaptiveError()));
+            completed(null);
+            yield break;
+        }
+        m_selected_representation_id =
+            Marshal.PtrToStringAnsi(GetAdaptiveRepresentationId()) ?? "";
+        string resourceUri =
+            Marshal.PtrToStringAnsi(GetAdaptiveResourceUri()) ?? "";
+        string manifestDirectory = Path.GetDirectoryName(videoFilename) ?? "";
+        string relativeResource = Path.Combine(manifestDirectory, resourceUri);
+        yield return StreamingAssetFile.PrepareReadablePath(
+            relativeResource,
+            completed);
+    }
+
 
     /// <summary>
     /// Resolves the combined MP4, creates Unity render/audio resources, and
@@ -163,7 +281,11 @@ public class OpenVolumetric : MonoBehaviour
              
         // The MP4 contains texture, geometry, and optional audio.
         string filepath = null;
-        if(!string.IsNullOrWhiteSpace(videoUrl))
+        if(useAdaptiveManifest)
+        {
+            yield return ResolveAdaptiveInput(path => filepath = path);
+        }
+        else if(!string.IsNullOrWhiteSpace(videoUrl))
         {
             Uri remoteUri;
             if(!Uri.TryCreate(videoUrl.Trim(), UriKind.Absolute, out remoteUri) ||

@@ -1123,8 +1123,18 @@ representation, texture, and geometry profiles. Version 1 references complete
 aligned fragmented-MP4 resources so it can reuse the existing range source and
 fragment index. Validation enforces version support, timeline bounds, unique
 representation IDs, compatibility metadata, codec/decode descriptors,
-geometry precision, and consistent declared bandwidth. Runtime selection,
-switching, and DASH MPD mapping remain future work.
+geometry precision, and consistent declared bandwidth. Dynamic switching and
+DASH MPD mapping remain future work.
+
+`AdaptiveSelection` now adds engine-neutral local/HTTP manifest loading,
+relative resource resolution, and deterministic startup selection. Unity and
+Unreal expose Auto, Low, and High; Low selects the minimum declared aggregate
+bandwidth, while High and the initial Auto behavior select the maximum. The
+selected complete fragmented MP4 then enters the unchanged player pipeline.
+Throughput estimation and segment-boundary switching remain future work.
+Local and HTTP startup selection at both quality levels has been manually
+validated in Unity and Unreal, including seeking, pause/resume, looping, and
+cross-stream synchronization.
 
 The shared authoring layer also defines deterministic low/high streaming
 ladders and validates completed adaptive outputs before publication. It probes
