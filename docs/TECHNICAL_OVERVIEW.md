@@ -1123,15 +1123,18 @@ representation, texture, and geometry profiles. Version 1 references complete
 aligned fragmented-MP4 resources so it can reuse the existing range source and
 fragment index. Validation enforces version support, timeline bounds, unique
 representation IDs, compatibility metadata, codec/decode descriptors,
-geometry precision, and consistent declared bandwidth. Selection, switching,
-multi-representation authoring, and DASH MPD mapping remain future work.
+geometry precision, and consistent declared bandwidth. Runtime selection,
+switching, and DASH MPD mapping remain future work.
 
 The shared authoring layer also defines deterministic low/high streaming
 ladders and validates completed adaptive outputs before publication. It probes
 actual MP4 metadata and the terminal fragment index, requires matching
 duration, fragment count, and audio layout, derives delivery and geometry
 bitrates, and atomically writes a self-validating manifest. Unity and Unreal
-still need to orchestrate the two encode passes through their Editor windows.
+both orchestrate the two encode passes through their Editor windows. Each uses
+a standardized self-contained directory containing `manifest.json`,
+`low.mp4`, and `high.mp4`, selected through an output parent folder and
+presentation name.
 
 ### 12.5 Adaptive-streaming research questions and evaluation
 

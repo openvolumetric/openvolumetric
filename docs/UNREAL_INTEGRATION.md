@@ -83,7 +83,8 @@ Open **Tools > OpenVolumetric Encoder**. Select:
 - a contiguous numbered image sequence;
 - a matching numbered OBJ sequence;
 - optional audio;
-- an output MP4 path; and
+- an output MP4 path for fixed-quality encoding, or an output parent folder
+  and presentation name for adaptive encoding; and
 - a platform preset or custom encoding settings.
 
 OBJ encoding uses Draco linked into the authoring module. Texture and audio
@@ -92,12 +93,12 @@ encoder and AAC support. Packaging and verification run through
 `OpenVolumetricAuthoringCore`.
 
 Enable **Adaptive Package** with either streaming preset to author a coupled
-two-level ladder. Choosing `presentation.mp4` produces
-`presentation-low.mp4`, `presentation-high.mp4`, and
-`presentation.json`. Both representations use the selected 1-, 2-, or
-4-second fragment duration and share aligned video and full-geometry access
-points. The native verifier rejects mismatched durations, fragment counts, or
-audio layouts before writing the manifest.
+two-level ladder. The presentation name `presentation` creates a
+`presentation` directory containing `manifest.json`, `low.mp4`, and
+`high.mp4`. Both representations use the selected 1-, 2-, or 4-second
+fragment duration and share aligned video and full-geometry access points.
+The native verifier rejects mismatched durations, fragment counts, or audio
+layouts before writing the manifest.
 
 The **Geometry Compression** checkbox enables topology-aware position updates.
 Clearing it emits the same packet format with every sample encoded as an

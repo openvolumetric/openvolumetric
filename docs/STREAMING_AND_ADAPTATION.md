@@ -231,8 +231,12 @@ resource bitrate, and terminal fragment index. It rejects missing indexes or
 differences in duration, fragment count, or audio layout, then writes the
 manifest atomically with measured bitrate and geometry-payload information.
 The C authoring ABI exposes the ladder and manifest writer so Unity and Unreal
-can share this behavior. Editor UI orchestration of the two encode passes is
-the next integration step.
+share this behavior. Both editor integrations orchestrate the two encode
+passes and expose the same package layout: authors select an output parent
+folder and presentation name, producing
+`<parent>/<presentation>/manifest.json`, `low.mp4`, and `high.mp4`. These
+stable relative names allow the whole directory to be copied directly to an
+HTTP origin without engine-specific renaming.
 
 ## Core runtime architecture
 

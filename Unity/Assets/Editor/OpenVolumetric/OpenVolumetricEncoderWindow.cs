@@ -185,6 +185,8 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
     [SerializeField] private string geometryDirectory = "";
     [SerializeField] private string audioFile = "";
     [SerializeField] private string outputFile = "";
+    [SerializeField] private string adaptiveOutputFolder = "";
+    [SerializeField] private string presentationName = "openvolumetric";
     [SerializeField] private float frameRate = 30.0f;
     [SerializeField] private VideoCodec videoCodec = VideoCodec.HEVC;
     [SerializeField] private int crf = 25;
@@ -230,6 +232,9 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         geometryDirectory = Load("Geometry", geometryDirectory);
         audioFile = Load("Audio", audioFile);
         outputFile = Load("Output", DefaultOutputPath());
+        adaptiveOutputFolder = Load(
+            "AdaptiveOutputFolder", DefaultAdaptiveOutputFolder());
+        presentationName = Load("PresentationName", "openvolumetric");
         ffmpegPath = Load("FFmpeg", FindExecutable("ffmpeg"));
         geometryCompression = EditorPrefs.GetBool(
             PreferencePrefix + "GeometryCompression", true);
@@ -271,9 +276,23 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
                 audioFile,
                 "Select audio",
                 "");
-            outputFile = SaveFileField(
-                adaptivePackage ? "Package Base MP4" : "Output MP4",
-                outputFile);
+            if(adaptivePackage)
+            {
+                adaptiveOutputFolder = DirectoryField(
+                    "Output Parent Folder", adaptiveOutputFolder);
+                presentationName = EditorGUILayout.TextField(
+                    new GUIContent(
+                        "Presentation Name",
+                        "Creates a package folder with this name containing manifest.json, low.mp4, and high.mp4."),
+                    presentationName);
+                EditorGUILayout.HelpBox(
+                    "Package: " + AdaptivePackageDirectory(),
+                    MessageType.None);
+            }
+            else
+            {
+                outputFile = SaveFileField("Output MP4", outputFile);
+            }
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Encoding Settings", EditorStyles.boldLabel);
@@ -481,7 +500,8 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             AssetDatabase.Refresh();
             Debug.Log(
                 adaptivePackage
-                    ? "Created adaptive volumetric package from base: " + outputFile
+                    ? "Created adaptive volumetric package: " +
+                        AdaptivePackageDirectory()
                     : "Created volumetric video: " + outputFile);
         }
         catch (OperationCanceledException)
@@ -682,16 +702,16 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
     {
         EncodingSettings low = GetAdaptiveEncodingSettings(0);
         EncodingSettings high = GetAdaptiveEncodingSettings(1);
-        string outputBase = Path.GetFullPath(outputFile);
-        string outputDirectory = Path.GetDirectoryName(outputBase);
-        string presentationId = Path.GetFileNameWithoutExtension(outputBase);
+        string presentationId = presentationName.Trim();
+        string outputDirectory = AdaptivePackageDirectory();
+        string outputParent = Path.GetDirectoryName(outputDirectory);
         string stagingDirectory = Path.Combine(
-            outputDirectory,
+            outputParent,
             "." + presentationId + "-adaptive-" +
             Guid.NewGuid().ToString("N"));
-        string lowName = presentationId + "-low.mp4";
-        string highName = presentationId + "-high.mp4";
-        string manifestName = presentationId + ".json";
+        const string lowName = "low.mp4";
+        const string highName = "high.mp4";
+        const string manifestName = "manifest.json";
         string stagedLow = Path.Combine(stagingDirectory, lowName);
         string stagedHigh = Path.Combine(stagingDirectory, highName);
         string stagedManifest = Path.Combine(stagingDirectory, manifestName);
@@ -733,6 +753,7 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             string finalLow = Path.Combine(outputDirectory, lowName);
             string finalHigh = Path.Combine(outputDirectory, highName);
             string finalManifest = Path.Combine(outputDirectory, manifestName);
+            Directory.CreateDirectory(outputDirectory);
             foreach(string path in new[] { finalLow, finalHigh, finalManifest })
             {
                 if(File.Exists(path)) File.Delete(path);
@@ -820,7 +841,7 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         {
             throw new InvalidOperationException("Audio file does not exist: " + audioFile);
         }
-        if (String.IsNullOrWhiteSpace(outputFile))
+        if (!adaptivePackage && String.IsNullOrWhiteSpace(outputFile))
         {
             throw new InvalidOperationException("Choose an output MP4.");
         }
@@ -829,16 +850,25 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             throw new InvalidOperationException(
                 "The output already exists. Choose another file or enable Overwrite Output.");
         }
-        if(adaptivePackage && !overwriteOutput)
+        if(adaptivePackage)
         {
-            string outputBase = Path.GetFullPath(outputFile);
-            string directory = Path.GetDirectoryName(outputBase);
-            string stem = Path.GetFileNameWithoutExtension(outputBase);
+            if(String.IsNullOrWhiteSpace(adaptiveOutputFolder))
+            {
+                throw new InvalidOperationException(
+                    "Choose an adaptive output parent folder.");
+            }
+            if(String.IsNullOrWhiteSpace(presentationName) ||
+                presentationName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            {
+                throw new InvalidOperationException(
+                    "Choose a valid presentation name.");
+            }
+            string directory = AdaptivePackageDirectory();
             string[] outputs = {
-                Path.Combine(directory, stem + "-low.mp4"),
-                Path.Combine(directory, stem + "-high.mp4"),
-                Path.Combine(directory, stem + ".json")};
-            if(outputs.Any(File.Exists))
+                Path.Combine(directory, "low.mp4"),
+                Path.Combine(directory, "high.mp4"),
+                Path.Combine(directory, "manifest.json")};
+            if(!overwriteOutput && outputs.Any(File.Exists))
             {
                 throw new InvalidOperationException(
                     "An adaptive package output exists. Enable Overwrite Output or choose another base name.");
@@ -1114,6 +1144,20 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             "openvolumetric.mp4");
     }
 
+    /// <summary>Returns the default parent for adaptive presentation folders.</summary>
+    private static string DefaultAdaptiveOutputFolder()
+    {
+        return Path.Combine(Application.dataPath, "StreamingAssets");
+    }
+
+    /// <summary>Returns the normalized destination for the adaptive package.</summary>
+    private string AdaptivePackageDirectory()
+    {
+        return Path.Combine(
+            Path.GetFullPath(adaptiveOutputFolder),
+            presentationName.Trim());
+    }
+
     /// <summary>Searches PATH and common locations for an external executable.</summary>
     private static string FindExecutable(string name)
     {
@@ -1142,6 +1186,10 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         EditorPrefs.SetString(PreferencePrefix + "Geometry", geometryDirectory);
         EditorPrefs.SetString(PreferencePrefix + "Audio", audioFile);
         EditorPrefs.SetString(PreferencePrefix + "Output", outputFile);
+        EditorPrefs.SetString(
+            PreferencePrefix + "AdaptiveOutputFolder", adaptiveOutputFolder);
+        EditorPrefs.SetString(
+            PreferencePrefix + "PresentationName", presentationName);
         EditorPrefs.SetString(PreferencePrefix + "FFmpeg", ffmpegPath);
         EditorPrefs.SetBool(
             PreferencePrefix + "GeometryCompression", geometryCompression);

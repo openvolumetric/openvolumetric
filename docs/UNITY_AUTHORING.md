@@ -11,18 +11,22 @@ The encoder accepts:
 - a directory of numbered texture images;
 - a directory of matching numbered OBJ meshes;
 - an optional audio file;
-- an output MP4 path.
+- an output MP4 path for fixed-quality encoding, or an output parent folder
+  and presentation name for adaptive encoding.
 
 ## Adaptive packages
 
 Enable **Adaptive Package** with either **Desktop Streaming** or **Quest
-Streaming** to encode a two-quality package. The selected output MP4 path is
-used as a base name. For example, selecting `presentation.mp4` produces:
+Streaming** to encode a two-quality package. The output is selected as a
+parent folder and presentation name. For example, the presentation name
+`presentation` produces:
 
 ```text
-presentation-low.mp4
-presentation-high.mp4
-presentation.json
+<output-parent>/
+└── presentation/
+    ├── manifest.json
+    ├── low.mp4
+    └── high.mp4
 ```
 
 Adaptive authoring always enables fragmented MP4 and uses the selected 1-,
@@ -35,7 +39,7 @@ Both representations are written to a staging directory. The native authoring
 core probes their actual duration, video metadata, bitrate, audio layout, and
 fragment indexes and refuses to publish the package if they are not aligned.
 Only after this check succeeds are the two MP4 files and versioned JSON
-manifest moved to the selected output directory.
+manifest moved into the presentation directory.
 
 For example, these two sequences match:
 

@@ -221,6 +221,7 @@ bool Validate(
 	const FString& FFmpeg,
 	double FrameRate,
 	bool bOverwrite,
+	bool bAdaptive,
 	FEncodingInputs& OutInputs,
 	FString& OutError)
 {
@@ -246,12 +247,13 @@ bool Validate(
 		OutError = TEXT("The selected audio file does not exist.");
 		return false;
 	}
-	if (OutputFile.IsEmpty())
+	if (!bAdaptive && OutputFile.IsEmpty())
 	{
 		OutError = TEXT("Choose an output MP4.");
 		return false;
 	}
-	if (IFileManager::Get().FileExists(*OutputFile) && !bOverwrite)
+	if (!bAdaptive &&
+		IFileManager::Get().FileExists(*OutputFile) && !bOverwrite)
 	{
 		OutError =
 			TEXT("The output exists. Enable overwrite or choose another path.");
@@ -318,6 +320,8 @@ public:
 	TSharedPtr<SEditableTextBox> Geometry;
 	TSharedPtr<SEditableTextBox> Audio;
 	TSharedPtr<SEditableTextBox> Output;
+	TSharedPtr<SEditableTextBox> AdaptiveOutputFolder;
+	TSharedPtr<SEditableTextBox> PresentationName;
 	TSharedPtr<SEditableTextBox> FFmpeg;
 	TSharedPtr<SEditableTextBox> FrameRate;
 	TSharedPtr<SEditableTextBox> MaximumGeometryFrames;
@@ -353,6 +357,10 @@ public:
 		Output->SetText(FText::FromString(LoadValue(
 			TEXT("Output"),
 			FPaths::ProjectContentDir() / TEXT("openvolumetric.mp4"))));
+		AdaptiveOutputFolder->SetText(FText::FromString(LoadValue(
+			TEXT("AdaptiveOutputFolder"), FPaths::ProjectContentDir())));
+		PresentationName->SetText(FText::FromString(LoadValue(
+			TEXT("PresentationName"), TEXT("openvolumetric"))));
 		FFmpeg->SetText(FText::FromString(LoadValue(
 			TEXT("FFmpeg"), FindFFmpeg())));
 		GConfig->GetBool(
@@ -399,6 +407,12 @@ public:
 		GConfig->SetString(
 			SettingsSection, TEXT("Output"),
 			*Output->GetText().ToString(), GEditorPerProjectIni);
+		GConfig->SetString(
+			SettingsSection, TEXT("AdaptiveOutputFolder"),
+			*AdaptiveOutputFolder->GetText().ToString(), GEditorPerProjectIni);
+		GConfig->SetString(
+			SettingsSection, TEXT("PresentationName"),
+			*PresentationName->GetText().ToString(), GEditorPerProjectIni);
 		GConfig->SetString(
 			SettingsSection, TEXT("FFmpeg"),
 			*FFmpeg->GetText().ToString(), GEditorPerProjectIni);
@@ -498,6 +512,7 @@ public:
 			FFmpeg->GetText().ToString(),
 			FCString::Atod(*FrameRate->GetText().ToString()),
 			bOverwrite,
+			bAdaptivePackage,
 			Inputs,
 			Error);
 	}
@@ -571,6 +586,7 @@ public:
 		TArray<FString> RepresentationOutputs;
 		TArray<FString> RepresentationIds;
 		FString ManifestOutput;
+		FString AdaptivePresentationId;
 		if (bAdaptivePackage)
 		{
 			std::vector<openvolumetric::authoring::AdaptiveLadderEntry> Ladder;
@@ -586,16 +602,28 @@ public:
 				State->Append(TEXT("Cannot encode: ") + Message);
 				return;
 			}
-			const FString Base = FPaths::GetPath(OutputFile) /
-				FPaths::GetBaseFilename(OutputFile);
-			for (const auto& Entry : Ladder)
+			AdaptivePresentationId =
+				PresentationName->GetText().ToString().TrimStartAndEnd();
+			const FString PackageDirectory =
+				FPaths::ConvertRelativePathToFull(
+					AdaptiveOutputFolder->GetText().ToString()) /
+				AdaptivePresentationId;
+			if (AdaptivePresentationId.IsEmpty())
 			{
+				State->SetStatus(TEXT("Choose a presentation name."));
+				return;
+			}
+			for (int32 LadderIndex = 0;
+				LadderIndex < static_cast<int32>(Ladder.size());
+				++LadderIndex)
+			{
+				const auto& Entry = Ladder[LadderIndex];
 				RepresentationSettings.Add(ToUnrealSettings(Entry.settings));
 				RepresentationIds.Add(UTF8_TO_TCHAR(Entry.id.c_str()));
-				RepresentationOutputs.Add(
-					Base + TEXT("-") + UTF8_TO_TCHAR(Entry.id.c_str()) + TEXT(".mp4"));
+				RepresentationOutputs.Add(PackageDirectory /
+					(LadderIndex == 0 ? TEXT("low.mp4") : TEXT("high.mp4")));
 			}
-			ManifestOutput = Base + TEXT(".json");
+			ManifestOutput = PackageDirectory / TEXT("manifest.json");
 			for (const FString& Path : RepresentationOutputs)
 			{
 				if (IFileManager::Get().FileExists(*Path) && !bOverwrite)
@@ -654,7 +682,8 @@ public:
 			 RepresentationSettings = MoveTemp(RepresentationSettings),
 			 RepresentationOutputs = MoveTemp(RepresentationOutputs),
 			 RepresentationIds = MoveTemp(RepresentationIds),
-			 ManifestOutput, bAdaptivePackage = bAdaptivePackage, bReplace,
+			 ManifestOutput, AdaptivePresentationId,
+			 bAdaptivePackage = bAdaptivePackage, bReplace,
 			 bCompressGeometry, MaximumGeometryKeyframeInterval,
 			 FragmentDurationSeconds, FragmentFrameInterval]
 			{
@@ -915,7 +944,7 @@ public:
 							Input.resource_path = std::filesystem::path(
 								TCHAR_TO_UTF8(*ActiveOutput));
 							Input.compatibility_group = TCHAR_TO_UTF8(
-								*(FPaths::GetBaseFilename(ManifestOutput) +
+								*(AdaptivePresentationId +
 									TEXT("-coupled-v1")));
 							Input.geometry_payload_bytes = GeometryPayloadBytes;
 							Input.position_quantization_bits =
@@ -942,7 +971,7 @@ public:
 					std::string NativeError;
 					openvolumetric::authoring::AdaptivePackageOptions Options;
 					Options.presentation_id = TCHAR_TO_UTF8(
-						*FPaths::GetBaseFilename(ManifestOutput));
+						*AdaptivePresentationId);
 					Options.manifest_path = std::filesystem::path(
 						TCHAR_TO_UTF8(*ManifestOutput));
 					Options.segment_duration_seconds = FragmentDurationSeconds;
@@ -1062,10 +1091,73 @@ void SOpenVolumetricEncoderWindow::Construct(const FArguments&)
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)
 			[
-				PathRow(
-					NSLOCTEXT("OpenVolumetricAuthoring", "Output", "Output MP4"),
-					Impl->Output,
-					[this] { Impl->BrowseOutput(); })
+				SNew(SBox)
+				.Visibility_Lambda(
+					[this]
+					{
+						return Impl->bAdaptivePackage
+							? EVisibility::Collapsed
+							: EVisibility::Visible;
+					})
+				[
+					PathRow(
+						NSLOCTEXT("OpenVolumetricAuthoring", "Output", "Output MP4"),
+						Impl->Output,
+						[this] { Impl->BrowseOutput(); })
+				]
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)
+			[
+				SNew(SBox)
+				.Visibility_Lambda(
+					[this]
+					{
+						return Impl->bAdaptivePackage
+							? EVisibility::Visible
+							: EVisibility::Collapsed;
+					})
+				[
+					PathRow(
+						NSLOCTEXT(
+							"OpenVolumetricAuthoring",
+							"AdaptiveOutputFolder",
+							"Output Parent Folder"),
+						Impl->AdaptiveOutputFolder,
+						[this]
+						{
+							Impl->BrowseDirectory(Impl->AdaptiveOutputFolder);
+						})
+				]
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)
+			[
+				SNew(SHorizontalBox)
+				.Visibility_Lambda(
+					[this]
+					{
+						return Impl->bAdaptivePackage
+							? EVisibility::Visible
+							: EVisibility::Collapsed;
+					})
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				.Padding(0, 0, 8, 0)
+				[
+					SNew(SBox).WidthOverride(125)
+					[
+						SNew(STextBlock).Text(NSLOCTEXT(
+							"OpenVolumetricAuthoring",
+							"PresentationName",
+							"Presentation Name"))
+					]
+				]
+				+ SHorizontalBox::Slot().FillWidth(1)
+				[
+					SAssignNew(Impl->PresentationName, SEditableTextBox)
+					.ToolTipText(NSLOCTEXT(
+						"OpenVolumetricAuthoring",
+						"PresentationNameTooltip",
+						"Creates a package folder with this name containing manifest.json, low.mp4, and high.mp4."))
+				]
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 3)
 			[
