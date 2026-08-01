@@ -75,10 +75,42 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OpenVolumetric|Input")
 	bool bUseAdaptiveManifest = false;
 
-	/** Startup quality. Auto currently selects the highest-bandwidth entry. */
+	/** Manual quality or a conservative HTTP startup throughput decision. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OpenVolumetric|Input")
 	EOpenVolumetricAdaptiveQuality AdaptiveQuality =
 		EOpenVolumetricAdaptiveQuality::Auto;
+
+	/** Auto texture dimension ceiling; zero uses the platform profile. */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "OpenVolumetric|Input|Adaptive",
+		meta = (ClampMin = "0"))
+	int32 AdaptiveMaximumTextureDimension = 0;
+
+	/** Auto texture bitrate ceiling in Mbps; zero uses the platform profile. */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "OpenVolumetric|Input|Adaptive",
+		meta = (ClampMin = "0.0"))
+	double AdaptiveMaximumTextureBitrateMbps = 0.0;
+
+	/** Auto geometry bitrate ceiling in Mbps; zero uses the platform profile. */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "OpenVolumetric|Input|Adaptive",
+		meta = (ClampMin = "0.0"))
+	double AdaptiveMaximumGeometryBitrateMbps = 0.0;
+
+	/** Auto aggregate bitrate ceiling in Mbps; zero uses the platform profile. */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "OpenVolumetric|Input|Adaptive",
+		meta = (ClampMin = "0.0"))
+	double AdaptiveMaximumBandwidthMbps = 0.0;
 
 	/** Start playback automatically after a file opens successfully. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OpenVolumetric|Playback")
@@ -170,6 +202,14 @@ public:
 	/** Representation identifier selected from the current adaptive manifest. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status")
 	FString SelectedRepresentationId;
+
+	/** Bandwidth measured by the bounded HTTP Auto probe, in megabits/second. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status")
+	double AdaptiveMeasuredThroughputMbps = 0.0;
+
+	/** Human-readable explanation of the adaptive startup decision. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status")
+	FString AdaptiveDecisionReason;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status|Buffer")
 	bool bRemoteSource = false;

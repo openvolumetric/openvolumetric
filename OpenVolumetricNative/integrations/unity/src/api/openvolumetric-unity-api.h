@@ -78,12 +78,35 @@ extern "C"
 	OPENVOLUMETRIC_API int openvolumetric_load_adaptive_representation(
 		const char* manifest_location,
 		int quality);
+	/// Loads and selects while applying device limits to Auto quality.
+	OPENVOLUMETRIC_API int openvolumetric_load_adaptive_representation_with_capabilities(
+		const char* manifest_location,
+		int quality,
+		unsigned int maximum_texture_width,
+		unsigned int maximum_texture_height,
+		unsigned long long maximum_texture_bitrate,
+		unsigned long long maximum_geometry_bitrate,
+		unsigned long long maximum_bandwidth);
+	/// Parses and selects while applying device limits to Auto quality.
+	OPENVOLUMETRIC_API int openvolumetric_select_adaptive_representation_with_capabilities(
+		const char* manifest_json,
+		const char* manifest_location,
+		int quality,
+		unsigned int maximum_texture_width,
+		unsigned int maximum_texture_height,
+		unsigned long long maximum_texture_bitrate,
+		unsigned long long maximum_geometry_bitrate,
+		unsigned long long maximum_bandwidth);
 	/// Returns the selected representation's URI exactly as stored in JSON.
 	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_resource_uri();
 	/// Returns the selected resource resolved against the manifest location.
 	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_resource();
 	/// Returns the selected representation identifier.
 	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_representation_id();
+	/// Returns the bounded HTTP startup probe result in bits per second.
+	OPENVOLUMETRIC_API unsigned long long openvolumetric_get_adaptive_throughput_bps();
+	/// Returns a human-readable explanation of the startup selection.
+	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_decision_reason();
 	/// Returns the most recent manifest-selection error.
 	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_error();
 

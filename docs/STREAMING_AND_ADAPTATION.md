@@ -241,9 +241,26 @@ HTTP origin without engine-specific renaming.
 The core `AdaptiveSelection` layer loads local or HTTP manifests, applies the
 same strict parser, selects the minimum- or maximum-bandwidth coupled
 representation, and resolves its resource URI relative to the manifest. Unity
-and Unreal expose **Auto**, **Low**, and **High** startup choices. Auto uses the
-highest-bandwidth representation in this initial deterministic phase; it does
-not yet measure throughput or change representation during playback.
+and Unreal expose **Auto**, **Low**, and **High** startup choices. For HTTP,
+Auto performs a bounded 2 MiB probe against the High representation and only
+selects it when measured throughput is at least 1.5 times its declared
+bandwidth. Before probing, Auto rejects representations exceeding conservative
+platform ceilings for texture dimensions, texture bitrate, geometry bitrate,
+or aggregate bandwidth. It probes the highest eligible representation and a
+failed or insufficient probe selects the lowest eligible representation.
+Local Auto selects the highest eligible representation without a network
+probe. Manual Low and High remain explicit overrides. This is deliberately
+startup-only and does not change representation during playback.
+
+Unity and Unreal use validated desktop and standalone-Android profiles and
+expose optional per-component overrides for each ceiling. These declared
+profiles prevent clearly unsuitable choices but are not a substitute for
+measured decode-capability calibration on each evaluation device.
+
+Both engine developer panels report the selected representation and measured
+probe throughput. The native selection result also records a decision reason.
+The probe bytes are currently discarded, so their cost must be included in
+startup-delay and wasted-byte measurements for evaluation.
 
 Manual startup selection was validated on 1 August 2026 in Unity and Unreal
 using both local and HTTP manifests. Low and High completed forward/backward

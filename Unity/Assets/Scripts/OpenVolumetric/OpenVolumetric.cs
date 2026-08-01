@@ -20,16 +20,26 @@ public class OpenVolumetric : MonoBehaviour
 {
     private const string PluginName = "AudioPluginOpenVolumetricUnity";
 
-    [DllImport(PluginName, EntryPoint = "openvolumetric_select_adaptive_representation")]
-    private static extern int SelectAdaptiveRepresentation(
+    [DllImport(PluginName, EntryPoint = "openvolumetric_select_adaptive_representation_with_capabilities")]
+    private static extern int SelectAdaptiveRepresentationWithCapabilities(
         string manifestJson,
         string manifestLocation,
-        int quality);
+        int quality,
+        uint maximumTextureWidth,
+        uint maximumTextureHeight,
+        ulong maximumTextureBitrate,
+        ulong maximumGeometryBitrate,
+        ulong maximumBandwidth);
 
-    [DllImport(PluginName, EntryPoint = "openvolumetric_load_adaptive_representation")]
-    private static extern int LoadAdaptiveRepresentation(
+    [DllImport(PluginName, EntryPoint = "openvolumetric_load_adaptive_representation_with_capabilities")]
+    private static extern int LoadAdaptiveRepresentationWithCapabilities(
         string manifestLocation,
-        int quality);
+        int quality,
+        uint maximumTextureWidth,
+        uint maximumTextureHeight,
+        ulong maximumTextureBitrate,
+        ulong maximumGeometryBitrate,
+        ulong maximumBandwidth);
 
     [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_resource_uri")]
     private static extern IntPtr GetAdaptiveResourceUri();
@@ -39,6 +49,12 @@ public class OpenVolumetric : MonoBehaviour
 
     [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_representation_id")]
     private static extern IntPtr GetAdaptiveRepresentationId();
+
+    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_throughput_bps")]
+    private static extern ulong GetAdaptiveThroughputBitsPerSecond();
+
+    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_decision_reason")]
+    private static extern IntPtr GetAdaptiveDecisionReason();
 
     [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_error")]
     private static extern IntPtr GetAdaptiveError();
@@ -61,9 +77,26 @@ public class OpenVolumetric : MonoBehaviour
     /// <summary>Interpret the selected local file or URL as manifest.json.</summary>
     [Tooltip("Load an adaptive manifest and select one representation before playback starts.")]
     public bool useAdaptiveManifest;
-    /// <summary>Manual startup quality; Auto currently selects the highest quality.</summary>
-    [Tooltip("Startup adaptive quality. Auto currently selects the highest-bandwidth representation.")]
+    /// <summary>Manual quality or a conservative HTTP startup measurement.</summary>
+    [Tooltip("Startup adaptive quality. For HTTP, Auto measures initial throughput and requires safety headroom before selecting High.")]
     public AdaptiveQuality adaptiveQuality = AdaptiveQuality.Auto;
+    /// <summary>Optional maximum texture dimension for Auto; zero uses the platform profile.</summary>
+    [Header("Adaptive Capability Overrides")]
+    [Tooltip("Maximum texture width and height for Auto selection. Zero uses the platform default.")]
+    [Min(0)]
+    public int adaptiveMaximumTextureDimension;
+    /// <summary>Optional Auto texture bitrate ceiling in megabits per second.</summary>
+    [Tooltip("Maximum texture bitrate in Mbps. Zero uses the platform default.")]
+    [Min(0.0F)]
+    public float adaptiveMaximumTextureBitrateMbps;
+    /// <summary>Optional Auto geometry bitrate ceiling in megabits per second.</summary>
+    [Tooltip("Maximum geometry bitrate in Mbps. Zero uses the platform default.")]
+    [Min(0.0F)]
+    public float adaptiveMaximumGeometryBitrateMbps;
+    /// <summary>Optional Auto aggregate bitrate ceiling in megabits per second.</summary>
+    [Tooltip("Maximum combined representation bitrate in Mbps. Zero uses the platform default.")]
+    [Min(0.0F)]
+    public float adaptiveMaximumBandwidthMbps;
     /// <summary>Additive correction applied to the decoded Y channel.</summary>
     [Header("Texture Settings")]
     [Tooltip("Luminance Correction - Y")]
@@ -127,6 +160,17 @@ public class OpenVolumetric : MonoBehaviour
     private bool m_waiting_for_initial_presentation;
     private bool m_play_after_initial_presentation;
     private string m_selected_representation_id = "";
+    private ulong m_adaptive_throughput_bps;
+    private string m_adaptive_decision_reason = "";
+
+    private struct AdaptiveCapabilityLimits
+    {
+        public uint MaximumTextureWidth;
+        public uint MaximumTextureHeight;
+        public ulong MaximumTextureBitrate;
+        public ulong MaximumGeometryBitrate;
+        public ulong MaximumBandwidth;
+    }
 
     /// <summary>Current managed playback state.</summary>
     public PlaybackState State { get { return m_playback_state; } }
@@ -165,6 +209,61 @@ public class OpenVolumetric : MonoBehaviour
     public string SelectedRepresentationId
     {
         get { return m_selected_representation_id; }
+    }
+    /// <summary>Bandwidth measured by the bounded HTTP Auto probe, in bits per second.</summary>
+    public ulong AdaptiveThroughputBitsPerSecond
+    {
+        get { return m_adaptive_throughput_bps; }
+    }
+    /// <summary>Explanation of the current adaptive startup decision.</summary>
+    public string AdaptiveDecisionReason
+    {
+        get { return m_adaptive_decision_reason; }
+    }
+
+    /// <summary>Copies native adaptive diagnostics after a successful selection.</summary>
+    private void UpdateAdaptiveSelectionDiagnostics()
+    {
+        m_selected_representation_id =
+            Marshal.PtrToStringAnsi(GetAdaptiveRepresentationId()) ?? "";
+        m_adaptive_throughput_bps = GetAdaptiveThroughputBitsPerSecond();
+        m_adaptive_decision_reason =
+            Marshal.PtrToStringAnsi(GetAdaptiveDecisionReason()) ?? "";
+    }
+
+    /// <summary>
+    /// Returns conservative limits for the platform families validated by the
+    /// project. Manual Low and High choices intentionally override these caps.
+    /// </summary>
+    private static ulong ResolveBitrateLimit(float overrideMbps, ulong platformLimit)
+    {
+        return overrideMbps > 0.0F
+            ? (ulong)Math.Round(overrideMbps * 1000000.0)
+            : platformLimit;
+    }
+
+    private AdaptiveCapabilityLimits GetAdaptiveCapabilityLimits()
+    {
+        bool standaloneAndroid = Application.platform == RuntimePlatform.Android;
+        uint platformDimension = standaloneAndroid ? 4096U : 8192U;
+        uint reportedDimension = (uint)Math.Max(1, SystemInfo.maxTextureSize);
+        uint maximumDimension = adaptiveMaximumTextureDimension > 0
+            ? (uint)adaptiveMaximumTextureDimension
+            : Math.Min(platformDimension, reportedDimension);
+        return new AdaptiveCapabilityLimits
+        {
+            MaximumTextureWidth = maximumDimension,
+            MaximumTextureHeight = maximumDimension,
+            MaximumTextureBitrate = ResolveBitrateLimit(
+                adaptiveMaximumTextureBitrateMbps,
+                standaloneAndroid ? 20000000UL : 100000000UL),
+            MaximumGeometryBitrate = ResolveBitrateLimit(
+                adaptiveMaximumGeometryBitrateMbps,
+                standaloneAndroid ? 50000000UL : 250000000UL),
+            MaximumBandwidth = ResolveBitrateLimit(
+                adaptiveMaximumBandwidthMbps,
+                standaloneAndroid ? 70000000UL : 350000000UL)
+        };
     }
 
     /// <summary>Returns the latest decoded geometry centroid in local space.</summary>
@@ -205,6 +304,7 @@ public class OpenVolumetric : MonoBehaviour
         string manifestJson = null;
         string manifestLocation = null;
         bool remote = !string.IsNullOrWhiteSpace(videoUrl);
+        AdaptiveCapabilityLimits limits = GetAdaptiveCapabilityLimits();
         if(remote)
         {
             Uri manifestUri;
@@ -218,9 +318,14 @@ public class OpenVolumetric : MonoBehaviour
                 yield break;
             }
             manifestLocation = manifestUri.AbsoluteUri;
-            if(LoadAdaptiveRepresentation(
+            if(LoadAdaptiveRepresentationWithCapabilities(
                 manifestLocation,
-                (int)adaptiveQuality) != 1)
+                (int)adaptiveQuality,
+                limits.MaximumTextureWidth,
+                limits.MaximumTextureHeight,
+                limits.MaximumTextureBitrate,
+                limits.MaximumGeometryBitrate,
+                limits.MaximumBandwidth) != 1)
             {
                 Debug.LogError(
                     "OpenVolumetric - adaptive manifest selection failed: " +
@@ -228,8 +333,7 @@ public class OpenVolumetric : MonoBehaviour
                 completed(null);
                 yield break;
             }
-            m_selected_representation_id =
-                Marshal.PtrToStringAnsi(GetAdaptiveRepresentationId()) ?? "";
+            UpdateAdaptiveSelectionDiagnostics();
             completed(Marshal.PtrToStringAnsi(GetAdaptiveResource()));
             yield break;
         }
@@ -246,10 +350,15 @@ public class OpenVolumetric : MonoBehaviour
             manifestJson = File.ReadAllText(manifestLocation);
         }
 
-        if(SelectAdaptiveRepresentation(
+        if(SelectAdaptiveRepresentationWithCapabilities(
             manifestJson,
             manifestLocation,
-            (int)adaptiveQuality) != 1)
+            (int)adaptiveQuality,
+            limits.MaximumTextureWidth,
+            limits.MaximumTextureHeight,
+            limits.MaximumTextureBitrate,
+            limits.MaximumGeometryBitrate,
+            limits.MaximumBandwidth) != 1)
         {
             Debug.LogError(
                 "OpenVolumetric - adaptive manifest selection failed: " +
@@ -257,8 +366,7 @@ public class OpenVolumetric : MonoBehaviour
             completed(null);
             yield break;
         }
-        m_selected_representation_id =
-            Marshal.PtrToStringAnsi(GetAdaptiveRepresentationId()) ?? "";
+        UpdateAdaptiveSelectionDiagnostics();
         string resourceUri =
             Marshal.PtrToStringAnsi(GetAdaptiveResourceUri()) ?? "";
         string manifestDirectory = Path.GetDirectoryName(videoFilename) ?? "";

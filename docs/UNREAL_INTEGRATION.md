@@ -104,7 +104,11 @@ For playback, point **Source File** or **Source URL** at `manifest.json`,
 enable **Use Adaptive Manifest**, and select **Auto**, **Low**, or **High**.
 The runtime resolves `low.mp4` or `high.mp4` relative to the manifest and
 reports the selected representation in component status and the developer
-overlay. Selection currently occurs once during `Open()`; live switching is
+overlay. Auto first applies conservative platform capability ceilings and then
+uses a bounded HTTP throughput probe. Advanced component properties can
+override the texture dimension, texture bitrate, geometry bitrate, and total
+bandwidth ceilings; zero retains the platform default. Manual Low and High
+bypass these limits. Selection occurs once during `Open()`; live switching is
 not part of this phase.
 
 The **Geometry Compression** checkbox enables topology-aware position updates.

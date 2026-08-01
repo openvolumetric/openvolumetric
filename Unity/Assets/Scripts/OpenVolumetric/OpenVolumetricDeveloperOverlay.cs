@@ -240,6 +240,12 @@ public sealed class OpenVolumetricDeveloperOverlay : MonoBehaviour
         if(!string.IsNullOrEmpty(m_player.SelectedRepresentationId))
         {
             network += "\nQuality: " + m_player.SelectedRepresentationId;
+            if(m_player.AdaptiveThroughputBitsPerSecond > 0)
+            {
+                network += string.Format(
+                    " ({0:F1} Mbps probe)",
+                    m_player.AdaptiveThroughputBitsPerSecond / 1000000.0);
+            }
         }
         if(buffer.IsFragmented)
         {

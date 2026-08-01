@@ -152,7 +152,7 @@ MonoBehaviour:
   videoFilename: 
   videoUrl: http://192.168.0.34:18765/manifest.json
   useAdaptiveManifest: 1
-  adaptiveQuality: 2
+  adaptiveQuality: 0
   luminanceCorrection: 0
   blueProjectionCorrection: 0
   redProjectionCorrection: 0

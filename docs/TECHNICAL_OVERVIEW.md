@@ -1128,10 +1128,19 @@ DASH MPD mapping remain future work.
 
 `AdaptiveSelection` now adds engine-neutral local/HTTP manifest loading,
 relative resource resolution, and deterministic startup selection. Unity and
-Unreal expose Auto, Low, and High; Low selects the minimum declared aggregate
-bandwidth, while High and the initial Auto behavior select the maximum. The
-selected complete fragmented MP4 then enters the unchanged player pipeline.
-Throughput estimation and segment-boundary switching remain future work.
+Unreal expose Auto, Low, and High. Low and High select the minimum and maximum
+declared aggregate bandwidth respectively. Auto first filters representations
+using platform ceilings for texture dimensions, texture bitrate, geometry
+bitrate, and aggregate bandwidth. Remote Auto reads at most 2 MiB from the
+highest eligible representation as a startup throughput probe and requires
+1.5x bandwidth headroom; otherwise it selects the lowest eligible
+representation. Local Auto selects the highest eligible representation
+without probing. Manual choices intentionally override capability ceilings.
+Unity and Unreal expose per-component ceiling overrides for controlled tests
+and unusual hardware. The selected complete fragmented MP4 then enters the
+unchanged player pipeline. The platform profiles are conservative declared
+limits, not live decode benchmarks; calibration with measured device decode
+data and segment-boundary switching remain future work.
 Local and HTTP startup selection at both quality levels has been manually
 validated in Unity and Unreal, including seeking, pause/resume, looping, and
 cross-stream synchronization.
@@ -1176,9 +1185,9 @@ fragmented playback, and independent-mesh geometry without topology reuse.
 The full engineering plan and validation matrix are maintained in
 [STREAMING_AND_ADAPTATION.md](STREAMING_AND_ADAPTATION.md). Fixed fragmented
 packaging and the versioned manifest model/parser are implemented; automatic
-throughput selection, DASH mapping, and atomic representation switching remain
-outstanding. Multi-representation authoring and manual startup selection are
-implemented in Unity and Unreal.
+startup throughput selection, multi-representation authoring, and manual
+selection are implemented in Unity and Unreal. DASH mapping, decode-capability
+calibration, and atomic representation switching remain outstanding.
 
 ### 12.6 C2PA provenance investigation (future work)
 

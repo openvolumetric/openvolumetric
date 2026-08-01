@@ -19,6 +19,48 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogOpenVolumetricComponent, Log, All);
 
+namespace
+{
+
+std::uint64_t ResolveBitrateLimit(double OverrideMbps, std::uint64_t PlatformLimit)
+{
+	return OverrideMbps > 0.0
+		? static_cast<std::uint64_t>(OverrideMbps * 1000000.0)
+		: PlatformLimit;
+}
+
+openvolumetric::AdaptiveCapabilityLimits GetAdaptiveCapabilityLimits(
+	const UOpenVolumetricComponent& Component)
+{
+	openvolumetric::AdaptiveCapabilityLimits Limits;
+#if PLATFORM_ANDROID
+	constexpr std::uint32_t PlatformDimension = 4096;
+	constexpr std::uint64_t PlatformTextureBitrate = 20000000;
+	constexpr std::uint64_t PlatformGeometryBitrate = 50000000;
+	constexpr std::uint64_t PlatformBandwidth = 70000000;
+#else
+	constexpr std::uint32_t PlatformDimension = 8192;
+	constexpr std::uint64_t PlatformTextureBitrate = 100000000;
+	constexpr std::uint64_t PlatformGeometryBitrate = 250000000;
+	constexpr std::uint64_t PlatformBandwidth = 350000000;
+#endif
+	const std::uint32_t MaximumDimension =
+		Component.AdaptiveMaximumTextureDimension > 0
+			? static_cast<std::uint32_t>(Component.AdaptiveMaximumTextureDimension)
+			: PlatformDimension;
+	Limits.maximum_texture_width = MaximumDimension;
+	Limits.maximum_texture_height = MaximumDimension;
+	Limits.maximum_texture_bitrate = ResolveBitrateLimit(
+		Component.AdaptiveMaximumTextureBitrateMbps, PlatformTextureBitrate);
+	Limits.maximum_geometry_bitrate = ResolveBitrateLimit(
+		Component.AdaptiveMaximumGeometryBitrateMbps, PlatformGeometryBitrate);
+	Limits.maximum_bandwidth = ResolveBitrateLimit(
+		Component.AdaptiveMaximumBandwidthMbps, PlatformBandwidth);
+	return Limits;
+}
+
+} // namespace
+
 UOpenVolumetricComponent::UOpenVolumetricComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
@@ -304,6 +346,8 @@ bool UOpenVolumetricComponent::Open()
 	}
 
 	SelectedRepresentationId.Reset();
+	AdaptiveMeasuredThroughputMbps = 0.0;
+	AdaptiveDecisionReason.Reset();
 	if (bUseAdaptiveManifest)
 	{
 		openvolumetric::AdaptiveSelection Selection;
@@ -312,6 +356,7 @@ bool UOpenVolumetricComponent::Open()
 		if (!openvolumetric::load_adaptive_representation(
 				Utf8Manifest.Get(),
 				static_cast<openvolumetric::AdaptiveQuality>(AdaptiveQuality),
+				GetAdaptiveCapabilityLimits(*this),
 				Selection,
 				NativeError))
 		{
@@ -323,6 +368,9 @@ bool UOpenVolumetricComponent::Open()
 		ResolvedPath = UTF8_TO_TCHAR(Selection.resolved_resource.c_str());
 		SelectedRepresentationId = UTF8_TO_TCHAR(
 			Selection.representation.id.c_str());
+		AdaptiveMeasuredThroughputMbps =
+			static_cast<double>(Selection.measured_throughput_bps) / 1000000.0;
+		AdaptiveDecisionReason = UTF8_TO_TCHAR(Selection.decision_reason.c_str());
 		if (!bUseRemoteSource && !FPaths::FileExists(ResolvedPath))
 		{
 			LastError = FString::Printf(
@@ -735,8 +783,12 @@ void UOpenVolumetricComponent::UpdateDeveloperControls(float DeltaTime)
 	}
 	if (!SelectedRepresentationId.IsEmpty())
 	{
-		NetworkStatus += FString::Printf(
-			TEXT("\nquality: %s"), *SelectedRepresentationId);
+		NetworkStatus += AdaptiveMeasuredThroughputMbps > 0.0
+			? FString::Printf(
+				TEXT("\nquality: %s (%.1f Mbps probe)"),
+				*SelectedRepresentationId,
+				AdaptiveMeasuredThroughputMbps)
+			: FString::Printf(TEXT("\nquality: %s"), *SelectedRepresentationId);
 	}
 	const FString ErrorStatus = LastError.IsEmpty()
 		? FString()

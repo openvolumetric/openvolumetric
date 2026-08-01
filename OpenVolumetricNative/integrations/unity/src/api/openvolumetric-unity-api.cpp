@@ -449,6 +449,73 @@ OPENVOLUMETRIC_API int openvolumetric_load_adaptive_representation(
 		: -1;
 }
 
+OPENVOLUMETRIC_API int openvolumetric_load_adaptive_representation_with_capabilities(
+	const char* manifest_location,
+	int quality,
+	unsigned int maximum_texture_width,
+	unsigned int maximum_texture_height,
+	unsigned long long maximum_texture_bitrate,
+	unsigned long long maximum_geometry_bitrate,
+	unsigned long long maximum_bandwidth)
+{
+	g_adaptive_selection = {};
+	g_adaptive_error.clear();
+	if (manifest_location == nullptr || quality < 0 || quality > 2)
+	{
+		g_adaptive_error = "Adaptive manifest location or quality is invalid.";
+		return -1;
+	}
+	openvolumetric::AdaptiveCapabilityLimits limits;
+	limits.maximum_texture_width = maximum_texture_width;
+	limits.maximum_texture_height = maximum_texture_height;
+	limits.maximum_texture_bitrate = maximum_texture_bitrate;
+	limits.maximum_geometry_bitrate = maximum_geometry_bitrate;
+	limits.maximum_bandwidth = maximum_bandwidth;
+	return openvolumetric::load_adaptive_representation(
+		manifest_location,
+		static_cast<openvolumetric::AdaptiveQuality>(quality),
+		limits,
+		g_adaptive_selection,
+		g_adaptive_error)
+		? 1
+		: -1;
+}
+
+OPENVOLUMETRIC_API int openvolumetric_select_adaptive_representation_with_capabilities(
+	const char* manifest_json,
+	const char* manifest_location,
+	int quality,
+	unsigned int maximum_texture_width,
+	unsigned int maximum_texture_height,
+	unsigned long long maximum_texture_bitrate,
+	unsigned long long maximum_geometry_bitrate,
+	unsigned long long maximum_bandwidth)
+{
+	g_adaptive_selection = {};
+	g_adaptive_error.clear();
+	if (manifest_json == nullptr || manifest_location == nullptr ||
+		quality < 0 || quality > 2)
+	{
+		g_adaptive_error = "Adaptive manifest input or quality is invalid.";
+		return -1;
+	}
+	openvolumetric::AdaptiveCapabilityLimits limits;
+	limits.maximum_texture_width = maximum_texture_width;
+	limits.maximum_texture_height = maximum_texture_height;
+	limits.maximum_texture_bitrate = maximum_texture_bitrate;
+	limits.maximum_geometry_bitrate = maximum_geometry_bitrate;
+	limits.maximum_bandwidth = maximum_bandwidth;
+	return openvolumetric::select_adaptive_representation(
+		manifest_json,
+		manifest_location,
+		static_cast<openvolumetric::AdaptiveQuality>(quality),
+		limits,
+		g_adaptive_selection,
+		g_adaptive_error)
+		? 1
+		: -1;
+}
+
 OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_resource_uri()
 {
 	return g_adaptive_selection.representation.resource_uri.c_str();
@@ -462,6 +529,17 @@ OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_resource()
 OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_representation_id()
 {
 	return g_adaptive_selection.representation.id.c_str();
+}
+
+OPENVOLUMETRIC_API unsigned long long openvolumetric_get_adaptive_throughput_bps()
+{
+	return static_cast<unsigned long long>(
+		g_adaptive_selection.measured_throughput_bps);
+}
+
+OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_decision_reason()
+{
+	return g_adaptive_selection.decision_reason.c_str();
 }
 
 OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_error()

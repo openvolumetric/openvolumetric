@@ -415,10 +415,15 @@ threading, recovery, authoring, and validation design is recorded in
 - [ ] Evaluate MPEG-DASH as the initial manifest/delivery model and document
       custom `vvge` signaling and interoperability limits.
 - [x] Implement startup representation selection with Auto, Low, and High
-      choices in Unity and Unreal. Auto currently selects the highest declared
-      bandwidth; live throughput-based changes remain separate work.
-- [ ] Implement conservative throughput-based automatic selection constrained
-      by device and measured decode capability.
+      choices in Unity and Unreal.
+- [x] Implement conservative startup throughput selection: remote Auto probes
+      at most 2 MiB and selects High only with 1.5x measured bandwidth
+      headroom; local Auto selects High and failed probes fall back to Low.
+- [x] Constrain Auto selection with platform texture-dimension, texture-rate,
+      geometry-rate, and aggregate-bandwidth capability ceilings, with
+      per-component overrides in Unity and Unreal.
+- [ ] Replace or calibrate conservative platform ceilings with measured decode
+      capability data from the evaluation hardware.
 - [ ] Switch compatible texture and geometry atomically at aligned segment
       boundaries while preserving the audio clock.
 - [ ] Cancel and isolate stale in-flight downloads using playback generations.
