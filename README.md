@@ -54,6 +54,7 @@ The Unreal Engine 5.8 plug-in contains:
 - `UOpenVolumetricComponent` for C++ and Blueprint playback;
 - dynamic mesh, unlit texture, and procedural audio output with optional
   geometry-centroid spatialisation;
+- an optional keyboard-operated runtime developer panel;
 - **Tools > OpenVolumetric Encoder** for authoring; and
 - the `/Game/OpenVolumetricSample` example level.
 

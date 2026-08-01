@@ -125,6 +125,18 @@ public:
 		meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "0.25", Units = "s"))
 	float SpatialAudioSmoothingSeconds = 0.05f;
 
+	/** Enables the runtime status panel and keyboard playback shortcuts. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OpenVolumetric|Developer")
+	bool bEnableDeveloperControls = true;
+
+	/** Number of seconds moved by the left and right arrow shortcuts. */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "OpenVolumetric|Developer",
+		meta = (ClampMin = "0.1", UIMin = "1.0", UIMax = "60.0", Units = "s"))
+	double DeveloperSeekSeconds = 10.0;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status")
 	EOpenVolumetricPlaybackState PlaybackState = EOpenVolumetricPlaybackState::Closed;
 
@@ -206,6 +218,7 @@ private:
 	void InitializeAudio();
 	void PumpAudio();
 	void ResetAudio();
+	void UpdateDeveloperControls(float DeltaTime);
 	void UpdateBufferDiagnostics();
 	bool HandleNetworkRecovery();
 
@@ -223,4 +236,8 @@ private:
 	TObjectPtr<USoundWaveProcedural> ProceduralSoundWave;
 
 	TArray<int16> AudioSamples;
+	float SmoothedDeveloperDeltaTime = 0.0f;
+	float DeveloperStatusUpdateCountdown = 0.0f;
+	uint64 DeveloperMessageKey = 0;
+	bool bDeveloperOverlayVisible = true;
 };

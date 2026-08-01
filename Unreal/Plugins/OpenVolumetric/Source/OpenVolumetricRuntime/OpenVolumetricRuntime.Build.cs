@@ -16,6 +16,7 @@ public class OpenVolumetricRuntime : ModuleRules
 				"AudioMixer",
 				"GeometryCore",
 				"GeometryFramework",
+				"InputCore",
 				"Projects",
 				"RenderCore",
 				"RHI"

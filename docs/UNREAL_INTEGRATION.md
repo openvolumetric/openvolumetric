@@ -21,6 +21,24 @@ Unity integration.
 5. Enable **Play on Open** and **Loop** as required.
 6. Enter Play in Editor.
 
+### Developer controls
+
+**Enable Developer Controls** creates a small engine on-screen status display
+without any Blueprint, UMG, or level UI setup. Click the game viewport so it
+has keyboard focus, then use:
+
+- **K**: play or pause; Play at the end restarts from zero;
+- **J**: seek backward by 10 seconds;
+- **L**: seek forward by 10 seconds;
+- **O**: toggle looping; and
+- **I**: hide or show the panel.
+
+The seek interval is configurable through **Developer Seek Seconds**. The panel
+shows playback state and time, loop state, frame rate, frame time, process
+memory, errors, and HTTP cache, request, recovery, and fragment diagnostics
+when applicable. Disable **Enable Developer Controls** for a release-facing
+player with no built-in diagnostics or shortcuts.
+
 The component creates and owns its dynamic mesh, transient texture, unlit
 material instance, procedural sound wave, and audio component. Playback
 operations are also available to Blueprints:

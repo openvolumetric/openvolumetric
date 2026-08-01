@@ -739,6 +739,14 @@ by default, and neither centroid tracking nor smoothing changes PCM queueing
 or the playback clock. The Unity and Unreal paths therefore share the source
 position model while retaining engine-appropriate audio rendering.
 
+The Unreal component can also publish an optional keyed on-screen developer
+display. It polls non-consuming keyboard edges for play/pause, relative
+seeking, loop toggle, and visibility, and reports playback, timing, memory,
+and remote-buffer diagnostics. It deliberately does not own a UMG or Slate
+viewport widget, so PIE teardown remains engine-owned. This layer calls the
+same public component methods available to Blueprints and does not participate
+in decoding or synchronization.
+
 The native DSP bridge currently supports one active OpenVolumetric player and
 occupies Unity's project-wide spatializer plug-in slot. These are integration
 constraints rather than core decoder limitations. A dedicated native

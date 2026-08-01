@@ -4,7 +4,11 @@
 #include "Components/AudioComponent.h"
 #include "Components/DynamicMeshComponent.h"
 #include "DynamicMesh/DynamicMesh3.h"
+#include "Engine/Engine.h"
 #include "Engine/Texture2D.h"
+#include "GameFramework/PlayerController.h"
+#include "HAL/PlatformMemory.h"
+#include "InputCoreTypes.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/Paths.h"
@@ -38,6 +42,7 @@ void UOpenVolumetricComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	CreateDynamicMeshComponent();
+	DeveloperMessageKey = reinterpret_cast<uint64>(this);
 	if (!SourceUrl.TrimStartAndEnd().IsEmpty() ||
 		!SourceFile.FilePath.IsEmpty())
 	{
@@ -77,6 +82,7 @@ void UOpenVolumetricComponent::TickComponent(
 	FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	UpdateDeveloperControls(DeltaTime);
 	UpdateBufferDiagnostics();
 	if (HandleNetworkRecovery())
 	{
@@ -220,6 +226,10 @@ void UOpenVolumetricComponent::UpdatePresentationTexture(
 
 void UOpenVolumetricComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (GEngine != nullptr && DeveloperMessageKey != 0)
+	{
+		GEngine->RemoveOnScreenDebugMessage(DeveloperMessageKey);
+	}
 	Close();
 	Super::EndPlay(EndPlayReason);
 }
@@ -327,6 +337,17 @@ bool UOpenVolumetricComponent::Open()
 
 void UOpenVolumetricComponent::Play()
 {
+	if (PlaybackState == EOpenVolumetricPlaybackState::Ended)
+	{
+		if (!Player->Seek(0.0, LastError))
+		{
+			PlaybackState = EOpenVolumetricPlaybackState::Error;
+			return;
+		}
+		CurrentTimeSeconds = 0.0;
+		PlaybackState = EOpenVolumetricPlaybackState::Ready;
+		ResetAudio();
+	}
 	if (PlaybackState == EOpenVolumetricPlaybackState::Ready ||
 		PlaybackState == EOpenVolumetricPlaybackState::Paused)
 	{
@@ -590,4 +611,114 @@ void UOpenVolumetricComponent::ResetAudio()
 	{
 		ProceduralSoundWave->ResetAudio();
 	}
+}
+
+void UOpenVolumetricComponent::UpdateDeveloperControls(float DeltaTime)
+{
+	if (!bEnableDeveloperControls)
+	{
+		if (GEngine != nullptr && DeveloperMessageKey != 0)
+		{
+			GEngine->RemoveOnScreenDebugMessage(DeveloperMessageKey);
+		}
+		return;
+	}
+
+	APlayerController* PlayerController = GetWorld() != nullptr
+		? GetWorld()->GetFirstPlayerController()
+		: nullptr;
+	if (PlayerController != nullptr)
+	{
+		if (PlayerController->WasInputKeyJustPressed(EKeys::K))
+		{
+			PlaybackState == EOpenVolumetricPlaybackState::Playing ? Pause() : Play();
+		}
+		if (PlayerController->WasInputKeyJustPressed(EKeys::J))
+		{
+			Seek(CurrentTimeSeconds - DeveloperSeekSeconds);
+		}
+		if (PlayerController->WasInputKeyJustPressed(EKeys::L))
+		{
+			Seek(CurrentTimeSeconds + DeveloperSeekSeconds);
+		}
+		if (PlayerController->WasInputKeyJustPressed(EKeys::O))
+		{
+			bLoop = !bLoop;
+		}
+		if (PlayerController->WasInputKeyJustPressed(EKeys::I))
+		{
+			bDeveloperOverlayVisible = !bDeveloperOverlayVisible;
+			if (!bDeveloperOverlayVisible && GEngine != nullptr)
+			{
+				GEngine->RemoveOnScreenDebugMessage(DeveloperMessageKey);
+			}
+		}
+	}
+
+	SmoothedDeveloperDeltaTime = FMath::Lerp(
+		SmoothedDeveloperDeltaTime <= 0.0f
+			? DeltaTime
+			: SmoothedDeveloperDeltaTime,
+		DeltaTime,
+		0.05f);
+	DeveloperStatusUpdateCountdown -= DeltaTime;
+	if (!bDeveloperOverlayVisible || GEngine == nullptr ||
+		DeveloperStatusUpdateCountdown > 0.0f)
+	{
+		return;
+	}
+	DeveloperStatusUpdateCountdown = 0.25f;
+
+	const float FramesPerSecond = SmoothedDeveloperDeltaTime > 0.0f
+		? 1.0f / SmoothedDeveloperDeltaTime
+		: 0.0f;
+	const FString StateName = StaticEnum<EOpenVolumetricPlaybackState>()->
+		GetNameStringByValue(static_cast<int64>(PlaybackState));
+	const FString InputName = StaticEnum<EOpenVolumetricInputState>()->
+		GetNameStringByValue(static_cast<int64>(InputState));
+	const double Megabytes = 1024.0 * 1024.0;
+	FString NetworkStatus;
+	if (bRemoteSource)
+	{
+		NetworkStatus = FString::Printf(
+			TEXT("\nHTTP %s  cache:%.1f MB  downloaded:%.1f MB\nrequests:%lld  recoveries:%lld"),
+			*InputName,
+			static_cast<double>(CachedBytes) / Megabytes,
+			static_cast<double>(DownloadedBytes) / Megabytes,
+			HttpRequestCount,
+			NetworkRecoveryCount);
+	}
+	if (bFragmentedInput)
+	{
+		NetworkStatus += FString::Printf(
+			TEXT("\nfragments active:%lld/%lld  cached:%lld"),
+			ActiveFragment >= 0 ? ActiveFragment + 1 : 0,
+			FragmentCount,
+			CachedFragmentCount);
+	}
+	const FString ErrorStatus = LastError.IsEmpty()
+		? FString()
+		: FString::Printf(TEXT("\nERROR: %s"), *LastError);
+	const double UsedMemoryMb =
+		static_cast<double>(FPlatformMemory::GetStats().UsedPhysical) / Megabytes;
+	const FString StatusText = FString::Printf(
+		TEXT("OPENVOLUMETRIC\n%s  %.1f/%.1fs  Loop:%s\n%.1f fps  %.2f ms  Memory:%.0f MB%s%s\n\nK Play/Pause  O Loop\nJ -%.0fs  L +%.0fs  I Hide"),
+		*StateName,
+		CurrentTimeSeconds,
+		DurationSeconds,
+		bLoop ? TEXT("On") : TEXT("Off"),
+		FramesPerSecond,
+		SmoothedDeveloperDeltaTime * 1000.0f,
+		UsedMemoryMb,
+		*NetworkStatus,
+		*ErrorStatus,
+		DeveloperSeekSeconds,
+		DeveloperSeekSeconds);
+	GEngine->AddOnScreenDebugMessage(
+		DeveloperMessageKey,
+		0.3f,
+		FColor(89, 255, 166),
+		StatusText,
+		false,
+		FVector2D(1.0f, 1.0f));
 }
