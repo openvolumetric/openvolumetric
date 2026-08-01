@@ -1117,6 +1117,22 @@ timelines, cross-segment topology dependencies, incompatible representation
 pairs, missing access points, and invalid sample sizes before publishing the
 package.
 
+The first Milestone 13 component is implemented: `AdaptiveManifestParser`
+parses a versioned OpenVolumetric JSON sidecar into engine-neutral presentation,
+representation, texture, and geometry profiles. Version 1 references complete
+aligned fragmented-MP4 resources so it can reuse the existing range source and
+fragment index. Validation enforces version support, timeline bounds, unique
+representation IDs, compatibility metadata, codec/decode descriptors,
+geometry precision, and consistent declared bandwidth. Selection, switching,
+multi-representation authoring, and DASH MPD mapping remain future work.
+
+The shared authoring layer also defines deterministic low/high streaming
+ladders and validates completed adaptive outputs before publication. It probes
+actual MP4 metadata and the terminal fragment index, requires matching
+duration, fragment count, and audio layout, derives delivery and geometry
+bitrates, and atomically writes a self-validating manifest. Unity and Unreal
+still need to orchestrate the two encode passes through their Editor windows.
+
 ### 12.5 Adaptive-streaming research questions and evaluation
 
 For an academic paper, adaptive streaming should be evaluated as a systems
@@ -1145,10 +1161,10 @@ should include local playback, fixed-quality progressive HTTP, fixed-quality
 fragmented playback, and independent-mesh geometry without topology reuse.
 
 The full engineering plan and validation matrix are maintained in
-[STREAMING_AND_ADAPTATION.md](STREAMING_AND_ADAPTATION.md). None of the
-fragmented packaging, manifest processing, automatic selection, or
-representation-switching behavior in Sections 12.2–12.5 is implemented at
-the date of this snapshot.
+[STREAMING_AND_ADAPTATION.md](STREAMING_AND_ADAPTATION.md). Fixed fragmented
+packaging and the versioned manifest model/parser are implemented; automatic
+selection, multi-representation authoring, DASH mapping, and atomic
+representation switching remain outstanding.
 
 ## 13. Performance characteristics
 

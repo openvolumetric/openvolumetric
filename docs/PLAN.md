@@ -1,13 +1,13 @@
 # Open Volumetric Development Plan
 
-Last updated: 31 July 2026
+Last updated: 1 August 2026
 
 ## Current objective
 
-Implement Milestone 12 progressive and fragmented input beneath the shared
-container boundary while preserving local-file behavior, timestamp
-synchronization, temporal-geometry dependencies, and the existing Unity and
-Unreal adapters.
+Implement Milestone 13 adaptive volumetric streaming: define the versioned
+presentation manifest, author aligned quality representations, and add
+deterministic representation selection and switching without disturbing the
+shared audio clock or existing local, progressive, and fixed-fragmented input.
 
 ## Decisions
 
@@ -404,10 +404,14 @@ threading, recovery, authoring, and validation design is recorded in
 
 ## Milestone 13: Adaptive volumetric streaming
 
-- [ ] Define a versioned manifest/profile describing representations,
+**Status: in progress (1 August 2026).**
+
+- [x] Define a versioned manifest/profile describing representations,
       compatibility groups, segment timelines, codecs, decoder requirements,
       and geometry precision.
-- [ ] Author at least two aligned quality representations from one source.
+- [x] Author at least two aligned quality representations from one source in
+      Unity and Unreal, with byte-identical representation output and
+      equivalent manifests.
 - [ ] Evaluate MPEG-DASH as the initial manifest/delivery model and document
       custom `vvge` signaling and interoperability limits.
 - [ ] Implement manual representation selection and a maximum-quality cap.

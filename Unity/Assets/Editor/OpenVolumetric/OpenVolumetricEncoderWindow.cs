@@ -101,6 +101,40 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
 
     [DllImport(
         AuthoringLibrary,
+        EntryPoint = "openvolumetric_authoring_get_adaptive_preset",
+        CallingConvention = CallingConvention.Cdecl)]
+    private static extern int GetNativeAdaptivePreset(
+        int preset,
+        int quality,
+        int fragmentDurationSeconds,
+        ref NativeEncodingSettings settings);
+
+    [DllImport(
+        AuthoringLibrary,
+        EntryPoint = "openvolumetric_authoring_last_geometry_payload_bytes",
+        CallingConvention = CallingConvention.Cdecl)]
+    private static extern ulong GetLastGeometryPayloadBytes();
+
+    [DllImport(
+        AuthoringLibrary,
+        EntryPoint = "openvolumetric_authoring_write_adaptive_manifest",
+        CallingConvention = CallingConvention.Cdecl)]
+    private static extern int WriteAdaptiveManifest(
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string presentationId,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string manifestPath,
+        double segmentDurationSeconds,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string lowId,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string lowResourcePath,
+        int lowPositionQuantizationBits,
+        ulong lowGeometryPayloadBytes,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string highId,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string highResourcePath,
+        int highPositionQuantizationBits,
+        ulong highGeometryPayloadBytes,
+        int temporalCompression);
+
+    [DllImport(
+        AuthoringLibrary,
         EntryPoint = "openvolumetric_authoring_validate_sources",
         CallingConvention = CallingConvention.Cdecl)]
     private static extern int ValidateNativeSources(
@@ -167,6 +201,7 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
     [SerializeField] private bool limitGeometryKeyframeInterval;
     [SerializeField] private int maximumGeometryKeyframeInterval = 60;
     [SerializeField] private bool fragmentedMp4;
+    [SerializeField] private bool adaptivePackage;
     [SerializeField] private FragmentDuration fragmentDuration =
         FragmentDuration.TwoSeconds;
     [SerializeField] private bool showAdvanced;
@@ -204,6 +239,8 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             PreferencePrefix + "MaximumGeometryKeyframeInterval", 60);
         fragmentedMp4 = EditorPrefs.GetBool(
             PreferencePrefix + "FragmentedMp4", false);
+        adaptivePackage = EditorPrefs.GetBool(
+            PreferencePrefix + "AdaptivePackage", false);
         fragmentDuration = (FragmentDuration)EditorPrefs.GetInt(
             PreferencePrefix + "FragmentDuration", 2);
     }
@@ -234,7 +271,9 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
                 audioFile,
                 "Select audio",
                 "");
-            outputFile = SaveFileField("Output MP4", outputFile);
+            outputFile = SaveFileField(
+                adaptivePackage ? "Package Base MP4" : "Output MP4",
+                outputFile);
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Encoding Settings", EditorStyles.boldLabel);
@@ -248,11 +287,23 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
                     "Source Frame Rate",
                     "Controls image-sequence encoding. Geometry timing is read back from the encoded video samples."),
                 frameRate);
+            adaptivePackage = EditorGUILayout.Toggle(
+                new GUIContent(
+                    "Adaptive Package",
+                    "Encode aligned low/high representations and an adaptive JSON manifest. Requires a streaming preset."),
+                adaptivePackage);
+            if(adaptivePackage)
+            {
+                fragmentedMp4 = true;
+            }
+            using (new EditorGUI.DisabledScope(adaptivePackage))
+            {
             fragmentedMp4 = EditorGUILayout.Toggle(
                 new GUIContent(
                     "Fragmented MP4",
                     "Write an initialization section followed by independently addressable MP4 fragments with aligned video and geometry keyframes."),
                 fragmentedMp4);
+            }
             using (new EditorGUI.DisabledScope(!fragmentedMp4))
             {
                 fragmentDuration = (FragmentDuration)EditorGUILayout.EnumPopup(
@@ -428,7 +479,10 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             status = "Encoding complete";
             progress = 1.0f;
             AssetDatabase.Refresh();
-            Debug.Log("Created volumetric video: " + outputFile);
+            Debug.Log(
+                adaptivePackage
+                    ? "Created adaptive volumetric package from base: " + outputFile
+                    : "Created volumetric video: " + outputFile);
         }
         catch (OperationCanceledException)
         {
@@ -456,7 +510,31 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
     /// </summary>
     private void Encode(EncodingInputs inputs, CancellationToken token)
     {
-        EncodingSettings settings = GetEncodingSettings();
+        if(adaptivePackage)
+        {
+            EncodeAdaptive(inputs, token);
+            return;
+        }
+        EncodeRepresentation(
+            inputs,
+            GetEncodingSettings(),
+            outputFile,
+            fragmentedMp4,
+            token,
+            0.0f,
+            1.0f);
+    }
+
+    /// <summary>Encodes, packages, verifies, and publishes one representation.</summary>
+    private ulong EncodeRepresentation(
+        EncodingInputs inputs,
+        EncodingSettings settings,
+        string destinationFile,
+        bool useFragments,
+        CancellationToken token,
+        float progressOffset,
+        float progressScale)
+    {
         string temporaryDirectory = Path.Combine(
             Path.GetTempPath(),
             "volumetric-video-" + Guid.NewGuid().ToString("N"));
@@ -490,29 +568,31 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
                             ? "Native Draco encoding failed for " + source.Path
                             : error);
                 }
-                progress = 0.45f * (index + 1) / inputs.Geometry.Count;
+                progress = progressOffset + progressScale *
+                    0.45f * (index + 1) / inputs.Geometry.Count;
                 status = "Encoding geometry " + (index + 1) + "/" + inputs.Geometry.Count;
             }
 
             token.ThrowIfCancellationRequested();
             status = "Encoding texture video and audio";
-            progress = 0.48f;
+            progress = progressOffset + progressScale * 0.48f;
             List<string> ffmpegArguments =
-                BuildFFmpegArguments(inputs, mediaPath, settings);
+                BuildFFmpegArguments(
+                    inputs, mediaPath, settings, useFragments);
             RunProcess(ffmpegPath, ffmpegArguments, token);
             AppendLog(
                 "Texture video encoded; geometry timing will be derived from its sample timestamps.");
 
             token.ThrowIfCancellationRequested();
             status = "Packaging and verifying MP4";
-            progress = 0.78f;
+            progress = progressOffset + progressScale * 0.78f;
 
-            string outputDirectory = Path.GetDirectoryName(outputFile);
+            string outputDirectory = Path.GetDirectoryName(destinationFile);
             if (!String.IsNullOrEmpty(outputDirectory))
             {
                 Directory.CreateDirectory(outputDirectory);
             }
-            string packagedOutput = outputFile + ".encoding-" +
+            string packagedOutput = destinationFile + ".encoding-" +
                 Guid.NewGuid().ToString("N") + ".mp4";
 
             try
@@ -536,8 +616,8 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
                             ? settings.GeometryKeyframeInterval
                             : maximumGeometryKeyframeInterval)
                         : 0,
-                    fragmentedMp4 ? (int)fragmentDuration : 0,
-                    fragmentedMp4
+                    useFragments ? (int)fragmentDuration : 0,
+                    useFragments
                         ? FragmentFrameInterval(frameRate, fragmentDuration)
                         : 0) != 1)
                 {
@@ -557,13 +637,13 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
 
                 // Do not destroy an existing output until the authoring
                 // library completes round-trip and seek verification.
-                if (File.Exists(outputFile))
+                if (File.Exists(destinationFile))
                 {
-                    File.Replace(packagedOutput, outputFile, null);
+                    File.Replace(packagedOutput, destinationFile, null);
                 }
                 else
                 {
-                    File.Move(packagedOutput, outputFile);
+                    File.Move(packagedOutput, destinationFile);
                 }
             }
             finally
@@ -573,7 +653,8 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
                     File.Delete(packagedOutput);
                 }
             }
-            progress = 1.0f;
+            progress = progressOffset + progressScale;
+            return GetLastGeometryPayloadBytes();
         }
         finally
         {
@@ -591,11 +672,92 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         }
     }
 
+    /// <summary>
+    /// Stages low/high representations, validates their alignment natively,
+    /// then publishes both MP4s and their manifest together.
+    /// </summary>
+    private void EncodeAdaptive(
+        EncodingInputs inputs,
+        CancellationToken token)
+    {
+        EncodingSettings low = GetAdaptiveEncodingSettings(0);
+        EncodingSettings high = GetAdaptiveEncodingSettings(1);
+        string outputBase = Path.GetFullPath(outputFile);
+        string outputDirectory = Path.GetDirectoryName(outputBase);
+        string presentationId = Path.GetFileNameWithoutExtension(outputBase);
+        string stagingDirectory = Path.Combine(
+            outputDirectory,
+            "." + presentationId + "-adaptive-" +
+            Guid.NewGuid().ToString("N"));
+        string lowName = presentationId + "-low.mp4";
+        string highName = presentationId + "-high.mp4";
+        string manifestName = presentationId + ".json";
+        string stagedLow = Path.Combine(stagingDirectory, lowName);
+        string stagedHigh = Path.Combine(stagingDirectory, highName);
+        string stagedManifest = Path.Combine(stagingDirectory, manifestName);
+        Directory.CreateDirectory(stagingDirectory);
+
+        try
+        {
+            AppendLog("Encoding adaptive low representation.");
+            ulong lowGeometryBytes = EncodeRepresentation(
+                inputs, low, stagedLow, true, token, 0.0f, 0.47f);
+            AppendLog("Encoding adaptive high representation.");
+            ulong highGeometryBytes = EncodeRepresentation(
+                inputs, high, stagedHigh, true, token, 0.47f, 0.47f);
+            token.ThrowIfCancellationRequested();
+            status = "Validating adaptive package";
+            progress = 0.96f;
+            string prefix = encodingPreset == EncodingPreset.QuestStreaming
+                ? "quest-streaming"
+                : "desktop-streaming";
+            if(WriteAdaptiveManifest(
+                presentationId,
+                stagedManifest,
+                (int)fragmentDuration,
+                prefix + "-low",
+                stagedLow,
+                low.PositionQuantization,
+                lowGeometryBytes,
+                prefix + "-high",
+                stagedHigh,
+                high.PositionQuantization,
+                highGeometryBytes,
+                geometryCompression ? 1 : 0) != 1)
+            {
+                throw new InvalidOperationException(
+                    Marshal.PtrToStringAnsi(GetAuthoringError()) ??
+                    "Adaptive package validation failed.");
+            }
+
+            string finalLow = Path.Combine(outputDirectory, lowName);
+            string finalHigh = Path.Combine(outputDirectory, highName);
+            string finalManifest = Path.Combine(outputDirectory, manifestName);
+            foreach(string path in new[] { finalLow, finalHigh, finalManifest })
+            {
+                if(File.Exists(path)) File.Delete(path);
+            }
+            File.Move(stagedLow, finalLow);
+            File.Move(stagedHigh, finalHigh);
+            File.Move(stagedManifest, finalManifest);
+            AppendLog("Adaptive package created: " + finalManifest);
+            progress = 1.0f;
+        }
+        finally
+        {
+            if(Directory.Exists(stagingDirectory))
+            {
+                Directory.Delete(stagingDirectory, true);
+            }
+        }
+    }
+
     /// <summary>Builds deterministic FFmpeg arguments for the selected preset.</summary>
     private List<string> BuildFFmpegArguments(
         EncodingInputs inputs,
         string mediaPath,
-        EncodingSettings settings)
+        EncodingSettings settings,
+        bool useFragments)
     {
         NumberedPath first = inputs.Images[0];
         string imagePattern = Path.Combine(
@@ -603,7 +765,7 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             "%0" + first.FrameText.Length + "d" + first.Extension);
         NativeEncodingSettings nativeSettings = settings.ToNative();
         nativeSettings.FragmentDurationSeconds =
-            fragmentedMp4 ? (int)fragmentDuration : 0;
+            useFragments ? (int)fragmentDuration : 0;
         IntPtr result = BuildNativeFFmpegArguments(
             imagePattern,
             audioFile ?? String.Empty,
@@ -640,6 +802,13 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         {
             FragmentFrameInterval(frameRate, fragmentDuration);
         }
+        if(adaptivePackage &&
+            encodingPreset != EncodingPreset.DesktopStreaming &&
+            encodingPreset != EncodingPreset.QuestStreaming)
+        {
+            throw new InvalidOperationException(
+                "Adaptive packages require Desktop Streaming or Quest Streaming.");
+        }
         if (geometryCompression &&
             limitGeometryKeyframeInterval &&
             maximumGeometryKeyframeInterval < 1)
@@ -655,10 +824,25 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         {
             throw new InvalidOperationException("Choose an output MP4.");
         }
-        if (File.Exists(outputFile) && !overwriteOutput)
+        if (!adaptivePackage && File.Exists(outputFile) && !overwriteOutput)
         {
             throw new InvalidOperationException(
                 "The output already exists. Choose another file or enable Overwrite Output.");
+        }
+        if(adaptivePackage && !overwriteOutput)
+        {
+            string outputBase = Path.GetFullPath(outputFile);
+            string directory = Path.GetDirectoryName(outputBase);
+            string stem = Path.GetFileNameWithoutExtension(outputBase);
+            string[] outputs = {
+                Path.Combine(directory, stem + "-low.mp4"),
+                Path.Combine(directory, stem + "-high.mp4"),
+                Path.Combine(directory, stem + ".json")};
+            if(outputs.Any(File.Exists))
+            {
+                throw new InvalidOperationException(
+                    "An adaptive package output exists. Enable Overwrite Output or choose another base name.");
+            }
         }
         if (ValidateNativeSources(imageDirectory, geometryDirectory) < 0)
         {
@@ -969,6 +1153,8 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             maximumGeometryKeyframeInterval);
         EditorPrefs.SetBool(
             PreferencePrefix + "FragmentedMp4", fragmentedMp4);
+        EditorPrefs.SetBool(
+            PreferencePrefix + "AdaptivePackage", adaptivePackage);
         EditorPrefs.SetInt(
             PreferencePrefix + "FragmentDuration", (int)fragmentDuration);
     }
@@ -1009,6 +1195,27 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             0,
             0,
             "Uses the advanced settings below.");
+    }
+
+    /// <summary>Loads one shared low/high entry for adaptive authoring.</summary>
+    private EncodingSettings GetAdaptiveEncodingSettings(int quality)
+    {
+        NativeEncodingSettings settings = new NativeEncodingSettings();
+        if(GetNativeAdaptivePreset(
+            (int)encodingPreset,
+            quality,
+            (int)fragmentDuration,
+            ref settings) < 0)
+        {
+            throw new InvalidOperationException(
+                Marshal.PtrToStringAnsi(GetAuthoringError()) ??
+                "Could not load the adaptive streaming ladder.");
+        }
+        return EncodingSettings.FromNative(
+            settings,
+            quality == 0
+                ? "Adaptive low representation."
+                : "Adaptive high representation.");
     }
 
     private sealed class EncodingSettings

@@ -138,6 +138,48 @@ EncodingSettings preset_settings(PlatformPreset preset)
 	}
 }
 
+bool adaptive_ladder_settings(
+	PlatformPreset preset,
+	int fragment_duration_seconds,
+	std::vector<AdaptiveLadderEntry>& entries,
+	std::string& error)
+{
+	entries.clear();
+	error.clear();
+	if (preset != PlatformPreset::DesktopStreaming &&
+		preset != PlatformPreset::QuestStreaming)
+	{
+		error = "Adaptive authoring requires a desktop or Quest streaming preset.";
+		return false;
+	}
+	if (!is_supported_fragment_duration(fragment_duration_seconds) ||
+		fragment_duration_seconds == 0)
+	{
+		error = "Adaptive authoring requires 1, 2, or 4 second fragments.";
+		return false;
+	}
+
+	EncodingSettings high = preset_settings(preset);
+	high.fragment_duration_seconds = fragment_duration_seconds;
+	EncodingSettings low = high;
+	low.crf = std::min(51, high.crf + 5);
+	low.position_quantization = std::max(8, high.position_quantization - 2);
+	low.normal_quantization = std::max(6, high.normal_quantization - 2);
+	low.texture_quantization = std::max(8, high.texture_quantization - 2);
+	low.maximum_video_bitrate_kbps =
+		std::max(1, high.maximum_video_bitrate_kbps / 2);
+	low.video_buffer_size_kbps =
+		std::max(low.maximum_video_bitrate_kbps,
+			high.video_buffer_size_kbps / 2);
+
+	const std::string prefix = preset == PlatformPreset::QuestStreaming
+		? "quest-streaming"
+		: "desktop-streaming";
+	entries.push_back({prefix + "-low", low});
+	entries.push_back({prefix + "-high", high});
+	return true;
+}
+
 bool is_supported_fragment_duration(int value)
 {
 	return value == 0 || value == 1 || value == 2 || value == 4;

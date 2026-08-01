@@ -1,5 +1,6 @@
 #include "OpenVolumetricEncoderWindow.h"
 
+#include "AdaptivePackage.h"
 #include "Async/Async.h"
 #include "AuthoringWorkflow.h"
 #include "DesktopPlatformModule.h"
@@ -50,6 +51,45 @@ struct FEncodingSettings
 	int32 VideoBufferSizeKbps;
 	int32 GeometryKeyframeInterval;
 };
+
+openvolumetric::authoring::PlatformPreset GetNativePreset(
+	EOpenVolumetricPreset Preset)
+{
+	using openvolumetric::authoring::PlatformPreset;
+	switch (Preset)
+	{
+	case EOpenVolumetricPreset::DesktopLocal:
+		return PlatformPreset::DesktopLocal;
+	case EOpenVolumetricPreset::DesktopStreaming:
+		return PlatformPreset::DesktopStreaming;
+	case EOpenVolumetricPreset::QuestStreaming:
+		return PlatformPreset::QuestStreaming;
+	case EOpenVolumetricPreset::QuestLocal:
+	default:
+		return PlatformPreset::QuestLocal;
+	}
+}
+
+FEncodingSettings ToUnrealSettings(
+	const openvolumetric::authoring::EncodingSettings& Settings)
+{
+	return {
+		Settings.codec == openvolumetric::authoring::VideoCodec::HEVC
+			? TEXT("libx265")
+			: TEXT("libx264"),
+		Settings.crf,
+		Settings.video_keyframe_interval,
+		Settings.reference_frames,
+		Settings.disable_sao,
+		Settings.position_quantization,
+		Settings.normal_quantization,
+		Settings.texture_quantization,
+		Settings.draco_encode_speed,
+		Settings.draco_decode_speed,
+		Settings.maximum_video_bitrate_kbps,
+		Settings.video_buffer_size_kbps,
+		Settings.geometry_keyframe_interval};
+}
 
 struct FNumberedFile
 {
@@ -103,41 +143,8 @@ struct FAuthoringState final
 
 FEncodingSettings GetPreset(EOpenVolumetricPreset Preset)
 {
-	using openvolumetric::authoring::PlatformPreset;
-	PlatformPreset NativePreset = PlatformPreset::QuestLocal;
-	switch (Preset)
-	{
-	case EOpenVolumetricPreset::DesktopLocal:
-		NativePreset = PlatformPreset::DesktopLocal;
-		break;
-	case EOpenVolumetricPreset::DesktopStreaming:
-		NativePreset = PlatformPreset::DesktopStreaming;
-		break;
-	case EOpenVolumetricPreset::QuestStreaming:
-		NativePreset = PlatformPreset::QuestStreaming;
-		break;
-	case EOpenVolumetricPreset::QuestLocal:
-	default:
-		break;
-	}
-	const openvolumetric::authoring::EncodingSettings Settings =
-		openvolumetric::authoring::preset_settings(NativePreset);
-	return {
-		Settings.codec == openvolumetric::authoring::VideoCodec::HEVC
-			? TEXT("libx265")
-			: TEXT("libx264"),
-		Settings.crf,
-		Settings.video_keyframe_interval,
-		Settings.reference_frames,
-		Settings.disable_sao,
-		Settings.position_quantization,
-		Settings.normal_quantization,
-		Settings.texture_quantization,
-		Settings.draco_encode_speed,
-		Settings.draco_decode_speed,
-		Settings.maximum_video_bitrate_kbps,
-		Settings.video_buffer_size_kbps,
-		Settings.geometry_keyframe_interval};
+	return ToUnrealSettings(openvolumetric::authoring::preset_settings(
+		GetNativePreset(Preset)));
 }
 
 FString Quote(const FString& Value)
@@ -319,6 +326,7 @@ public:
 	bool bGeometryCompression = true;
 	bool bLimitGeometryKeyframeInterval = false;
 	bool bFragmentedMp4 = false;
+	bool bAdaptivePackage = false;
 
 	FImpl()
 	{
@@ -364,6 +372,15 @@ public:
 			TEXT("FragmentedMp4"),
 			bFragmentedMp4,
 			GEditorPerProjectIni);
+		GConfig->GetBool(
+			SettingsSection,
+			TEXT("AdaptivePackage"),
+			bAdaptivePackage,
+			GEditorPerProjectIni);
+		if (bAdaptivePackage)
+		{
+			bFragmentedMp4 = true;
+		}
 		FragmentDuration->SetText(FText::FromString(LoadValue(
 			TEXT("FragmentDurationSeconds"), TEXT("2"))));
 	}
@@ -404,6 +421,11 @@ public:
 			SettingsSection,
 			TEXT("FragmentedMp4"),
 			bFragmentedMp4,
+			GEditorPerProjectIni);
+		GConfig->SetBool(
+			SettingsSection,
+			TEXT("AdaptivePackage"),
+			bAdaptivePackage,
 			GEditorPerProjectIni);
 		GConfig->SetString(
 			SettingsSection,
@@ -545,6 +567,55 @@ public:
 			return;
 		}
 		const FEncodingSettings Settings = GetPreset(Preset);
+		TArray<FEncodingSettings> RepresentationSettings;
+		TArray<FString> RepresentationOutputs;
+		TArray<FString> RepresentationIds;
+		FString ManifestOutput;
+		if (bAdaptivePackage)
+		{
+			std::vector<openvolumetric::authoring::AdaptiveLadderEntry> Ladder;
+			std::string NativeError;
+			if (!openvolumetric::authoring::adaptive_ladder_settings(
+				GetNativePreset(Preset),
+				FragmentDurationSeconds,
+				Ladder,
+				NativeError))
+			{
+				const FString Message = UTF8_TO_TCHAR(NativeError.c_str());
+				State->SetStatus(Message);
+				State->Append(TEXT("Cannot encode: ") + Message);
+				return;
+			}
+			const FString Base = FPaths::GetPath(OutputFile) /
+				FPaths::GetBaseFilename(OutputFile);
+			for (const auto& Entry : Ladder)
+			{
+				RepresentationSettings.Add(ToUnrealSettings(Entry.settings));
+				RepresentationIds.Add(UTF8_TO_TCHAR(Entry.id.c_str()));
+				RepresentationOutputs.Add(
+					Base + TEXT("-") + UTF8_TO_TCHAR(Entry.id.c_str()) + TEXT(".mp4"));
+			}
+			ManifestOutput = Base + TEXT(".json");
+			for (const FString& Path : RepresentationOutputs)
+			{
+				if (IFileManager::Get().FileExists(*Path) && !bOverwrite)
+				{
+					State->SetStatus(TEXT("An adaptive output exists; enable overwrite."));
+					return;
+				}
+			}
+			if (IFileManager::Get().FileExists(*ManifestOutput) && !bOverwrite)
+			{
+				State->SetStatus(TEXT("The adaptive manifest exists; enable overwrite."));
+				return;
+			}
+		}
+		else
+		{
+			RepresentationSettings.Add(Settings);
+			RepresentationOutputs.Add(OutputFile);
+			RepresentationIds.Add(TEXT("single"));
+		}
 		const bool bReplace = bOverwrite;
 		const bool bCompressGeometry = bGeometryCompression;
 		const int32 MaximumGeometryKeyframeInterval =
@@ -579,10 +650,31 @@ public:
 
 		Async(EAsyncExecution::ThreadPool,
 			[Job, Inputs = MoveTemp(Inputs), ImageDirectory, AudioFile,
-			 OutputFile, FFmpegPath, FPS, Settings, bReplace,
+			 OutputFile, FFmpegPath, FPS,
+			 RepresentationSettings = MoveTemp(RepresentationSettings),
+			 RepresentationOutputs = MoveTemp(RepresentationOutputs),
+			 RepresentationIds = MoveTemp(RepresentationIds),
+			 ManifestOutput, bAdaptivePackage = bAdaptivePackage, bReplace,
 			 bCompressGeometry, MaximumGeometryKeyframeInterval,
 			 FragmentDurationSeconds, FragmentFrameInterval]
 			{
+				bool bSuccess = true;
+				FString Failure;
+				std::vector<openvolumetric::authoring::AdaptivePackageRepresentation>
+					AdaptiveInputs;
+				for (int32 RepresentationIndex = 0;
+					RepresentationIndex < RepresentationSettings.Num();
+					++RepresentationIndex)
+				{
+					const FEncodingSettings& ActiveSettings =
+						RepresentationSettings[RepresentationIndex];
+					const FString& ActiveOutput =
+						RepresentationOutputs[RepresentationIndex];
+					Job->Append(FString::Printf(
+						TEXT("Encoding representation %d/%d: %s"),
+						RepresentationIndex + 1,
+						RepresentationSettings.Num(),
+						*FPaths::GetCleanFilename(ActiveOutput)));
 				const FString TempDirectory =
 					FPaths::ProjectIntermediateDir() /
 					TEXT("OpenVolumetricAuthoring") /
@@ -596,8 +688,8 @@ public:
 				IFileManager::Get().MakeDirectory(
 					*DracoDirectory, true);
 
-				bool bSuccess = false;
-				FString Failure;
+				bool bRepresentationSuccess = false;
+				std::uint64_t GeometryPayloadBytes = 0;
 				Job->Append(FString::Printf(
 					TEXT("Encoding %d OBJ frames with Draco."),
 					Inputs.Geometry.Num()));
@@ -610,11 +702,11 @@ public:
 					const FString Destination =
 						DracoDirectory / Source.Stem + TEXT(".drc");
 					openvolumetric::authoring::DracoEncodeOptions Options;
-					Options.position_quantization = Settings.PositionBits;
-					Options.normal_quantization = Settings.NormalBits;
-					Options.texture_quantization = Settings.UVBits;
-					Options.encode_speed = Settings.EncodeSpeed;
-					Options.decode_speed = Settings.DecodeSpeed;
+					Options.position_quantization = ActiveSettings.PositionBits;
+					Options.normal_quantization = ActiveSettings.NormalBits;
+					Options.texture_quantization = ActiveSettings.UVBits;
+					Options.encode_speed = ActiveSettings.EncodeSpeed;
+					Options.decode_speed = ActiveSettings.DecodeSpeed;
 					Options.preserve_point_order = bCompressGeometry;
 					std::string NativeError;
 					if (!openvolumetric::authoring::encode_obj_to_draco(
@@ -659,20 +751,20 @@ public:
 					Request.first_frame = First.Frame;
 					Request.frame_count = Inputs.Images.Num();
 					Request.settings.codec =
-						Settings.Codec == TEXT("libx265")
+						ActiveSettings.Codec == TEXT("libx265")
 							? openvolumetric::authoring::VideoCodec::HEVC
 							: openvolumetric::authoring::VideoCodec::H264;
-					Request.settings.crf = Settings.Crf;
+					Request.settings.crf = ActiveSettings.Crf;
 					Request.settings.video_keyframe_interval =
-						Settings.Keyframes;
-					Request.settings.reference_frames = Settings.References;
-					Request.settings.disable_sao = Settings.bDisableSao;
+						ActiveSettings.Keyframes;
+					Request.settings.reference_frames = ActiveSettings.References;
+					Request.settings.disable_sao = ActiveSettings.bDisableSao;
 					Request.settings.maximum_video_bitrate_kbps =
-						Settings.MaximumVideoBitrateKbps;
+						ActiveSettings.MaximumVideoBitrateKbps;
 					Request.settings.video_buffer_size_kbps =
-						Settings.VideoBufferSizeKbps;
+						ActiveSettings.VideoBufferSizeKbps;
 					Request.settings.geometry_keyframe_interval =
-						Settings.GeometryKeyframeInterval;
+						ActiveSettings.GeometryKeyframeInterval;
 					Request.settings.fragment_duration_seconds =
 						FragmentDurationSeconds;
 					std::vector<std::string> NativeArguments;
@@ -740,15 +832,15 @@ public:
 					Options.fragment_frame_interval =
 						static_cast<std::uint32_t>(FragmentFrameInterval);
 					Options.draco_options.position_quantization =
-						Settings.PositionBits;
+						ActiveSettings.PositionBits;
 					Options.draco_options.normal_quantization =
-						Settings.NormalBits;
+						ActiveSettings.NormalBits;
 					Options.draco_options.texture_quantization =
-						Settings.UVBits;
+						ActiveSettings.UVBits;
 					Options.draco_options.encode_speed =
-						Settings.EncodeSpeed;
+						ActiveSettings.EncodeSpeed;
 					Options.draco_options.decode_speed =
-						Settings.DecodeSpeed;
+						ActiveSettings.DecodeSpeed;
 					openvolumetric::authoring::PackStatistics Statistics;
 					if (!openvolumetric::authoring::pack_openvolumetric(
 						Options, &Statistics))
@@ -758,6 +850,9 @@ public:
 					}
 					else
 					{
+						GeometryPayloadBytes =
+							Statistics.authored_payload_bytes +
+							Statistics.packet_header_bytes;
 						const double Reduction =
 							Statistics.independent_payload_bytes == 0
 								? 0.0
@@ -799,24 +894,70 @@ public:
 				if (Failure.IsEmpty() && !Job->bCancel.Load())
 				{
 					IFileManager::Get().MakeDirectory(
-						*FPaths::GetPath(OutputFile), true);
+						*FPaths::GetPath(ActiveOutput), true);
 					if (bReplace)
 					{
-						IFileManager::Get().Delete(*OutputFile);
+						IFileManager::Get().Delete(*ActiveOutput);
 					}
 					if (!IFileManager::Get().Move(
-						*OutputFile, *PackagedPath, true, true))
+						*ActiveOutput, *PackagedPath, true, true))
 					{
 						Failure = TEXT("Could not move the completed MP4.");
 					}
 					else
 					{
-						bSuccess = true;
+						bRepresentationSuccess = true;
+						if (bAdaptivePackage)
+						{
+							openvolumetric::authoring::AdaptivePackageRepresentation Input;
+							Input.id = TCHAR_TO_UTF8(
+								*RepresentationIds[RepresentationIndex]);
+							Input.resource_path = std::filesystem::path(
+								TCHAR_TO_UTF8(*ActiveOutput));
+							Input.compatibility_group = TCHAR_TO_UTF8(
+								*(FPaths::GetBaseFilename(ManifestOutput) +
+									TEXT("-coupled-v1")));
+							Input.geometry_payload_bytes = GeometryPayloadBytes;
+							Input.position_quantization_bits =
+								static_cast<std::uint32_t>(ActiveSettings.PositionBits);
+							Input.temporal_compression = bCompressGeometry;
+							AdaptiveInputs.push_back(std::move(Input));
+						}
 					}
 				}
 
 				IFileManager::Get().DeleteDirectory(
 					*TempDirectory, false, true);
+				if (!bRepresentationSuccess)
+				{
+					bSuccess = false;
+					break;
+				}
+				Job->Append(TEXT("Created ") + ActiveOutput);
+				}
+
+				if (bSuccess && bAdaptivePackage && !Job->bCancel.Load())
+				{
+					Job->SetStatus(TEXT("Writing adaptive manifest"));
+					std::string NativeError;
+					openvolumetric::authoring::AdaptivePackageOptions Options;
+					Options.presentation_id = TCHAR_TO_UTF8(
+						*FPaths::GetBaseFilename(ManifestOutput));
+					Options.manifest_path = std::filesystem::path(
+						TCHAR_TO_UTF8(*ManifestOutput));
+					Options.segment_duration_seconds = FragmentDurationSeconds;
+					Options.representations = std::move(AdaptiveInputs);
+					if (!openvolumetric::authoring::write_adaptive_package_manifest(
+						Options, NativeError))
+					{
+						Failure = UTF8_TO_TCHAR(NativeError.c_str());
+						bSuccess = false;
+					}
+					else
+					{
+						Job->Append(TEXT("Created ") + ManifestOutput);
+					}
+				}
 				if (Job->bCancel.Load())
 				{
 					Job->SetStatus(TEXT("Encoding cancelled"));
@@ -831,7 +972,9 @@ public:
 				{
 					Job->Progress.Store(1.0f);
 					Job->SetStatus(TEXT("Encoding complete"));
-					Job->Append(TEXT("Created ") + OutputFile);
+					Job->Append(bAdaptivePackage
+						? TEXT("Adaptive package complete.")
+						: TEXT("Encoding complete."));
 				}
 				Job->bRunning.Store(false);
 			});
@@ -1002,6 +1145,40 @@ void SOpenVolumetricEncoderWindow::Construct(const FArguments&)
 					.IsChecked_Lambda(
 						[this]
 						{
+							return Impl->bAdaptivePackage
+								? ECheckBoxState::Checked
+								: ECheckBoxState::Unchecked;
+						})
+					.ToolTipText(NSLOCTEXT(
+						"OpenVolumetricAuthoring",
+						"AdaptivePackageTooltip",
+						"Encode aligned low/high fragmented representations and an OpenVolumetric adaptive manifest. Requires a streaming preset."))
+					.OnCheckStateChanged_Lambda(
+						[this](ECheckBoxState State)
+						{
+							Impl->bAdaptivePackage =
+								State == ECheckBoxState::Checked;
+							if (Impl->bAdaptivePackage)
+							{
+								Impl->bFragmentedMp4 = true;
+							}
+						})
+				[
+					SNew(STextBlock)
+						.Text(NSLOCTEXT(
+							"OpenVolumetricAuthoring",
+							"AdaptivePackage",
+							"Adaptive Package (low/high + manifest)"))
+				]
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 3)
+			[
+				SNew(SCheckBox)
+					.IsEnabled_Lambda(
+						[this] { return !Impl->bAdaptivePackage; })
+					.IsChecked_Lambda(
+						[this]
+						{
 							return Impl->bFragmentedMp4
 								? ECheckBoxState::Checked
 								: ECheckBoxState::Unchecked;
@@ -1013,8 +1190,11 @@ void SOpenVolumetricEncoderWindow::Construct(const FArguments&)
 					.OnCheckStateChanged_Lambda(
 						[this](ECheckBoxState State)
 						{
-							Impl->bFragmentedMp4 =
-								State == ECheckBoxState::Checked;
+							if (!Impl->bAdaptivePackage)
+							{
+								Impl->bFragmentedMp4 =
+									State == ECheckBoxState::Checked;
+							}
 						})
 				[
 					SNew(STextBlock)

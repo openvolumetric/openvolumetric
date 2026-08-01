@@ -38,6 +38,14 @@ OPENVOLUMETRIC_AUTHORING_API int openvolumetric_authoring_get_preset(
 	int preset,
 	OpenVolumetricAuthoringSettings* output);
 
+/// Returns low (0) or high (1) settings for a two-quality streaming ladder.
+OPENVOLUMETRIC_AUTHORING_API int
+	openvolumetric_authoring_get_adaptive_preset(
+		int preset,
+		int quality,
+		int fragment_duration_seconds,
+		OpenVolumetricAuthoringSettings* output);
+
 /// Validates matching, contiguous image and OBJ sequences.
 OPENVOLUMETRIC_AUTHORING_API int openvolumetric_authoring_validate_sources(
 	const char* image_directory,
@@ -85,10 +93,31 @@ OPENVOLUMETRIC_AUTHORING_API int openvolumetric_authoring_pack(
 	int fragment_duration_seconds,
 	int fragment_frame_interval);
 
+/// Probes two completed fragmented representations, verifies their alignment,
+/// and writes an adaptive manifest beside them. Returns 1 on success.
+OPENVOLUMETRIC_AUTHORING_API int
+	openvolumetric_authoring_write_adaptive_manifest(
+		const char* presentation_id,
+		const char* manifest_path,
+		double segment_duration_seconds,
+		const char* low_id,
+		const char* low_resource_path,
+		int low_position_quantization_bits,
+		unsigned long long low_geometry_payload_bytes,
+		const char* high_id,
+		const char* high_resource_path,
+		int high_position_quantization_bits,
+		unsigned long long high_geometry_payload_bytes,
+		int temporal_compression);
+
 /// Returns a short description of the most recent failure on this thread.
 OPENVOLUMETRIC_AUTHORING_API const char* openvolumetric_authoring_last_error();
 
 /// Returns the statistics summary from the most recent successful pack.
 OPENVOLUMETRIC_AUTHORING_API const char* openvolumetric_authoring_last_report();
+
+/// Geometry bytes written by the most recent successful pack on this thread.
+OPENVOLUMETRIC_AUTHORING_API unsigned long long
+	openvolumetric_authoring_last_geometry_payload_bytes();
 
 }

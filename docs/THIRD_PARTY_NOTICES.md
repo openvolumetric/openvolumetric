@@ -58,6 +58,17 @@ These dependencies are acquired by vcpkg and may be statically incorporated
 into runtime binaries. Distributors must retain the applicable notices and
 license texts for the exact libraries included in their build.
 
+## JSON for Modern C++
+
+OpenVolumetric uses nlohmann JSON to parse adaptive presentation manifests.
+
+- Project: <https://github.com/nlohmann/json>
+- License: MIT License
+- Copyright: Niels Lohmann and contributors
+
+The dependency is acquired by vcpkg and is header-only; its compiled template
+code may therefore be incorporated into OpenVolumetric binaries.
+
 ## vcpkg
 
 vcpkg is used to acquire and build native dependencies. Each installed port

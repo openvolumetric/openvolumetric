@@ -2,8 +2,9 @@
 
 OpenVolumetric's native libraries use CMake 3.20 or newer, Ninja, and vcpkg
 manifest mode. vcpkg downloads and builds FFmpeg, Draco, libcurl, OpenSSL,
-and zlib. Runtime libraries are linked into the produced engine plug-ins, so
-players do not require separately installed native runtimes.
+zlib, and the header-only nlohmann JSON library. Runtime libraries are linked
+into the produced engine plug-ins, so players do not require separately
+installed native runtimes.
 
 ## Build outputs
 

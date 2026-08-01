@@ -1,4 +1,5 @@
 add_library(OpenVolumetricAuthoringCore STATIC
+  AdaptivePackage.cpp
   AuthoringWorkflow.cpp
   DracoMeshEncoder.cpp
   DracoPointCloudEncoder.cpp

@@ -70,7 +70,23 @@ struct MediaEncodeRequest
 	EncodingSettings settings;
 };
 
+/// One deterministic quality level used by two-representation authoring.
+struct AdaptiveLadderEntry
+{
+	std::string id;
+	EncodingSettings settings;
+};
+
 EncodingSettings preset_settings(PlatformPreset preset);
+
+/// Creates low/high entries for a streaming preset with aligned fragments.
+/// Local presets are rejected because adaptive delivery requires bitrate and
+/// random-access constraints.
+bool adaptive_ladder_settings(
+	PlatformPreset preset,
+	int fragment_duration_seconds,
+	std::vector<AdaptiveLadderEntry>& entries,
+	std::string& error);
 
 /// Validates contiguous, equally numbered image and OBJ sequences.
 bool validate_source_sequences(

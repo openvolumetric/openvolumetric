@@ -91,6 +91,14 @@ encoding require an external FFmpeg executable with the selected H.264/HEVC
 encoder and AAC support. Packaging and verification run through
 `OpenVolumetricAuthoringCore`.
 
+Enable **Adaptive Package** with either streaming preset to author a coupled
+two-level ladder. Choosing `presentation.mp4` produces
+`presentation-low.mp4`, `presentation-high.mp4`, and
+`presentation.json`. Both representations use the selected 1-, 2-, or
+4-second fragment duration and share aligned video and full-geometry access
+points. The native verifier rejects mismatched durations, fragment counts, or
+audio layouts before writing the manifest.
+
 The **Geometry Compression** checkbox enables topology-aware position updates.
 Clearing it emits the same packet format with every sample encoded as an
 independently decodable Draco mesh.
@@ -107,6 +115,11 @@ implemented and manually validated in Unreal Editor 5.8 on macOS ARM64.
 End-to-end authoring was validated on 28 July 2026 using 3,627 matched
 OBJ/JPEG frames and MP3 audio, including Draco encoding, HEVC/AAC encoding,
 MP4 packaging, and verification.
+
+Adaptive authoring was validated on 1 August 2026 against Unity using the
+same source and Quest Streaming ladder. Unreal produced byte-identical low
+and high MP4 representations and an equivalent manifest; only the expected
+presentation-derived identifiers and resource filenames differed.
 
 Still outstanding:
 

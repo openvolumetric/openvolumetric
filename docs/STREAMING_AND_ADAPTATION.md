@@ -2,7 +2,8 @@
 
 ## Status
 
-Milestone 12 implementation has begun. The runtime now has an
+Milestone 12 is complete and Milestone 13 adaptive delivery is now in
+progress. The runtime has an
 engine-independent `IByteSource`, a seekable `LocalFileByteSource`, and FFmpeg
 custom I/O beneath the MP4 container. Existing path-based playback is routed
 through this boundary. `HttpRangeByteSource` now provides cancellable
@@ -16,8 +17,9 @@ cache, download, request-count, and transport-state diagnostics. Fixed-quality
 fragmented MP4 authoring and whole-resource playback are implemented. The HTTP
 source now reads the terminal `mfra`/`tfra` index, schedules complete forward
 fragments within its byte budget, and allows demanded demux reads to pre-empt
-speculative downloads. Manifests and adaptive representation switching are not
-yet implemented.
+speculative downloads. The next implementation slice defines the versioned
+presentation manifest and engine-neutral representation model before adding
+multi-representation authoring and switching.
 
 The bounded fragment scheduler has been manually validated on Quest over
 Wi-Fi for uninterrupted playback, forward and backward seeking, and recovery
@@ -189,6 +191,48 @@ The manifest or an OpenVolumetric sidecar descriptor must provide:
 The runtime should parse this into an engine-neutral presentation model.
 Unity and Unreal receive playback state and quality controls through their
 adapters, not raw DASH/HLS objects.
+
+### Implemented manifest profile: version 1
+
+The first implementation uses a JSON sidecar with format identifier
+`openvolumetric-adaptive` and version `1`. It references complete aligned
+fragmented-MP4 resources rather than separate initialization and media files,
+allowing the adaptive runtime to reuse Milestone 12's validated fragment index
+and byte-range cache. This transport syntax is an implementation stepping
+stone, not a replacement for the planned MPEG-DASH evaluation.
+
+The top level declares a presentation identifier, total and nominal segment
+durations, audio presence, and two or more representations. Each coupled
+representation declares:
+
+- a unique identifier and MP4 resource URI;
+- a compatibility group;
+- aggregate required bandwidth;
+- texture codec, dimensions, and nominal bitrate; and
+- geometry codec, position precision, nominal bitrate, and temporal-coding
+  mode.
+
+`AdaptiveManifestParser` maps this JSON into an engine-neutral model and
+rejects unsupported versions, malformed types, invalid durations, duplicate
+identifiers, incomplete capability metadata, zero-valued required fields, and
+aggregate bandwidth below the declared texture-plus-geometry bitrate. A
+two-quality example is available at
+[`examples/adaptive-manifest-v1.json`](examples/adaptive-manifest-v1.json).
+
+The shared authoring core now supplies deterministic low/high ladders for the
+Desktop Streaming and Quest Streaming presets. Both entries force the selected
+1-, 2-, or 4-second fragment duration; the low entry reduces the video bitrate
+ceiling and geometry precision while retaining the same codec, timeline, and
+random-access cadence.
+
+After both representations are encoded, `write_adaptive_package_manifest`
+probes their real MP4 duration, video codec, dimensions, audio presence,
+resource bitrate, and terminal fragment index. It rejects missing indexes or
+differences in duration, fragment count, or audio layout, then writes the
+manifest atomically with measured bitrate and geometry-payload information.
+The C authoring ABI exposes the ladder and manifest writer so Unity and Unreal
+can share this behavior. Editor UI orchestration of the two encode passes is
+the next integration step.
 
 ## Core runtime architecture
 

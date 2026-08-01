@@ -13,6 +13,30 @@ The encoder accepts:
 - an optional audio file;
 - an output MP4 path.
 
+## Adaptive packages
+
+Enable **Adaptive Package** with either **Desktop Streaming** or **Quest
+Streaming** to encode a two-quality package. The selected output MP4 path is
+used as a base name. For example, selecting `presentation.mp4` produces:
+
+```text
+presentation-low.mp4
+presentation-high.mp4
+presentation.json
+```
+
+Adaptive authoring always enables fragmented MP4 and uses the selected 1-,
+2-, or 4-second fragment duration. The shared native ladder reduces bitrate
+and geometry precision for the low representation while keeping codec,
+timeline, audio layout, and random-access cadence compatible with the high
+representation.
+
+Both representations are written to a staging directory. The native authoring
+core probes their actual duration, video metadata, bitrate, audio layout, and
+fragment indexes and refuses to publish the package if they are not aligned.
+Only after this check succeeds are the two MP4 files and versioned JSON
+manifest moved to the selected output directory.
+
 For example, these two sequences match:
 
 ```text
@@ -37,7 +61,7 @@ Leave the limit disabled to reuse matching topology until it changes.
 
 ## Pipeline
 
-One click performs the following stages:
+For a normal single representation, one click performs the following stages:
 
 1. Validate the source sequences before creating output.
 2. Encode every OBJ as a temporary Draco `.drc` frame.

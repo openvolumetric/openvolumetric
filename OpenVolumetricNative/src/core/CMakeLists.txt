@@ -1,6 +1,7 @@
 find_package(FFMPEG REQUIRED)
 find_package(draco CONFIG REQUIRED)
 find_package(CURL CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 
 find_library(VV_SWRESAMPLE_LIBRARY
   NAMES swresample
@@ -17,6 +18,7 @@ target_link_libraries(OpenVolumetricFFmpeg INTERFACE
 )
 
 add_library(OpenVolumetricCore STATIC
+  adaptive/AdaptiveManifest.cpp
   container/FFmpegMp4VolumetricContainer.cpp
   container/GeometryPacket.cpp
   decoding/OpenVolumetricPlayer.cpp
@@ -36,6 +38,7 @@ set_target_properties(OpenVolumetricCore PROPERTIES
 target_include_directories(OpenVolumetricCore
   PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/decoding"
+    "${CMAKE_CURRENT_SOURCE_DIR}/adaptive"
     "${CMAKE_CURRENT_SOURCE_DIR}/container"
     "${CMAKE_CURRENT_SOURCE_DIR}/geometry"
     "${CMAKE_CURRENT_SOURCE_DIR}/io"
@@ -48,4 +51,5 @@ target_link_libraries(OpenVolumetricCore
     OpenVolumetricFFmpeg
     CURL::libcurl
     draco::draco
+    nlohmann_json::nlohmann_json
 )

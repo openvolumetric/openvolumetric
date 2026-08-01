@@ -1,5 +1,6 @@
 #include "OpenVolumetricAuthoringApi.h"
 
+#include "AdaptivePackage.h"
 #include "AuthoringWorkflow.h"
 #include "DracoMeshEncoder.h"
 #include "VolumetricVideoPacker.h"
@@ -15,6 +16,28 @@ namespace
 thread_local std::string last_error;
 thread_local std::string last_report;
 thread_local std::string last_arguments;
+thread_local std::uint64_t last_geometry_payload_bytes = 0;
+
+void copy_settings(
+	const openvolumetric::authoring::EncodingSettings& settings,
+	OpenVolumetricAuthoringSettings& output)
+{
+	output.codec =
+		settings.codec == openvolumetric::authoring::VideoCodec::HEVC ? 0 : 1;
+	output.crf = settings.crf;
+	output.video_keyframe_interval = settings.video_keyframe_interval;
+	output.reference_frames = settings.reference_frames;
+	output.disable_sao = settings.disable_sao ? 1 : 0;
+	output.position_quantization = settings.position_quantization;
+	output.normal_quantization = settings.normal_quantization;
+	output.texture_quantization = settings.texture_quantization;
+	output.draco_encode_speed = settings.draco_encode_speed;
+	output.draco_decode_speed = settings.draco_decode_speed;
+	output.maximum_video_bitrate_kbps = settings.maximum_video_bitrate_kbps;
+	output.video_buffer_size_kbps = settings.video_buffer_size_kbps;
+	output.geometry_keyframe_interval = settings.geometry_keyframe_interval;
+	output.fragment_duration_seconds = settings.fragment_duration_seconds;
+}
 }
 
 int openvolumetric_authoring_get_preset(
@@ -25,24 +48,33 @@ int openvolumetric_authoring_get_preset(
 		return -1;
 	const auto settings = openvolumetric::authoring::preset_settings(
 		static_cast<openvolumetric::authoring::PlatformPreset>(preset));
-	output->codec =
-		settings.codec == openvolumetric::authoring::VideoCodec::HEVC ? 0 : 1;
-	output->crf = settings.crf;
-	output->video_keyframe_interval = settings.video_keyframe_interval;
-	output->reference_frames = settings.reference_frames;
-	output->disable_sao = settings.disable_sao ? 1 : 0;
-	output->position_quantization = settings.position_quantization;
-	output->normal_quantization = settings.normal_quantization;
-	output->texture_quantization = settings.texture_quantization;
-	output->draco_encode_speed = settings.draco_encode_speed;
-	output->draco_decode_speed = settings.draco_decode_speed;
-	output->maximum_video_bitrate_kbps =
-		settings.maximum_video_bitrate_kbps;
-	output->video_buffer_size_kbps = settings.video_buffer_size_kbps;
-	output->geometry_keyframe_interval =
-		settings.geometry_keyframe_interval;
-	output->fragment_duration_seconds =
-		settings.fragment_duration_seconds;
+	copy_settings(settings, *output);
+	return 1;
+}
+
+int openvolumetric_authoring_get_adaptive_preset(
+	int preset,
+	int quality,
+	int fragment_duration_seconds,
+	OpenVolumetricAuthoringSettings* output)
+{
+	last_error.clear();
+	if (output == nullptr || quality < 0 || quality > 1 ||
+		preset < 0 || preset > 3)
+	{
+		last_error = "Adaptive preset request is invalid.";
+		return -1;
+	}
+	std::vector<openvolumetric::authoring::AdaptiveLadderEntry> entries;
+	if (!openvolumetric::authoring::adaptive_ladder_settings(
+			static_cast<openvolumetric::authoring::PlatformPreset>(preset),
+			fragment_duration_seconds,
+			entries,
+			last_error))
+	{
+		return -1;
+	}
+	copy_settings(entries[static_cast<std::size_t>(quality)].settings, *output);
 	return 1;
 }
 
@@ -149,6 +181,7 @@ int openvolumetric_authoring_encode_obj(
 {
 	last_error.clear();
 	last_report.clear();
+	last_geometry_payload_bytes = 0;
 	if (input_path == nullptr || output_path == nullptr)
 	{
 		last_error = "OBJ input and Draco output paths are required.";
@@ -201,6 +234,7 @@ int openvolumetric_authoring_pack(
 {
 	last_error.clear();
 	last_report.clear();
+	last_geometry_payload_bytes = 0;
 	if (media_path == nullptr ||
 		geometry_directory == nullptr ||
 		source_geometry_directory == nullptr ||
@@ -279,6 +313,8 @@ int openvolumetric_authoring_pack(
 				<< fragment_duration_seconds << " seconds.";
 		}
 		last_report = report.str();
+		last_geometry_payload_bytes =
+			statistics.authored_payload_bytes + statistics.packet_header_bytes;
 		return 1;
 	}
 	catch (const std::exception& exception)
@@ -293,6 +329,60 @@ int openvolumetric_authoring_pack(
 	}
 }
 
+int openvolumetric_authoring_write_adaptive_manifest(
+	const char* presentation_id,
+	const char* manifest_path,
+	double segment_duration_seconds,
+	const char* low_id,
+	const char* low_resource_path,
+	int low_position_quantization_bits,
+	unsigned long long low_geometry_payload_bytes,
+	const char* high_id,
+	const char* high_resource_path,
+	int high_position_quantization_bits,
+	unsigned long long high_geometry_payload_bytes,
+	int temporal_compression)
+{
+	last_error.clear();
+	last_report.clear();
+	if (presentation_id == nullptr || manifest_path == nullptr ||
+		low_id == nullptr || low_resource_path == nullptr ||
+		high_id == nullptr || high_resource_path == nullptr ||
+		low_position_quantization_bits <= 0 ||
+		high_position_quantization_bits <= 0)
+	{
+		last_error = "Adaptive manifest fields are invalid.";
+		return -1;
+	}
+
+	openvolumetric::authoring::AdaptivePackageOptions options;
+	options.presentation_id = presentation_id;
+	options.manifest_path = std::filesystem::u8path(manifest_path);
+	options.segment_duration_seconds = segment_duration_seconds;
+	const std::string compatibility_group =
+		options.presentation_id + "-coupled-v1";
+	options.representations = {
+		{low_id,
+		 std::filesystem::u8path(low_resource_path),
+		 compatibility_group,
+		 static_cast<std::uint32_t>(low_position_quantization_bits),
+		 static_cast<std::uint64_t>(low_geometry_payload_bytes),
+		 temporal_compression != 0},
+		{high_id,
+		 std::filesystem::u8path(high_resource_path),
+		 compatibility_group,
+		 static_cast<std::uint32_t>(high_position_quantization_bits),
+		 static_cast<std::uint64_t>(high_geometry_payload_bytes),
+		 temporal_compression != 0}};
+	if (!openvolumetric::authoring::write_adaptive_package_manifest(
+			options, last_error))
+	{
+		return -1;
+	}
+	last_report = "Adaptive manifest written with two aligned representations.";
+	return 1;
+}
+
 const char* openvolumetric_authoring_last_error()
 {
 	return last_error.c_str();
@@ -301,4 +391,9 @@ const char* openvolumetric_authoring_last_error()
 const char* openvolumetric_authoring_last_report()
 {
 	return last_report.c_str();
+}
+
+unsigned long long openvolumetric_authoring_last_geometry_payload_bytes()
+{
+	return static_cast<unsigned long long>(last_geometry_payload_bytes);
 }

@@ -1,0 +1,51 @@
+{
+  "format": "openvolumetric-adaptive",
+  "version": 1,
+  "presentation_id": "sample-two-quality",
+  "duration_seconds": 6.0,
+  "segment_duration_seconds": 2.0,
+  "has_audio": true,
+  "segments": [
+    { "number": 0, "start_seconds": 0.0, "duration_seconds": 2.0 },
+    { "number": 1, "start_seconds": 2.0, "duration_seconds": 2.0 },
+    { "number": 2, "start_seconds": 4.0, "duration_seconds": 2.0 }
+  ],
+  "representations": [
+    {
+      "id": "quest-streaming-low",
+      "resource_uri": "volumetric_video_quest_streaming_low.mp4",
+      "compatibility_group": "sample-v1",
+      "bandwidth": 4500000,
+      "texture": {
+        "codec": "hvc1.1.6.L93.B0",
+        "width": 512,
+        "height": 512,
+        "bitrate": 2500000
+      },
+      "geometry": {
+        "codec": "openvolumetric-vvge-draco-v2",
+        "position_quantization_bits": 10,
+        "bitrate": 1800000,
+        "temporal_compression": true
+      }
+    },
+    {
+      "id": "quest-streaming-high",
+      "resource_uri": "volumetric_video_quest_streaming_high.mp4",
+      "compatibility_group": "sample-v1",
+      "bandwidth": 8500000,
+      "texture": {
+        "codec": "hvc1.1.6.L120.B0",
+        "width": 1024,
+        "height": 1024,
+        "bitrate": 5500000
+      },
+      "geometry": {
+        "codec": "openvolumetric-vvge-draco-v2",
+        "position_quantization_bits": 12,
+        "bitrate": 2800000,
+        "temporal_compression": true
+      }
+    }
+  ]
+}
