@@ -108,8 +108,10 @@ overlay. Auto first applies conservative platform capability ceilings and then
 uses a bounded HTTP throughput probe. Advanced component properties can
 override the texture dimension, texture bitrate, geometry bitrate, and total
 bandwidth ceilings; zero retains the platform default. Manual Low and High
-bypass these limits. Selection occurs once during `Open()`; live switching is
-not part of this phase.
+bypass these limits. With **Enable Live Adaptive Switching**, remote Auto
+playback prepares and commits coupled representations at aligned fragment
+boundaries. Press **P** to force Low/High transitions during validation; the
+developer overlay reports active and pending representations and switch count.
 
 The **Geometry Compression** checkbox enables topology-aware position updates.
 Clearing it emits the same packet format with every sample encoded as an

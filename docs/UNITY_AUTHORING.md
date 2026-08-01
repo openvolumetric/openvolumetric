@@ -49,8 +49,10 @@ Auto filters the ladder through conservative desktop or Android capability
 ceilings, then uses a bounded HTTP throughput probe where applicable. The
 **Adaptive Capability Overrides** fields can tighten or raise those limits for
 specific hardware tests; zero retains the platform default. Manual Low and
-High bypass these limits. Selection occurs once before playback and does not
-switch quality while playing.
+High bypass these limits. With **Enable Live Adaptive Switching**, remote Auto
+playback prepares and commits coupled representations at aligned fragment
+boundaries. Press **Q** on desktop or the right controller grip in XR to force
+Low/High transitions during validation.
 
 For example, these two sequences match:
 

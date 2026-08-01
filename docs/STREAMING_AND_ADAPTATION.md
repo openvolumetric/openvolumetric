@@ -249,8 +249,7 @@ platform ceilings for texture dimensions, texture bitrate, geometry bitrate,
 or aggregate bandwidth. It probes the highest eligible representation and a
 failed or insufficient probe selects the lowest eligible representation.
 Local Auto selects the highest eligible representation without a network
-probe. Manual Low and High remain explicit overrides. This is deliberately
-startup-only and does not change representation during playback.
+probe. Manual Low and High remain explicit startup overrides.
 
 Unity and Unreal use validated desktop and standalone-Android profiles and
 expose optional per-component overrides for each ceiling. These declared
@@ -261,6 +260,28 @@ Both engine developer panels report the selected representation and measured
 probe throughput. The native selection result also records a decision reason.
 The probe bytes are currently discarded, so their cost must be included in
 startup-delay and wasted-byte measurements for evaluation.
+
+Live adaptation now uses `AdaptivePlayerCoordinator`, which retains the active
+decoder while a second session opens, seeks, and decodes a complete coupled
+texture/geometry presentation at a future manifest boundary. Each preparation
+has a generation token. Seek, close, recovery, or a newer request cancels the
+old byte source and prevents stale work from publishing. Runtime metadata is
+checked again before the pending session becomes eligible to commit.
+
+For presentations containing audio, the native PCM read owns the commit. It
+splits the output block at the exact boundary sample, drains the old session up
+to that sample, atomically exchanges sessions, and fills the remainder from
+the new session. Texture and geometry wait at the boundary until this audio
+commit and then publish the already matched pending presentation. Content
+without audio commits from the presentation path at the same media timestamp.
+
+Unity and Unreal estimate active-transfer throughput from byte-source
+diagnostics. High downgrades after two seconds without 1.2x headroom or after a
+recovered rebuffer; Low upgrades only after ten seconds of Ready input with
+1.75x headroom. Preparation is requested at least 1.25 fragments ahead.
+Developer controls can force a transition for repeatable validation: **Q** in
+Unity and **P** in Unreal. Automatic and forced platform-matrix validation is
+still required before Milestone 13 is complete.
 
 Manual startup selection was validated on 1 August 2026 in Unity and Unreal
 using both local and HTTP manifests. Low and High completed forward/backward

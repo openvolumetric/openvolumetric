@@ -237,6 +237,22 @@ bool select_adaptive_representation(
 	result.manifest = std::move(manifest);
 	result.representation = *selected;
 	result.capability_limited = capability_limited;
+	std::sort(eligible.begin(), eligible.end(), ordering);
+	result.eligible_representations.reserve(eligible.size());
+	for (const AdaptiveRepresentation& representation : eligible)
+	{
+		ResolvedAdaptiveRepresentation resolved;
+		resolved.representation = representation;
+		if (!resolve_resource(
+				manifest_location,
+				representation.resource_uri,
+				resolved.resolved_resource,
+				error))
+		{
+			return false;
+		}
+		result.eligible_representations.push_back(std::move(resolved));
+	}
 	if (!resolve_resource(
 			manifest_location,
 			result.representation.resource_uri,

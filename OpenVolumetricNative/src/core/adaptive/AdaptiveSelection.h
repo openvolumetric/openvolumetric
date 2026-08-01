@@ -26,12 +26,20 @@ struct AdaptiveCapabilityLimits
 	std::uint64_t maximum_bandwidth = 0;
 };
 
+/** One capability-eligible representation with its resolved resource. */
+struct ResolvedAdaptiveRepresentation
+{
+	AdaptiveRepresentation representation;
+	std::string resolved_resource;
+};
+
 /** Parsed presentation and the coupled representation selected for opening. */
 struct AdaptiveSelection
 {
 	AdaptiveManifest manifest;
 	AdaptiveRepresentation representation;
 	std::string resolved_resource;
+	std::vector<ResolvedAdaptiveRepresentation> eligible_representations;
 	std::uint64_t measured_throughput_bps = 0;
 	bool capability_limited = false;
 	std::string decision_reason;

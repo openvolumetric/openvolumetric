@@ -96,6 +96,12 @@ void OpenVolumetricPlayer::stop()
 	m_impl->started = false;
 }
 
+void OpenVolumetricPlayer::cancel_pending_io()
+{
+	if (m_impl)
+		m_impl->media.cancel_pending_io();
+}
+
 void OpenVolumetricPlayer::close()
 {
 	if (!m_impl)

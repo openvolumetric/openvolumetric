@@ -48,6 +48,37 @@ bool UnityOpenVolumetricPlayer::seek(double time)
 	return true;
 }
 
+bool UnityOpenVolumetricPlayer::request_adaptive_switch(
+	const char* resource,
+	const char* representation_id,
+	double boundary_time,
+	const char* reason)
+{
+	return resource != nullptr && representation_id != nullptr &&
+		m_player.request_switch(
+			resource,
+			representation_id,
+			boundary_time,
+			reason != nullptr ? reason : "Adaptive policy requested a switch.");
+}
+
+void UnityOpenVolumetricPlayer::set_active_representation_id(
+	const char* representation_id)
+{
+	m_player.set_active_representation_id(
+		representation_id != nullptr ? representation_id : "");
+}
+
+AdaptiveSwitchInfo UnityOpenVolumetricPlayer::adaptive_switch_info() const
+{
+	return m_player.switch_info();
+}
+
+void UnityOpenVolumetricPlayer::cancel_adaptive_switch()
+{
+	m_player.cancel_pending_switch();
+}
+
 void UnityOpenVolumetricPlayer::close()
 {
 	m_player.close();

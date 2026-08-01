@@ -2,7 +2,7 @@
 
 #include <IMeshBuffer.h>
 #include <ITexture.h>
-#include <OpenVolumetricPlayer.h>
+#include <AdaptivePlayerCoordinator.h>
 
 #include <atomic>
 #include <cstdint>
@@ -35,6 +35,14 @@ public:
 	bool start();
 	bool stop();
 	bool seek(double time);
+	bool request_adaptive_switch(
+		const char* resource,
+		const char* representation_id,
+		double boundary_time,
+		const char* reason);
+	void set_active_representation_id(const char* representation_id);
+	AdaptiveSwitchInfo adaptive_switch_info() const;
+	void cancel_adaptive_switch();
 	void close();
 
 	void set_presentation_time(double time);
@@ -53,7 +61,7 @@ public:
 
 private:
 	int m_id;
-	OpenVolumetricPlayer m_player;
+	AdaptivePlayerCoordinator m_player;
 	std::unique_ptr<ITexture> m_texture;
 	std::unique_ptr<IMeshBuffer> m_mesh_buffer;
 	std::atomic<double> m_presentation_time{0.0};

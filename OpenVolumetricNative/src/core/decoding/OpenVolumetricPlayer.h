@@ -76,6 +76,8 @@ public:
 	bool open(const char* path);
 	bool start();
 	void stop();
+	/** Cancels blocking local or HTTP input without waiting for worker shutdown. */
+	void cancel_pending_io();
 	void close();
 	bool seek(double time);
 

@@ -107,6 +107,40 @@ extern "C"
 	OPENVOLUMETRIC_API unsigned long long openvolumetric_get_adaptive_throughput_bps();
 	/// Returns a human-readable explanation of the startup selection.
 	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_decision_reason();
+	/// Returns the number of capability-eligible representations, lowest first.
+	OPENVOLUMETRIC_API unsigned long long openvolumetric_get_adaptive_representation_count();
+	/// Returns an eligible representation identifier by ascending bandwidth.
+	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_representation_id_at(
+		unsigned long long index);
+	/// Returns an eligible resolved resource by ascending bandwidth.
+	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_resource_at(
+		unsigned long long index);
+	OPENVOLUMETRIC_API unsigned long long openvolumetric_get_adaptive_bandwidth_at(
+		unsigned long long index);
+	/// Returns the shared adaptive fragment duration in seconds.
+	OPENVOLUMETRIC_API double openvolumetric_get_adaptive_segment_duration();
+	/// Associates the initially opened decoder with its manifest representation.
+	OPENVOLUMETRIC_API int openvolumetric_configure_adaptive_instance(
+		int id,
+		const char* representation_id);
+	/// Warms a representation and commits it at the requested media boundary.
+	OPENVOLUMETRIC_API int openvolumetric_request_adaptive_switch(
+		int id,
+		const char* resource,
+		const char* representation_id,
+		double boundary_time,
+		const char* reason);
+	OPENVOLUMETRIC_API void openvolumetric_cancel_adaptive_switch(int id);
+	/// Snapshots switch state, generation, count, and boundary for later getters.
+	OPENVOLUMETRIC_API int openvolumetric_get_adaptive_switch_details(
+		int id,
+		int& state,
+		unsigned long long& generation,
+		unsigned long long& switch_count,
+		double& boundary_time);
+	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_switch_active_id();
+	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_switch_pending_id();
+	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_switch_reason();
 	/// Returns the most recent manifest-selection error.
 	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_error();
 

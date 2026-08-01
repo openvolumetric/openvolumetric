@@ -57,6 +57,7 @@ std::unordered_map<int, std::unique_ptr<UnityOpenVolumetricPlayer>> g_instances;
 std::shared_mutex g_instances_mutex;
 thread_local openvolumetric::AdaptiveSelection g_adaptive_selection;
 thread_local std::string g_adaptive_error;
+thread_local openvolumetric::AdaptiveSwitchInfo g_adaptive_switch_info;
 
 class InstanceAccess
 {
@@ -540,6 +541,109 @@ OPENVOLUMETRIC_API unsigned long long openvolumetric_get_adaptive_throughput_bps
 OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_decision_reason()
 {
 	return g_adaptive_selection.decision_reason.c_str();
+}
+
+OPENVOLUMETRIC_API unsigned long long openvolumetric_get_adaptive_representation_count()
+{
+	return static_cast<unsigned long long>(
+		g_adaptive_selection.eligible_representations.size());
+}
+
+OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_representation_id_at(
+	unsigned long long index)
+{
+	const auto& representations = g_adaptive_selection.eligible_representations;
+	return index < representations.size()
+		? representations[static_cast<std::size_t>(index)].representation.id.c_str()
+		: "";
+}
+
+OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_resource_at(
+	unsigned long long index)
+{
+	const auto& representations = g_adaptive_selection.eligible_representations;
+	return index < representations.size()
+		? representations[static_cast<std::size_t>(index)].resolved_resource.c_str()
+		: "";
+}
+
+OPENVOLUMETRIC_API unsigned long long openvolumetric_get_adaptive_bandwidth_at(
+	unsigned long long index)
+{
+	const auto& representations = g_adaptive_selection.eligible_representations;
+	return index < representations.size()
+		? representations[static_cast<std::size_t>(index)].representation.bandwidth
+		: 0;
+}
+
+OPENVOLUMETRIC_API double openvolumetric_get_adaptive_segment_duration()
+{
+	return g_adaptive_selection.manifest.segment_duration_seconds;
+}
+
+OPENVOLUMETRIC_API int openvolumetric_configure_adaptive_instance(
+	int id,
+	const char* representation_id)
+{
+	InstanceAccess instance(id);
+	if (!instance || representation_id == nullptr)
+		return -1;
+	instance->set_active_representation_id(representation_id);
+	return 1;
+}
+
+OPENVOLUMETRIC_API int openvolumetric_request_adaptive_switch(
+	int id,
+	const char* resource,
+	const char* representation_id,
+	double boundary_time,
+	const char* reason)
+{
+	InstanceAccess instance(id);
+	return instance && instance->request_adaptive_switch(
+		resource, representation_id, boundary_time, reason)
+		? 1
+		: -1;
+}
+
+OPENVOLUMETRIC_API void openvolumetric_cancel_adaptive_switch(int id)
+{
+	InstanceAccess instance(id);
+	if (instance)
+		instance->cancel_adaptive_switch();
+}
+
+OPENVOLUMETRIC_API int openvolumetric_get_adaptive_switch_details(
+	int id,
+	int& state,
+	unsigned long long& generation,
+	unsigned long long& switch_count,
+	double& boundary_time)
+{
+	InstanceAccess instance(id);
+	if (!instance)
+		return -1;
+	g_adaptive_switch_info = instance->adaptive_switch_info();
+	state = static_cast<int>(g_adaptive_switch_info.state);
+	generation = g_adaptive_switch_info.generation;
+	switch_count = g_adaptive_switch_info.switch_count;
+	boundary_time = g_adaptive_switch_info.boundary_time;
+	return 1;
+}
+
+OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_switch_active_id()
+{
+	return g_adaptive_switch_info.active_representation.c_str();
+}
+
+OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_switch_pending_id()
+{
+	return g_adaptive_switch_info.pending_representation.c_str();
+}
+
+OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_switch_reason()
+{
+	return g_adaptive_switch_info.reason.c_str();
 }
 
 OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_error()

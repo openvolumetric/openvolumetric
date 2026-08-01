@@ -9,6 +9,7 @@
 #include "Engine/Texture2D.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/PlatformMemory.h"
+#include "HAL/PlatformTime.h"
 #include "InputCoreTypes.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
@@ -131,6 +132,7 @@ void UOpenVolumetricComponent::TickComponent(
 	{
 		return;
 	}
+	UpdateAdaptivePolicy();
 	if (PlaybackState != EOpenVolumetricPlaybackState::Playing ||
 		Player == nullptr ||
 		DynamicMeshComponent == nullptr)
@@ -348,6 +350,10 @@ bool UOpenVolumetricComponent::Open()
 	SelectedRepresentationId.Reset();
 	AdaptiveMeasuredThroughputMbps = 0.0;
 	AdaptiveDecisionReason.Reset();
+	PendingRepresentationId.Reset();
+	AdaptiveSwitchCount = 0;
+	AdaptiveRepresentations.Reset();
+	AdaptiveSegmentDuration = 0.0;
 	if (bUseAdaptiveManifest)
 	{
 		openvolumetric::AdaptiveSelection Selection;
@@ -371,6 +377,16 @@ bool UOpenVolumetricComponent::Open()
 		AdaptiveMeasuredThroughputMbps =
 			static_cast<double>(Selection.measured_throughput_bps) / 1000000.0;
 		AdaptiveDecisionReason = UTF8_TO_TCHAR(Selection.decision_reason.c_str());
+		AdaptiveSegmentDuration = Selection.manifest.segment_duration_seconds;
+		for (const openvolumetric::ResolvedAdaptiveRepresentation& Entry :
+			Selection.eligible_representations)
+		{
+			FAdaptiveRuntimeRepresentation RuntimeEntry;
+			RuntimeEntry.Id = UTF8_TO_TCHAR(Entry.representation.id.c_str());
+			RuntimeEntry.Resource = UTF8_TO_TCHAR(Entry.resolved_resource.c_str());
+			RuntimeEntry.Bandwidth = Entry.representation.bandwidth;
+			AdaptiveRepresentations.Add(MoveTemp(RuntimeEntry));
+		}
 		if (!bUseRemoteSource && !FPaths::FileExists(ResolvedPath))
 		{
 			LastError = FString::Printf(
@@ -393,6 +409,10 @@ bool UOpenVolumetricComponent::Open()
 		PlaybackState = EOpenVolumetricPlaybackState::Error;
 		UE_LOG(LogOpenVolumetricComponent, Error, TEXT("%s"), *LastError);
 		return false;
+	}
+	if (bUseAdaptiveManifest)
+	{
+		Player->SetActiveRepresentationId(SelectedRepresentationId);
 	}
 
 	const openvolumetric::OpenVolumetricMediaInfo& Info = Player->GetMediaInfo();
@@ -515,6 +535,15 @@ void UOpenVolumetricComponent::Close()
 	bResumeAfterNetworkRecovery = false;
 	NetworkRecoveryTarget = 0.0;
 	LastPresentationTime = -1.0;
+	AdaptiveRepresentations.Reset();
+	AdaptiveSegmentDuration = 0.0;
+	AdaptiveLastSampleTime = 0.0;
+	AdaptiveLastDownloadedBytes = 0;
+	AdaptiveSmoothedThroughputBps = 0.0;
+	AdaptiveDowngradeStarted = -1.0;
+	AdaptiveUpgradeHeadroomStarted = -1.0;
+	PendingRepresentationId.Reset();
+	AdaptiveSwitchCount = 0;
 }
 
 void UOpenVolumetricComponent::UpdateBufferDiagnostics()
@@ -537,6 +566,188 @@ void UOpenVolumetricComponent::UpdateBufferDiagnostics()
 	ActiveFragment = static_cast<int64>(Info.active_fragment);
 	FragmentCount = static_cast<int64>(Info.fragment_count);
 	CachedFragmentCount = static_cast<int64>(Info.cached_fragment_count);
+}
+
+void UOpenVolumetricComponent::UpdateAdaptivePolicy()
+{
+	if (!bEnableLiveAdaptiveSwitching || !bUseAdaptiveManifest ||
+		AdaptiveQuality != EOpenVolumetricAdaptiveQuality::Auto ||
+		!bRemoteSource || AdaptiveRepresentations.Num() < 2 ||
+		AdaptiveSegmentDuration <= 0.0 || Player == nullptr)
+	{
+		return;
+	}
+
+	const openvolumetric::AdaptiveSwitchInfo SwitchInfo =
+		Player->GetAdaptiveSwitchInfo();
+	PendingRepresentationId = UTF8_TO_TCHAR(
+		SwitchInfo.pending_representation.c_str());
+	if (static_cast<int64>(SwitchInfo.switch_count) != AdaptiveSwitchCount)
+	{
+		AdaptiveSwitchCount = static_cast<int64>(SwitchInfo.switch_count);
+		SelectedRepresentationId = UTF8_TO_TCHAR(
+			SwitchInfo.active_representation.c_str());
+		AdaptiveLastSampleTime = FPlatformTime::Seconds();
+		AdaptiveLastDownloadedBytes = DownloadedBytes > 0
+			? static_cast<uint64>(DownloadedBytes)
+			: 0;
+		AdaptiveDowngradeStarted = -1.0;
+		AdaptiveUpgradeHeadroomStarted = -1.0;
+		UE_LOG(
+			LogOpenVolumetricComponent,
+			Log,
+			TEXT("Adaptive switch committed: %s"),
+			*SelectedRepresentationId);
+	}
+	if (SwitchInfo.state == openvolumetric::AdaptiveSwitchState::Failed)
+	{
+		LastError = Player->GetError();
+		UE_LOG(
+			LogOpenVolumetricComponent,
+			Warning,
+			TEXT("Adaptive preparation failed; retrying at a later boundary: %s"),
+			*LastError);
+		Player->CancelAdaptiveSwitch();
+		LastError.Reset();
+		AdaptiveDowngradeStarted = FPlatformTime::Seconds();
+		AdaptiveUpgradeHeadroomStarted = -1.0;
+		return;
+	}
+	if (SwitchInfo.state != openvolumetric::AdaptiveSwitchState::Stable)
+	{
+		return;
+	}
+
+	const double Now = FPlatformTime::Seconds();
+	const uint64 CurrentDownloaded = DownloadedBytes > 0
+		? static_cast<uint64>(DownloadedBytes)
+		: 0;
+	if (AdaptiveLastSampleTime <= 0.0)
+	{
+		AdaptiveLastSampleTime = Now;
+		AdaptiveLastDownloadedBytes = CurrentDownloaded;
+	}
+	const double Elapsed = Now - AdaptiveLastSampleTime;
+	if (Elapsed >= 1.0)
+	{
+		if (CurrentDownloaded >= AdaptiveLastDownloadedBytes)
+		{
+			const uint64 Downloaded =
+				CurrentDownloaded - AdaptiveLastDownloadedBytes;
+			if (Downloaded > 0)
+			{
+				const double Measured =
+					static_cast<double>(Downloaded) * 8.0 / Elapsed;
+				AdaptiveSmoothedThroughputBps =
+					AdaptiveSmoothedThroughputBps <= 0.0
+						? Measured
+						: 0.75 * AdaptiveSmoothedThroughputBps +
+							0.25 * Measured;
+			}
+		}
+		AdaptiveLastDownloadedBytes = CurrentDownloaded;
+		AdaptiveLastSampleTime = Now;
+	}
+
+	const FAdaptiveRuntimeRepresentation& Low = AdaptiveRepresentations[0];
+	const int32 HighIndex = AdaptiveRepresentations.Num() - 1;
+	const FAdaptiveRuntimeRepresentation& High =
+		AdaptiveRepresentations[HighIndex];
+	const bool bUsingHigh = SelectedRepresentationId == High.Id;
+	const bool bUsingLow = SelectedRepresentationId == Low.Id;
+	const bool bInsufficient =
+		InputState == EOpenVolumetricInputState::Rebuffering ||
+		(AdaptiveSmoothedThroughputBps > 0.0 &&
+		 AdaptiveSmoothedThroughputBps <
+			static_cast<double>(High.Bandwidth) * 1.2);
+	if (bUsingHigh && bInsufficient)
+	{
+		if (AdaptiveDowngradeStarted < 0.0)
+			AdaptiveDowngradeStarted = Now;
+		if (InputState == EOpenVolumetricInputState::Rebuffering ||
+			Now - AdaptiveDowngradeStarted >= 2.0)
+		{
+			RequestAdaptiveRepresentation(
+				0,
+				InputState == EOpenVolumetricInputState::Rebuffering
+					? TEXT("Active input rebuffered; preparing Low.")
+					: TEXT("Sustained throughput lacked High headroom."));
+		}
+		return;
+	}
+	AdaptiveDowngradeStarted = -1.0;
+
+	const bool bUpgradeHeadroom = bUsingLow &&
+		InputState == EOpenVolumetricInputState::Ready &&
+		AdaptiveSmoothedThroughputBps >=
+			static_cast<double>(High.Bandwidth) * 1.75;
+	if (bUpgradeHeadroom)
+	{
+		if (AdaptiveUpgradeHeadroomStarted < 0.0)
+			AdaptiveUpgradeHeadroomStarted = Now;
+		if (Now - AdaptiveUpgradeHeadroomStarted >= 10.0)
+		{
+			RequestAdaptiveRepresentation(
+				HighIndex,
+				TEXT("Sustained throughput and input stability permit High."));
+		}
+	}
+	else
+	{
+		AdaptiveUpgradeHeadroomStarted = -1.0;
+	}
+}
+
+void UOpenVolumetricComponent::RequestAdaptiveRepresentation(
+	int32 TargetIndex,
+	const FString& Reason)
+{
+	if (!AdaptiveRepresentations.IsValidIndex(TargetIndex))
+		return;
+	const double Lead = AdaptiveSegmentDuration * 1.25;
+	const double Boundary = FMath::CeilToDouble(
+		(CurrentTimeSeconds + Lead) / AdaptiveSegmentDuration) *
+		AdaptiveSegmentDuration;
+	if (Boundary >= DurationSeconds)
+		return;
+	const FAdaptiveRuntimeRepresentation& Target =
+		AdaptiveRepresentations[TargetIndex];
+	if (Player->RequestAdaptiveSwitch(
+			Target.Resource,
+			Target.Id,
+			Boundary,
+			Reason,
+			LastError))
+	{
+		AdaptiveDowngradeStarted = -1.0;
+		AdaptiveUpgradeHeadroomStarted = -1.0;
+		PendingRepresentationId = Target.Id;
+		UE_LOG(
+			LogOpenVolumetricComponent,
+			Log,
+			TEXT("Preparing %s for %.3fs: %s"),
+			*Target.Id,
+			Boundary,
+			*Reason);
+	}
+}
+
+bool UOpenVolumetricComponent::RequestAdaptiveHigh(bool bHigh)
+{
+	if (!bUseAdaptiveManifest || !bRemoteSource ||
+		AdaptiveRepresentations.Num() < 2)
+	{
+		return false;
+	}
+	const int32 TargetIndex = bHigh
+		? AdaptiveRepresentations.Num() - 1
+		: 0;
+	if (AdaptiveRepresentations[TargetIndex].Id == SelectedRepresentationId)
+		return true;
+	RequestAdaptiveRepresentation(
+		TargetIndex,
+		TEXT("Developer requested a manual adaptive transition."));
+	return true;
 }
 
 bool UOpenVolumetricComponent::HandleNetworkRecovery()
@@ -562,6 +773,8 @@ bool UOpenVolumetricComponent::HandleNetworkRecovery()
 				LogOpenVolumetricComponent,
 				Warning,
 				TEXT("HTTP input interrupted; rebuffering."));
+			AdaptiveSmoothedThroughputBps = 1.0;
+			AdaptiveDowngradeStarted = FPlatformTime::Seconds() - 2.0;
 		}
 		return true;
 	}
@@ -730,6 +943,12 @@ void UOpenVolumetricComponent::UpdateDeveloperControls(float DeltaTime)
 		{
 			bLoop = !bLoop;
 		}
+		if (PlayerController->WasInputKeyJustPressed(EKeys::P))
+		{
+			const bool bCurrentlyHigh = AdaptiveRepresentations.Num() > 1 &&
+				SelectedRepresentationId == AdaptiveRepresentations.Last().Id;
+			RequestAdaptiveHigh(!bCurrentlyHigh);
+		}
 		if (PlayerController->WasInputKeyJustPressed(EKeys::I))
 		{
 			bDeveloperOverlayVisible = !bDeveloperOverlayVisible;
@@ -789,6 +1008,16 @@ void UOpenVolumetricComponent::UpdateDeveloperControls(float DeltaTime)
 				*SelectedRepresentationId,
 				AdaptiveMeasuredThroughputMbps)
 			: FString::Printf(TEXT("\nquality: %s"), *SelectedRepresentationId);
+		if (!PendingRepresentationId.IsEmpty())
+		{
+			NetworkStatus += FString::Printf(
+				TEXT("\npending: %s"), *PendingRepresentationId);
+		}
+		if (AdaptiveSwitchCount > 0)
+		{
+			NetworkStatus += FString::Printf(
+				TEXT("  switches:%lld"), AdaptiveSwitchCount);
+		}
 	}
 	const FString ErrorStatus = LastError.IsEmpty()
 		? FString()
@@ -796,7 +1025,7 @@ void UOpenVolumetricComponent::UpdateDeveloperControls(float DeltaTime)
 	const double UsedMemoryMb =
 		static_cast<double>(FPlatformMemory::GetStats().UsedPhysical) / Megabytes;
 	const FString StatusText = FString::Printf(
-		TEXT("OPENVOLUMETRIC\n%s  %.1f/%.1fs  Loop:%s\n%.1f fps  %.2f ms  Memory:%.0f MB%s%s\n\nK Play/Pause  O Loop\nJ -%.0fs  L +%.0fs  I Hide"),
+		TEXT("OPENVOLUMETRIC\n%s  %.1f/%.1fs  Loop:%s\n%.1f fps  %.2f ms  Memory:%.0f MB%s%s\n\nK Play/Pause  O Loop  P Quality\nJ -%.0fs  L +%.0fs  I Hide"),
 		*StateName,
 		CurrentTimeSeconds,
 		DurationSeconds,

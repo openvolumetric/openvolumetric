@@ -112,6 +112,10 @@ public:
 		meta = (ClampMin = "0.0"))
 	double AdaptiveMaximumBandwidthMbps = 0.0;
 
+	/** Permit Auto HTTP playback to change quality at aligned boundaries. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OpenVolumetric|Input|Adaptive")
+	bool bEnableLiveAdaptiveSwitching = true;
+
 	/** Start playback automatically after a file opens successfully. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OpenVolumetric|Playback")
 	bool bPlayOnOpen = true;
@@ -211,6 +215,12 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status")
 	FString AdaptiveDecisionReason;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status")
+	FString PendingRepresentationId;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status")
+	int64 AdaptiveSwitchCount = 0;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status|Buffer")
 	bool bRemoteSource = false;
 
@@ -258,6 +268,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "OpenVolumetric|Playback")
 	bool Seek(double TimeSeconds);
 
+	/** Requests Low or High at the next aligned boundary for testing. */
+	UFUNCTION(BlueprintCallable, Category = "OpenVolumetric|Playback")
+	bool RequestAdaptiveHigh(bool bHigh);
+
 	/** Stops playback and releases native and Unreal resources. */
 	UFUNCTION(BlueprintCallable, Category = "OpenVolumetric|Playback")
 	void Close();
@@ -282,6 +296,8 @@ private:
 	void ResetAudio();
 	void UpdateDeveloperControls(float DeltaTime);
 	void UpdateBufferDiagnostics();
+	void UpdateAdaptivePolicy();
+	void RequestAdaptiveRepresentation(int32 TargetIndex, const FString& Reason);
 	bool HandleNetworkRecovery();
 
 	bool bNetworkRebuffering = false;
@@ -290,6 +306,20 @@ private:
 	double LastPresentationTime = -1.0;
 	FVector SmoothedAudioCentroid = FVector::ZeroVector;
 	bool bHasAudioCentroid = false;
+
+	struct FAdaptiveRuntimeRepresentation
+	{
+		FString Id;
+		FString Resource;
+		uint64 Bandwidth = 0;
+	};
+	TArray<FAdaptiveRuntimeRepresentation> AdaptiveRepresentations;
+	double AdaptiveSegmentDuration = 0.0;
+	double AdaptiveLastSampleTime = 0.0;
+	uint64 AdaptiveLastDownloadedBytes = 0;
+	double AdaptiveSmoothedThroughputBps = 0.0;
+	double AdaptiveDowngradeStarted = -1.0;
+	double AdaptiveUpgradeHeadroomStarted = -1.0;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> DynamicMaterial;

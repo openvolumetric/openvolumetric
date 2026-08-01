@@ -56,6 +56,52 @@ bool FOpenVolumetricPlayerAdapter::Seek(
 	return true;
 }
 
+void FOpenVolumetricPlayerAdapter::SetActiveRepresentationId(
+	const FString& RepresentationId)
+{
+	const FTCHARToUTF8 Utf8Representation(*RepresentationId);
+	Player.set_active_representation_id(Utf8Representation.Get());
+}
+
+bool FOpenVolumetricPlayerAdapter::RequestAdaptiveSwitch(
+	const FString& Resource,
+	const FString& RepresentationId,
+	double BoundaryTime,
+	const FString& Reason,
+	FString& OutError)
+{
+	const FTCHARToUTF8 Utf8Resource(*Resource);
+	const FTCHARToUTF8 Utf8Representation(*RepresentationId);
+	const FTCHARToUTF8 Utf8Reason(*Reason);
+	if (!Player.request_switch(
+			Utf8Resource.Get(),
+			Utf8Representation.Get(),
+			BoundaryTime,
+			Utf8Reason.Get()))
+	{
+		OutError = UTF8_TO_TCHAR(Player.error().c_str());
+		return false;
+	}
+	OutError.Reset();
+	return true;
+}
+
+openvolumetric::AdaptiveSwitchInfo
+FOpenVolumetricPlayerAdapter::GetAdaptiveSwitchInfo() const
+{
+	return Player.switch_info();
+}
+
+void FOpenVolumetricPlayerAdapter::CancelAdaptiveSwitch()
+{
+	Player.cancel_pending_switch();
+}
+
+FString FOpenVolumetricPlayerAdapter::GetError() const
+{
+	return UTF8_TO_TCHAR(Player.error().c_str());
+}
+
 void FOpenVolumetricPlayerAdapter::Close()
 {
 	Player.close();

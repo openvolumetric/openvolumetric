@@ -21,6 +21,7 @@ public sealed class OpenVolumetricDeveloperOverlay : MonoBehaviour
     private InputAction m_seekBackward;
     private InputAction m_seekForward;
     private InputAction m_toggleOverlay;
+    private InputAction m_toggleQuality;
     private bool m_visible = true;
     private float m_smoothedDelta;
     private float m_nextTextUpdate;
@@ -72,6 +73,7 @@ public sealed class OpenVolumetricDeveloperOverlay : MonoBehaviour
         m_seekBackward?.Dispose();
         m_seekForward?.Dispose();
         m_toggleOverlay?.Dispose();
+        m_toggleQuality?.Dispose();
     }
 
     /// <summary>
@@ -107,6 +109,12 @@ public sealed class OpenVolumetricDeveloperOverlay : MonoBehaviour
             {
                 m_text.gameObject.SetActive(m_visible);
             }
+        }
+        if(m_toggleQuality.WasPressedThisFrame())
+        {
+            bool currentlyHigh = m_player.SelectedRepresentationId.Contains(
+                "high", System.StringComparison.OrdinalIgnoreCase);
+            m_player.RequestAdaptiveHigh(!currentlyHigh);
         }
 
         m_smoothedDelta = Mathf.Lerp(
@@ -145,6 +153,10 @@ public sealed class OpenVolumetricDeveloperOverlay : MonoBehaviour
             "Overlay",
             "<XRController>{LeftHand}/menuButton",
             "<Keyboard>/h");
+        m_toggleQuality = ButtonAction(
+            "Quality",
+            "<XRController>{RightHand}/gripPressed",
+            "<Keyboard>/q");
     }
 
     /// <summary>Creates one button action with platform-equivalent bindings.</summary>
@@ -170,6 +182,7 @@ public sealed class OpenVolumetricDeveloperOverlay : MonoBehaviour
         SetEnabled(m_seekBackward, enabled);
         SetEnabled(m_seekForward, enabled);
         SetEnabled(m_toggleOverlay, enabled);
+        SetEnabled(m_toggleQuality, enabled);
     }
 
     /// <summary>Changes one optional action's enabled state.</summary>
@@ -246,6 +259,21 @@ public sealed class OpenVolumetricDeveloperOverlay : MonoBehaviour
                     " ({0:F1} Mbps probe)",
                     m_player.AdaptiveThroughputBitsPerSecond / 1000000.0);
             }
+            OpenVolumetricDecoder.AdaptiveSwitchInfo adaptive =
+                m_player.AdaptiveSwitchStatus;
+            if(adaptive.State !=
+                OpenVolumetricDecoder.AdaptiveSwitchState.Stable)
+            {
+                network += string.Format(
+                    "\nSwitch: {0} -> {1} at {2:F1}s",
+                    adaptive.State,
+                    adaptive.PendingRepresentation,
+                    adaptive.BoundaryTime);
+            }
+            if(adaptive.SwitchCount > 0)
+            {
+                network += " switches:" + adaptive.SwitchCount;
+            }
         }
         if(buffer.IsFragmented)
         {
@@ -257,9 +285,9 @@ public sealed class OpenVolumetricDeveloperOverlay : MonoBehaviour
         }
         string controls = Application.isMobilePlatform
             ? "A Play/Pause  B Loop\n" +
-              "X -10s  Y +10s  Menu Hide"
+              "X -10s  Y +10s  Grip Quality  Menu Hide"
             : "Space Play/Pause  L Loop\n" +
-              "Left -10s  Right +10s  H Hide";
+              "Left -10s  Right +10s  Q Quality  H Hide";
         string dspAudio = m_player.NativeDspAudioEnabled
             ? string.Format(
                 "\nNative DSP audio:{0:F3}s",

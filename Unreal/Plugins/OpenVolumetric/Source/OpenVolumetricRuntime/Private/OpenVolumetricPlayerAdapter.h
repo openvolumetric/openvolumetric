@@ -1,6 +1,6 @@
 #pragma once
 
-#include "OpenVolumetricPlayer.h"
+#include "AdaptivePlayerCoordinator.h"
 
 namespace UE::Geometry
 {
@@ -20,6 +20,16 @@ public:
 	bool Start(FString& OutError);
 	void Stop();
 	bool Seek(double TimeSeconds, FString& OutError);
+	void SetActiveRepresentationId(const FString& RepresentationId);
+	bool RequestAdaptiveSwitch(
+		const FString& Resource,
+		const FString& RepresentationId,
+		double BoundaryTime,
+		const FString& Reason,
+		FString& OutError);
+	openvolumetric::AdaptiveSwitchInfo GetAdaptiveSwitchInfo() const;
+	void CancelAdaptiveSwitch();
+	FString GetError() const;
 	void Close();
 
 	const openvolumetric::OpenVolumetricMediaInfo& GetMediaInfo() const;
@@ -41,6 +51,6 @@ public:
 	int32 ReadAudio(int32 SampleCount, TArray<int16>& OutSamples);
 
 private:
-	openvolumetric::OpenVolumetricPlayer Player;
+	openvolumetric::AdaptivePlayerCoordinator Player;
 	TArray<float> AudioFloatBuffer;
 };

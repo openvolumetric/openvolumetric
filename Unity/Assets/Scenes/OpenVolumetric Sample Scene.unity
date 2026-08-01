@@ -153,6 +153,10 @@ MonoBehaviour:
   videoUrl: http://192.168.0.34:18765/manifest.json
   useAdaptiveManifest: 1
   adaptiveQuality: 0
+  adaptiveMaximumTextureDimension: 0
+  adaptiveMaximumTextureBitrateMbps: 0
+  adaptiveMaximumGeometryBitrateMbps: 0
+  adaptiveMaximumBandwidthMbps: 0
   luminanceCorrection: 0
   blueProjectionCorrection: 0
   redProjectionCorrection: 0
@@ -222,6 +226,10 @@ MonoBehaviour:
   videoUrl: http://192.168.0.34:18765/volumetric_video_quest_streaming.mp4
   useAdaptiveManifest: 0
   adaptiveQuality: 0
+  adaptiveMaximumTextureDimension: 0
+  adaptiveMaximumTextureBitrateMbps: 0
+  adaptiveMaximumGeometryBitrateMbps: 0
+  adaptiveMaximumBandwidthMbps: 0
   luminanceCorrection: 0
   blueProjectionCorrection: 0
   redProjectionCorrection: 0
@@ -583,6 +591,10 @@ MonoBehaviour:
   videoUrl: 
   useAdaptiveManifest: 0
   adaptiveQuality: 0
+  adaptiveMaximumTextureDimension: 0
+  adaptiveMaximumTextureBitrateMbps: 0
+  adaptiveMaximumGeometryBitrateMbps: 0
+  adaptiveMaximumBandwidthMbps: 0
   luminanceCorrection: 0
   blueProjectionCorrection: 0
   redProjectionCorrection: 0
@@ -639,6 +651,10 @@ MonoBehaviour:
   videoUrl: 
   useAdaptiveManifest: 1
   adaptiveQuality: 2
+  adaptiveMaximumTextureDimension: 0
+  adaptiveMaximumTextureBitrateMbps: 0
+  adaptiveMaximumGeometryBitrateMbps: 0
+  adaptiveMaximumBandwidthMbps: 0
   luminanceCorrection: 0
   blueProjectionCorrection: 0
   redProjectionCorrection: 0

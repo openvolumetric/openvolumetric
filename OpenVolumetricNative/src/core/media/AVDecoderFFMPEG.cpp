@@ -356,66 +356,81 @@ bool AVDecoderFFMPEG::start_decoding()
 		LOG("AVDecoderFFMPEG::start_decoding - not INITIALIZED");
 		return false;
 	}
+	if (m_thread_running.exchange(true, std::memory_order_acq_rel))
+	{
+		LOG("AVDecoderFFMPEG::start_decoding - already running");
+		return true;
+	}
 
 	m_stop_requested.store(false, std::memory_order_release);
 
-	// Create thread start video decoding
-	m_decode_thread = std::thread([&]() 
+	// Publish ownership before constructing the worker. A caller may seek as
+	// soon as start_decoding() returns; advertising the worker only from inside
+	// its lambda left a window where seek() mutated FFmpeg directly while the
+	// new worker was beginning to decode.
+	try
 	{
-		m_thread_running.store(true, std::memory_order_release);
-		m_decoder_state = DECODING;
-		
-		while (!m_stop_requested.load(std::memory_order_acquire))
+		m_decode_thread = std::thread([this]()
 		{
-			if (!process_seek_request())
-			{
-				m_decoder_state = STOP;
-				break;
-			}
+			m_decoder_state = DECODING;
 
-			// Switch based on decoder state
-			switch (m_decoder_state)
+			while (!m_stop_requested.load(std::memory_order_acquire))
 			{
-			
-			// If decoding
-			case DECODING:
-			{
-				//LOG("AVDecoderFFMPEG::start_decoding - decoding");
-				if (!this->decode())
+				if (!process_seek_request())
 				{
-					m_decoder_state = m_container->end_of_stream()
-						? DECODE_EOF
-						: STOP;
-					if (m_decoder_state == STOP)
-					{
-						LOG(
-							"AVDecoderFFMPEG::start_decoding - decoder stopped: %s",
-							get_last_error().c_str());
-					}
-					if (m_decoder_state == STOP)
-						m_stop_requested.store(
-							true, std::memory_order_release);
+					m_decoder_state = STOP;
+					break;
 				}
-				break;
-			}
-			case DECODE_EOF:
-			{
-				// Keep tail frames available. The engine playback clock decides
-				// whether to stop or submits a seek when looping is enabled.
-				std::this_thread::sleep_for(
-					std::chrono::milliseconds(1));
-				break;
-			}
-			default:
-				std::this_thread::yield();
-				break;
-			}
-		}
 
+				// Decode until stopped, drained, or waiting at end of stream.
+				switch (m_decoder_state)
+				{
+				case DECODING:
+				{
+					if (!this->decode())
+					{
+						m_decoder_state = m_container->end_of_stream()
+							? DECODE_EOF
+							: STOP;
+						if (m_decoder_state == STOP)
+						{
+							LOG(
+								"AVDecoderFFMPEG::start_decoding - decoder stopped: %s",
+								get_last_error().c_str());
+							m_stop_requested.store(
+								true, std::memory_order_release);
+						}
+					}
+					break;
+				}
+				case DECODE_EOF:
+				{
+					// Keep tail frames available. The engine clock either stops or
+					// submits a seek when looping is enabled.
+					std::this_thread::sleep_for(
+						std::chrono::milliseconds(1));
+					break;
+				}
+				default:
+					std::this_thread::yield();
+					break;
+				}
+			}
+
+			m_thread_running.store(false, std::memory_order_release);
+			m_seek_condition.notify_all();
+			LOG("AVDecoderFFMPEG::start_decoding - thread end");
+		});
+	}
+	catch (const std::exception& exception)
+	{
 		m_thread_running.store(false, std::memory_order_release);
 		m_seek_condition.notify_all();
-		LOG("AVDecoderFFMPEG::start_decoding - thread end");
-	});
+		LOG(
+			"AVDecoderFFMPEG::start_decoding - worker creation failed: %s",
+			exception.what());
+		return false;
+	}
 
 	return true;
 }

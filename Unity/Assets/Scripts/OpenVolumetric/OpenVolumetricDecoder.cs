@@ -86,6 +86,39 @@ public class OpenVolumetricDecoder : IDisposable
         ref ulong fragmentCount,
         ref ulong cachedFragmentCount);
 
+    [DllImport(PluginName, EntryPoint = "openvolumetric_configure_adaptive_instance")]
+    private static extern int openvolumetric_configure_adaptive_instance(
+        int id,
+        string representationId);
+
+    [DllImport(PluginName, EntryPoint = "openvolumetric_request_adaptive_switch")]
+    private static extern int openvolumetric_request_adaptive_switch(
+        int id,
+        string resource,
+        string representationId,
+        double boundaryTime,
+        string reason);
+
+    [DllImport(PluginName, EntryPoint = "openvolumetric_cancel_adaptive_switch")]
+    private static extern void openvolumetric_cancel_adaptive_switch(int id);
+
+    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_switch_details")]
+    private static extern int openvolumetric_get_adaptive_switch_details(
+        int id,
+        ref int state,
+        ref ulong generation,
+        ref ulong switchCount,
+        ref double boundaryTime);
+
+    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_switch_active_id")]
+    private static extern IntPtr openvolumetric_get_adaptive_switch_active_id();
+
+    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_switch_pending_id")]
+    private static extern IntPtr openvolumetric_get_adaptive_switch_pending_id();
+
+    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_switch_reason")]
+    private static extern IntPtr openvolumetric_get_adaptive_switch_reason();
+
     [DllImport(PluginName, EntryPoint = "openvolumetric_get_video_details")]
     private static extern int openvolumetric_get_video_details(int id, ref int width, ref int height, ref double fps, ref double duration);
 
@@ -320,6 +353,88 @@ public class OpenVolumetricDecoder : IDisposable
         Error = 3,
         Cancelled = 4,
         Ended = 5
+    }
+
+    public enum AdaptiveSwitchState
+    {
+        Stable,
+        Preparing,
+        Ready,
+        Failed
+    }
+
+    public struct AdaptiveSwitchInfo
+    {
+        public AdaptiveSwitchState State;
+        public ulong Generation;
+        public ulong SwitchCount;
+        public double BoundaryTime;
+        public string ActiveRepresentation;
+        public string PendingRepresentation;
+        public string Reason;
+    }
+
+    /// <summary>Associates the opened native session with its manifest entry.</summary>
+    public bool ConfigureAdaptiveRepresentation(string representationId)
+    {
+        return m_instance_id >= 0 &&
+            openvolumetric_configure_adaptive_instance(
+                m_instance_id, representationId) == 1;
+    }
+
+    /// <summary>Begins warming a representation for an atomic boundary switch.</summary>
+    public bool RequestAdaptiveSwitch(
+        string resource,
+        string representationId,
+        double boundaryTime,
+        string reason)
+    {
+        return m_instance_id >= 0 &&
+            openvolumetric_request_adaptive_switch(
+                m_instance_id,
+                resource,
+                representationId,
+                boundaryTime,
+                reason) == 1;
+    }
+
+    public void CancelAdaptiveSwitch()
+    {
+        if(m_instance_id >= 0)
+        {
+            openvolumetric_cancel_adaptive_switch(m_instance_id);
+        }
+    }
+
+    /// <summary>Current generation-safe adaptive transition state.</summary>
+    public AdaptiveSwitchInfo CurrentAdaptiveSwitchInfo
+    {
+        get
+        {
+            AdaptiveSwitchInfo info = new AdaptiveSwitchInfo();
+            if(m_instance_id < 0)
+            {
+                return info;
+            }
+            int state = 0;
+            if(openvolumetric_get_adaptive_switch_details(
+                m_instance_id,
+                ref state,
+                ref info.Generation,
+                ref info.SwitchCount,
+                ref info.BoundaryTime) != 1)
+            {
+                return info;
+            }
+            info.State = (AdaptiveSwitchState)state;
+            info.ActiveRepresentation = Marshal.PtrToStringAnsi(
+                openvolumetric_get_adaptive_switch_active_id()) ?? "";
+            info.PendingRepresentation = Marshal.PtrToStringAnsi(
+                openvolumetric_get_adaptive_switch_pending_id()) ?? "";
+            info.Reason = Marshal.PtrToStringAnsi(
+                openvolumetric_get_adaptive_switch_reason()) ?? "";
+            return info;
+        }
     }
 
     /// <summary>Current transport and bounded-cache diagnostics.</summary>

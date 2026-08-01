@@ -424,10 +424,12 @@ threading, recovery, authoring, and validation design is recorded in
       per-component overrides in Unity and Unreal.
 - [ ] Replace or calibrate conservative platform ceilings with measured decode
       capability data from the evaluation hardware.
-- [ ] Switch compatible texture and geometry atomically at aligned segment
-      boundaries while preserving the audio clock.
-- [ ] Cancel and isolate stale in-flight downloads using playback generations.
-- [ ] Add Unity and Unreal buffer/quality controls and developer diagnostics.
+- [x] Implement dual-session texture/geometry switching at aligned segment
+      boundaries, with sample-exact native audio-block handoff.
+- [x] Cancel and isolate stale preparation work using playback generations.
+- [x] Add conservative downgrade/upgrade policy, forced quality controls, and
+      switch diagnostics in Unity and Unreal.
+- [ ] Validate automatic and forced switching across the full platform matrix.
 - [ ] Test bandwidth ramps, latency, jitter, outages, failed upgrades,
       repeated switching, seeking, looping, and long playback.
 - [ ] Measure startup delay, rebuffering, quality, wasted bytes, memory,

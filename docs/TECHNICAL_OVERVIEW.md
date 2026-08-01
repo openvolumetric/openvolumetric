@@ -1140,7 +1140,23 @@ Unity and Unreal expose per-component ceiling overrides for controlled tests
 and unusual hardware. The selected complete fragmented MP4 then enters the
 unchanged player pipeline. The platform profiles are conservative declared
 limits, not live decode benchmarks; calibration with measured device decode
-data and segment-boundary switching remain future work.
+data remains future work.
+
+Live representation changes are coordinated by an engine-neutral dual-session
+player. A preparation worker opens and seeks the target fragmented MP4, then
+decodes one complete texture/geometry presentation at an aligned manifest
+boundary. Generation identifiers prevent a cancelled or superseded worker
+from becoming active. The active decoder remains untouched until preparation
+is complete, so failed upgrades do not interrupt playback.
+
+Audio-bearing presentations commit inside the native interleaved PCM read. A
+DSP block crossing the boundary is divided at the exact sample: its prefix is
+read from the old session and its suffix from the new one. The active session
+pointer changes between those reads. Visual presentation holds at the boundary
+and then publishes the pending session's already matched texture and geometry.
+This makes the audio clock authoritative and prevents mixed-representation
+texture/geometry frames. For silent content, the visual presentation call owns
+the same timestamped commit.
 Local and HTTP startup selection at both quality levels has been manually
 validated in Unity and Unreal, including seeking, pause/resume, looping, and
 cross-stream synchronization.
@@ -1186,8 +1202,9 @@ The full engineering plan and validation matrix are maintained in
 [STREAMING_AND_ADAPTATION.md](STREAMING_AND_ADAPTATION.md). Fixed fragmented
 packaging and the versioned manifest model/parser are implemented; automatic
 startup throughput selection, multi-representation authoring, and manual
-selection are implemented in Unity and Unreal. DASH mapping, decode-capability
-calibration, and atomic representation switching remain outstanding.
+selection and dual-session boundary switching are implemented in Unity and
+Unreal. DASH mapping, decode-capability calibration, and full cross-platform
+switching evaluation remain outstanding.
 
 ### 12.6 C2PA provenance investigation (future work)
 

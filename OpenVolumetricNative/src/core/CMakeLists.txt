@@ -22,6 +22,7 @@ add_library(OpenVolumetricCore STATIC
   adaptive/AdaptiveSelection.cpp
   container/FFmpegMp4VolumetricContainer.cpp
   container/GeometryPacket.cpp
+  decoding/AdaptivePlayerCoordinator.cpp
   decoding/OpenVolumetricPlayer.cpp
   geometry/DracoPointCloudDecoder.cpp
   geometry/GeometryDecoderDraco.cpp
