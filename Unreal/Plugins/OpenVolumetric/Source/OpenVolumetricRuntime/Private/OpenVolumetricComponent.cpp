@@ -8,6 +8,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/Paths.h"
+#include "Sound/SoundAttenuation.h"
 #include "Sound/SoundWaveProcedural.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -112,6 +113,7 @@ void UOpenVolumetricComponent::TickComponent(
 	}
 
 	UE::Geometry::FDynamicMesh3 Mesh;
+	FVector GeometryCentroid = FVector::ZeroVector;
 	TArray<FColor> Pixels;
 	int32 TextureWidth = 0;
 	int32 TextureHeight = 0;
@@ -124,6 +126,7 @@ void UOpenVolumetricComponent::TickComponent(
 			BlueProjectionCorrection,
 			RedProjectionCorrection,
 			Mesh,
+			GeometryCentroid,
 			Pixels,
 			TextureWidth,
 			TextureHeight,
@@ -132,6 +135,34 @@ void UOpenVolumetricComponent::TickComponent(
 	{
 		LastPresentationTime = PresentationTime;
 		DynamicMeshComponent->SetMesh(MoveTemp(Mesh));
+		if (AudioComponent != nullptr)
+		{
+			AudioComponent->bAllowSpatialization =
+				bEnableGeometryCentroidSpatialAudio;
+			if (bEnableGeometryCentroidSpatialAudio)
+			{
+				if (!bHasAudioCentroid || SpatialAudioSmoothingSeconds <= 0.0f)
+				{
+					SmoothedAudioCentroid = GeometryCentroid;
+					bHasAudioCentroid = true;
+				}
+				else
+				{
+					// Exponential smoothing is independent of the game frame rate and
+					// changes only source position, never decoded PCM timing.
+					const float Blend = 1.0f - FMath::Exp(
+						-DeltaTime / SpatialAudioSmoothingSeconds);
+					SmoothedAudioCentroid = FMath::Lerp(
+						SmoothedAudioCentroid, GeometryCentroid, Blend);
+				}
+				AudioComponent->SetRelativeLocation(SmoothedAudioCentroid);
+			}
+			else
+			{
+				AudioComponent->SetRelativeLocation(FVector::ZeroVector);
+				bHasAudioCentroid = false;
+			}
+		}
 		UpdatePresentationTexture(
 			Pixels, TextureWidth, TextureHeight);
 	}
@@ -487,7 +518,18 @@ void UOpenVolumetricComponent::InitializeAudio()
 			GetOwner(), TEXT("OpenVolumetricAudio"));
 		GetOwner()->AddInstanceComponent(AudioComponent);
 		AudioComponent->bAutoActivate = false;
-		AudioComponent->bAllowSpatialization = false;
+		AudioComponent->bAllowSpatialization =
+			bEnableGeometryCentroidSpatialAudio;
+		AudioComponent->bOverrideAttenuation = true;
+		AudioComponent->AttenuationOverrides.bSpatialize = true;
+		// Preserve the existing playback level. Projects can add distance
+		// attenuation independently if their scene scale requires it.
+		AudioComponent->AttenuationOverrides.bAttenuate = false;
+		AudioComponent->AttenuationOverrides.StereoSpread = 0.0f;
+		if (USceneComponent* Root = GetOwner()->GetRootComponent())
+		{
+			AudioComponent->SetupAttachment(Root);
+		}
 		AudioComponent->RegisterComponent();
 	}
 
@@ -539,6 +581,7 @@ void UOpenVolumetricComponent::PumpAudio()
 
 void UOpenVolumetricComponent::ResetAudio()
 {
+	bHasAudioCentroid = false;
 	if (AudioComponent != nullptr)
 	{
 		AudioComponent->Stop();

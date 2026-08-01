@@ -113,6 +113,18 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Transient, Category = "OpenVolumetric|Audio")
 	TObjectPtr<UAudioComponent> AudioComponent;
 
+	/** Places the decoded audio at the centroid of each presented geometry frame. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OpenVolumetric|Audio")
+	bool bEnableGeometryCentroidSpatialAudio = true;
+
+	/** Time used to smooth centroid motion without changing the audio clock. */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "OpenVolumetric|Audio",
+		meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "0.25", Units = "s"))
+	float SpatialAudioSmoothingSeconds = 0.05f;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status")
 	EOpenVolumetricPlaybackState PlaybackState = EOpenVolumetricPlaybackState::Closed;
 
@@ -201,6 +213,8 @@ private:
 	bool bResumeAfterNetworkRecovery = false;
 	double NetworkRecoveryTarget = 0.0;
 	double LastPresentationTime = -1.0;
+	FVector SmoothedAudioCentroid = FVector::ZeroVector;
+	bool bHasAudioCentroid = false;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> DynamicMaterial;

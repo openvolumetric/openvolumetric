@@ -31,6 +31,7 @@ public:
 		float BlueProjectionCorrection,
 		float RedProjectionCorrection,
 		UE::Geometry::FDynamicMesh3& OutMesh,
+		FVector& OutGeometryCentroid,
 		TArray<FColor>& OutPixels,
 		int32& OutWidth,
 		int32& OutHeight,

@@ -25,10 +25,13 @@ The component creates and owns its dynamic mesh, transient texture, unlit
 material instance, procedural sound wave, and audio component. Playback
 operations are also available to Blueprints:
 
-The Unreal audio component currently provides synchronized PCM playback only.
-Unity's optional geometry-centroid following and lightweight native stereo
-spatialisation, validated on Quest for both local and HTTP-streamed input, have
-not yet been implemented in the Unreal integration.
+The **Enable Geometry Centroid Spatial Audio** option places the procedural
+audio component at the centroid of each presented mesh. **Spatial Audio
+Smoothing Seconds** reduces small frame-to-frame source-position changes.
+This changes only the audio component transform: PCM queueing and the shared
+playback clock remain untouched. Unreal's configured spatializer performs the
+actual rendering, while distance attenuation remains disabled by default so
+enabling the option does not unexpectedly alter playback level.
 
 - `Open`
 - `Play`

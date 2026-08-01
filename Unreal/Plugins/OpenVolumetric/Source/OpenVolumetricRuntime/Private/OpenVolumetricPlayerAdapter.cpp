@@ -80,6 +80,7 @@ openvolumetric::FrameMatchResult FOpenVolumetricPlayerAdapter::PollPresentation(
 	float BlueProjectionCorrection,
 	float RedProjectionCorrection,
 	UE::Geometry::FDynamicMesh3& OutMesh,
+	FVector& OutGeometryCentroid,
 	TArray<FColor>& OutPixels,
 	int32& OutWidth,
 	int32& OutHeight,
@@ -108,14 +109,17 @@ openvolumetric::FrameMatchResult FOpenVolumetricPlayerAdapter::PollPresentation(
 		static_cast<int32>(Presentation.mesh.verts.size()));
 	UVElements.Reserve(
 		static_cast<int32>(Presentation.mesh.verts.size()));
+	FVector3d PositionSum = FVector3d::ZeroVector;
 	for (const openvolumetric::Vertex& Vertex : Presentation.mesh.verts)
 	{
 		// OpenVolumetric coordinates are metres with Y up. Unreal uses centimetres
 		// with Z up, so rotate the axes into Unreal's coordinate convention.
-		const int VertexId = OutMesh.AppendVertex(FVector3d(
+		const FVector3d UnrealPosition(
 			Vertex.pos[2] * GeometryScale,
 			Vertex.pos[0] * GeometryScale,
-			Vertex.pos[1] * GeometryScale));
+			Vertex.pos[1] * GeometryScale);
+		PositionSum += UnrealPosition;
+		const int VertexId = OutMesh.AppendVertex(UnrealPosition);
 		const int32 NormalElement = NormalOverlay->AppendElement(FVector3f(
 			Vertex.normal[2],
 			Vertex.normal[0],
@@ -131,6 +135,9 @@ openvolumetric::FrameMatchResult FOpenVolumetricPlayerAdapter::PollPresentation(
 		UVOverlay->SetParentVertex(UVElement, VertexId);
 		UVElements.Add(UVElement);
 	}
+	OutGeometryCentroid = Presentation.mesh.verts.empty()
+		? FVector::ZeroVector
+		: FVector(PositionSum / Presentation.mesh.verts.size());
 
 	const std::vector<int>& Indices = Presentation.mesh.indexes;
 	for (std::size_t Index = 0; Index + 2 < Indices.size(); Index += 3)

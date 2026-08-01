@@ -731,10 +731,13 @@ decode queues, and has passed seek, loop, pause/resume, and synchronization
 tests on Quest with both local-file and HTTP-streamed input. It is lightweight
 stereo panning rather than a full HRTF renderer.
 
-This centroid-following spatial-audio path is currently implemented only by
-the Unity integration. Unreal continues to output synchronized PCM through
-`USoundWaveProcedural` and `UAudioComponent`, but does not yet publish the mesh
-centroid to its audio component or apply equivalent spatialisation.
+Unreal computes the same centroid after converting decoded vertices into
+Unreal coordinates, smooths its motion on the game thread, and places the
+`UAudioComponent` at that relative position. Unreal's configured engine
+spatializer then renders the procedural PCM. Distance attenuation is disabled
+by default, and neither centroid tracking nor smoothing changes PCM queueing
+or the playback clock. The Unity and Unreal paths therefore share the source
+position model while retaining engine-appropriate audio rendering.
 
 The native DSP bridge currently supports one active OpenVolumetric player and
 occupies Unity's project-wide spatializer plug-in slot. These are integration
@@ -1335,8 +1338,10 @@ The most significant limitations of the current system are:
 - Only planar 8-bit YUV420 video output is supported by the rendering path.
 - Audio is normalized to stereo float PCM; richer channel layouts are not
   exposed.
-- Geometry-centroid following and native stereo spatialisation are currently
-  Unity-only; Unreal spatial audio is not implemented.
+- Geometry-centroid spatial audio is implemented in Unity and Unreal, but the
+  renderers are engine-specific: Unity currently uses lightweight native
+  equal-power stereo panning, while Unreal delegates to its configured engine
+  spatializer.
 - Runtime video decoding is software-based, including on Quest.
 - Progressive HTTP currently requires a known resource length and byte-range
   server support. Bounded retry, rebuffer-state publication, presentation
