@@ -476,6 +476,13 @@ threading, recovery, authoring, and validation design is recorded in
 
 ## Later work
 
+- Investigate optional C2PA provenance for complete and fragmented
+  OpenVolumetric MP4 assets. The investigation must verify that C2PA BMFF
+  hashing covers the custom `vvge` track, determine how independently signed
+  adaptive representations bind to `manifest.json`, establish the required
+  package/sign/verify ordering, test ordinary and engine playback after UUID
+  box insertion, and document certificate trust, key management, ingredient
+  provenance, subject consent, and non-blocking runtime validation.
 - Consider optional checksums for geometry samples.
 - Consider low-latency live ingest after adaptive on-demand playback is
   stable.

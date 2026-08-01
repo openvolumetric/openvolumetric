@@ -1176,8 +1176,34 @@ fragmented playback, and independent-mesh geometry without topology reuse.
 The full engineering plan and validation matrix are maintained in
 [STREAMING_AND_ADAPTATION.md](STREAMING_AND_ADAPTATION.md). Fixed fragmented
 packaging and the versioned manifest model/parser are implemented; automatic
-selection, multi-representation authoring, DASH mapping, and atomic
-representation switching remain outstanding.
+throughput selection, DASH mapping, and atomic representation switching remain
+outstanding. Multi-representation authoring and manual startup selection are
+implemented in Unity and Unreal.
+
+### 12.6 C2PA provenance investigation (future work)
+
+OpenVolumetric should investigate optional C2PA Content Credentials because a
+volumetric asset combines a person's appearance, motion, geometry, and voice
+and is derived from multiple source ingredients. The intended role is
+cryptographic provenance and tamper evidence, not DRM, authorization, or a
+substitute for subject consent and copyright clearance.
+
+The first prototype should sign one completed OpenVolumetric MP4 and confirm
+that the C2PA BMFF hard binding covers video, audio, and the custom `vvge`
+track. It must then repeat playback, seeking, looping, fragment indexing, and
+generic-player compatibility tests after C2PA UUID and auxiliary boxes have
+been inserted. Signing must precede final OpenVolumetric verification and
+adaptive-manifest generation because embedding credentials changes the final
+asset bytes, box offsets, size, and measured bitrate.
+
+For adaptive delivery, each low/high representation requires independent
+validation while the package also needs a cryptographic association between
+`manifest.json` and the exact signed representation assets. The investigation
+should compare embedded and sidecar approaches, determine how ingredients and
+encoding actions are represented, and define certificate-chain, timestamp,
+private-key, revocation, and trust-list policies. Runtime validation should be
+asynchronous and expose a clear status to Unity and Unreal without placing
+signature verification on the real-time decoding or audio path.
 
 ## 13. Performance characteristics
 
