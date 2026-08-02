@@ -148,6 +148,8 @@ OpenVolumetricBufferInfo OpenVolumetricPlayer::buffer_info() const
 	result.resource_size_bytes = source.resource_size_bytes;
 	result.cached_bytes = source.cached_bytes;
 	result.downloaded_bytes = source.downloaded_bytes;
+	result.transfer_throughput_bits_per_second =
+		source.transfer_throughput_bits_per_second;
 	result.request_count = source.request_count;
 	result.recovery_count = source.recovery_count;
 	result.fragmented = source.fragmented;

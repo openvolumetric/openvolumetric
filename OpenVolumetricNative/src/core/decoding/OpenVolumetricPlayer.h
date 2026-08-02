@@ -32,6 +32,7 @@ struct OpenVolumetricBufferInfo
 	std::int64_t resource_size_bytes = -1;
 	std::uint64_t cached_bytes = 0;
 	std::uint64_t downloaded_bytes = 0;
+	std::uint64_t transfer_throughput_bits_per_second = 0;
 	std::uint64_t request_count = 0;
 	std::uint64_t recovery_count = 0;
 	bool fragmented = false;

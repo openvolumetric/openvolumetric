@@ -1,6 +1,6 @@
 # Open Volumetric Development Plan
 
-Last updated: 1 August 2026
+Last updated: 2 August 2026
 
 ## Current objective
 
@@ -404,7 +404,7 @@ threading, recovery, authoring, and validation design is recorded in
 
 ## Milestone 13: Adaptive volumetric streaming
 
-**Status: in progress (1 August 2026).**
+**Status: in progress (2 August 2026).**
 
 - [x] Define a versioned manifest/profile describing representations,
       compatibility groups, segment timelines, codecs, decoder requirements,
@@ -429,9 +429,27 @@ threading, recovery, authoring, and validation design is recorded in
 - [x] Cancel and isolate stale preparation work using playback generations.
 - [x] Add conservative downgrade/upgrade policy, forced quality controls, and
       switch diagnostics in Unity and Unreal.
-- [ ] Validate automatic and forced switching across the full platform matrix.
+- [x] Measure live HTTP capacity from completed range-transfer duration rather
+      than representation-consumption rate, allowing Low to detect genuine
+      spare bandwidth and request High after sustained recovery.
+- [x] Seek candidate sessions before starting their workers and apply capped
+      retry backoff after failed automatic preparations.
+- [x] Bound fragmented HTTP startup and candidate preparation by using the
+      terminal MP4 index, suppressing metadata-time prefetch, and deriving
+      duration from only the final indexed video fragment.
+- [x] Verify every authored representation before publication: codecs, frame
+      rates, duration, fragment count, geometry sample count and dependencies,
+      sample-aligned audio timing, and aligned video/geometry random-access
+      points at every legal switch boundary.
+- [ ] Validate automatic and forced switching across the remaining platform
+      matrix. Unity has passed the controlled High -> Low -> High scenario;
+      equivalent automatic-policy runs remain for Unreal and other targets.
 - [ ] Test bandwidth ramps, latency, jitter, outages, failed upgrades,
       repeated switching, seeking, looping, and long playback.
+- [x] Add a deterministic range server for scripted bandwidth, latency,
+      jitter, outage, and failed-request phases, plus server-side JSONL traces.
+- [x] Add matching Unity and Unreal CSV recorders for transport, buffering,
+      representation, switch-latency, and recovery measurements.
 - [ ] Measure startup delay, rebuffering, quality, wasted bytes, memory,
       synchronization error, and decode cost on desktop and Quest hardware.
 
@@ -441,7 +459,10 @@ threading, recovery, authoring, and validation design is recorded in
   presentations or synchronization discontinuities.
 - The player steps down and recovers under constrained or interrupted
   bandwidth without deadlock or unbounded memory growth.
-- The authoring verifier validates all segment and representation switch
+- [x] A controlled Unity run completed High -> Low -> High automatically,
+  including outage recovery, sustained-headroom detection, candidate
+  preparation, and an aligned-boundary upgrade.
+- [x] The authoring verifier validates all segment and representation switch
   boundaries.
 - Local, progressive, fixed-fragmented, and adaptive inputs share the same
   core decoding and presentation architecture.

@@ -25,6 +25,9 @@ struct HttpRangeByteSourceOptions
 	std::size_t block_size = 1024 * 1024;
 	std::size_t maximum_cache_bytes = 32 * 1024 * 1024;
 	std::size_t sequential_read_ahead_blocks = 3;
+	// Keep the demanded fragment and one successor warm. This avoids a large
+	// startup burst while retaining several seconds of interruption tolerance.
+	std::size_t fragment_read_ahead_count = 2;
 	long connection_timeout_ms = 10000;
 	long request_timeout_ms = 10000;
 	// A headset Wi-Fi toggle can take more than ten seconds to restore its
@@ -66,6 +69,8 @@ public:
 
 	/// Returns whether metadata discovery and the initial range succeeded.
 	bool is_open() const;
+	/// Enables fragment-window prefetch after FFmpeg finishes metadata parsing.
+	void enable_fragment_prefetch();
 
 private:
 	struct CacheBlock
@@ -101,10 +106,12 @@ private:
 	std::optional<std::size_t> m_active_fragment;
 	std::thread m_worker;
 	std::atomic<bool> m_cancelled{false};
+	std::atomic<bool> m_fragment_prefetch_enabled{false};
 	std::int64_t m_size = -1;
 	std::int64_t m_position = 0;
 	std::size_t m_cache_bytes = 0;
 	std::uint64_t m_downloaded_bytes = 0;
+	double m_transfer_throughput_bits_per_second = 0.0;
 	std::uint64_t m_request_count = 0;
 	std::uint64_t m_recovery_count = 0;
 	std::uint64_t m_use_counter = 0;

@@ -59,6 +59,7 @@ extern "C"
 		long long& resource_size_bytes,
 		unsigned long long& cached_bytes,
 		unsigned long long& downloaded_bytes,
+		unsigned long long& transfer_throughput_bits_per_second,
 		unsigned long long& request_count,
 		unsigned long long& recovery_count);
 	/// Retrieves fragmented-input scheduler and bounded-cache progress.

@@ -8,12 +8,14 @@
 #include "Engine/Engine.h"
 #include "Engine/Texture2D.h"
 #include "GameFramework/PlayerController.h"
+#include "HAL/FileManager.h"
 #include "HAL/PlatformMemory.h"
 #include "HAL/PlatformTime.h"
 #include "InputCoreTypes.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/Paths.h"
+#include "Serialization/Archive.h"
 #include "Sound/SoundAttenuation.h"
 #include "Sound/SoundWaveProcedural.h"
 #include "UObject/ConstructorHelpers.h"
@@ -60,6 +62,19 @@ openvolumetric::AdaptiveCapabilityLimits GetAdaptiveCapabilityLimits(
 	return Limits;
 }
 
+FString Csv(const FString& Value)
+{
+	return TEXT("\"") + Value.Replace(TEXT("\""), TEXT("\"\"")) + TEXT("\"");
+}
+
+void WriteUtf8Line(FArchive& Archive, const FString& Line)
+{
+	FTCHARToUTF8 Utf8(*(Line + LINE_TERMINATOR));
+	Archive.Serialize(
+		const_cast<ANSICHAR*>(Utf8.Get()),
+		Utf8.Length());
+}
+
 } // namespace
 
 UOpenVolumetricComponent::UOpenVolumetricComponent()
@@ -78,6 +93,7 @@ UOpenVolumetricComponent::UOpenVolumetricComponent()
 
 UOpenVolumetricComponent::~UOpenVolumetricComponent()
 {
+	CloseAdaptiveMetrics();
 	delete Player;
 	Player = nullptr;
 }
@@ -126,8 +142,10 @@ void UOpenVolumetricComponent::TickComponent(
 	FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	AdaptiveMetricFrameMilliseconds = static_cast<double>(DeltaTime) * 1000.0;
 	UpdateDeveloperControls(DeltaTime);
 	UpdateBufferDiagnostics();
+	RecordAdaptiveMetrics();
 	if (HandleNetworkRecovery())
 	{
 		return;
@@ -503,6 +521,7 @@ bool UOpenVolumetricComponent::Seek(double TimeSeconds)
 
 void UOpenVolumetricComponent::Close()
 {
+	CloseAdaptiveMetrics();
 	if (AudioComponent != nullptr)
 	{
 		AudioComponent->Stop();
@@ -542,8 +561,156 @@ void UOpenVolumetricComponent::Close()
 	AdaptiveSmoothedThroughputBps = 0.0;
 	AdaptiveDowngradeStarted = -1.0;
 	AdaptiveUpgradeHeadroomStarted = -1.0;
+	AdaptiveRetryAfter = -1.0;
+	AdaptiveConsecutiveSwitchFailures = 0;
+	AdaptiveMetricsStarted = 0.0;
+	AdaptiveNextMetricTime = 0.0;
+	AdaptiveSwitchStarted = -1.0;
+	AdaptiveLastSwitchLatency = -1.0;
+	AdaptiveSwitchFailureCount = 0;
+	AdaptiveRebufferStarted = -1.0;
+	AdaptiveTotalRebufferTime = 0.0;
+	AdaptiveRebufferCount = 0;
+	AdaptivePreviousSwitchState = 0;
+	AdaptivePreviousInputState = EOpenVolumetricInputState::Opening;
 	PendingRepresentationId.Reset();
 	AdaptiveSwitchCount = 0;
+}
+
+void UOpenVolumetricComponent::RecordAdaptiveMetrics()
+{
+	if (!bRecordAdaptiveMetrics || !bUseAdaptiveManifest || Player == nullptr)
+		return;
+	const double Now = FPlatformTime::Seconds();
+	if (AdaptiveMetricsArchive == nullptr)
+	{
+		const FString SafeName = FPaths::GetCleanFilename(
+			AdaptiveMetricsFileName.IsEmpty()
+				? TEXT("openvolumetric-adaptive-metrics.csv")
+				: AdaptiveMetricsFileName);
+		const FString Path = FPaths::Combine(FPaths::ProjectSavedDir(), SafeName);
+		AdaptiveMetricsArchive = IFileManager::Get().CreateFileWriter(*Path);
+		if (AdaptiveMetricsArchive == nullptr)
+		{
+			UE_LOG(
+				LogOpenVolumetricComponent,
+				Error,
+				TEXT("Could not create adaptive metrics file: %s"),
+				*Path);
+			bRecordAdaptiveMetrics = false;
+			return;
+		}
+		WriteUtf8Line(
+			*AdaptiveMetricsArchive,
+			TEXT("wall_seconds,media_seconds,playback_state,input_state,")
+			TEXT("active_representation,pending_representation,switch_state,")
+			TEXT("throughput_mbps,downloaded_bytes,cached_bytes,http_requests,")
+			TEXT("network_recoveries,active_fragment,cached_fragments,")
+			TEXT("rebuffer_count,rebuffer_seconds,switch_count,")
+			TEXT("switch_failures,last_switch_latency_seconds,presented_seconds,")
+			TEXT("av_error_seconds,frame_ms,engine_memory_bytes,error"));
+		AdaptiveMetricsStarted = Now;
+		AdaptiveNextMetricTime = Now;
+		UE_LOG(
+			LogOpenVolumetricComponent,
+			Log,
+			TEXT("Recording adaptive metrics: %s"),
+			*Path);
+	}
+
+	const openvolumetric::AdaptiveSwitchInfo SwitchInfo =
+		Player->GetAdaptiveSwitchInfo();
+	const int32 SwitchState = static_cast<int32>(SwitchInfo.state);
+	if (InputState == EOpenVolumetricInputState::Rebuffering &&
+		AdaptivePreviousInputState != EOpenVolumetricInputState::Rebuffering)
+	{
+		++AdaptiveRebufferCount;
+		AdaptiveRebufferStarted = Now;
+	}
+	else if (InputState != EOpenVolumetricInputState::Rebuffering &&
+		AdaptivePreviousInputState == EOpenVolumetricInputState::Rebuffering &&
+		AdaptiveRebufferStarted >= 0.0)
+	{
+		AdaptiveTotalRebufferTime += Now - AdaptiveRebufferStarted;
+		AdaptiveRebufferStarted = -1.0;
+	}
+	AdaptivePreviousInputState = InputState;
+
+	if (SwitchInfo.state == openvolumetric::AdaptiveSwitchState::Preparing &&
+		AdaptivePreviousSwitchState != SwitchState)
+	{
+		AdaptiveSwitchStarted = Now;
+	}
+	if (SwitchInfo.state == openvolumetric::AdaptiveSwitchState::Failed &&
+		AdaptivePreviousSwitchState != SwitchState)
+	{
+		++AdaptiveSwitchFailureCount;
+		if (AdaptiveSwitchStarted >= 0.0)
+		{
+			AdaptiveLastSwitchLatency = Now - AdaptiveSwitchStarted;
+			AdaptiveSwitchStarted = -1.0;
+		}
+	}
+	if (SwitchInfo.state == openvolumetric::AdaptiveSwitchState::Stable &&
+		SwitchInfo.switch_count > 0 && AdaptivePreviousSwitchState != SwitchState &&
+		AdaptiveSwitchStarted >= 0.0)
+	{
+		AdaptiveLastSwitchLatency = Now - AdaptiveSwitchStarted;
+		AdaptiveSwitchStarted = -1.0;
+	}
+	AdaptivePreviousSwitchState = SwitchState;
+	if (Now < AdaptiveNextMetricTime)
+		return;
+	AdaptiveNextMetricTime = Now + FMath::Max(0.05, AdaptiveMetricsIntervalSeconds);
+
+	double RebufferSeconds = AdaptiveTotalRebufferTime;
+	if (AdaptiveRebufferStarted >= 0.0)
+		RebufferSeconds += Now - AdaptiveRebufferStarted;
+	const UEnum* PlaybackEnum = StaticEnum<EOpenVolumetricPlaybackState>();
+	const UEnum* InputEnum = StaticEnum<EOpenVolumetricInputState>();
+	const FString SwitchStateText = SwitchInfo.state ==
+		openvolumetric::AdaptiveSwitchState::Stable ? TEXT("Stable") :
+		SwitchInfo.state == openvolumetric::AdaptiveSwitchState::Preparing ? TEXT("Preparing") :
+		SwitchInfo.state == openvolumetric::AdaptiveSwitchState::Ready ? TEXT("Ready") :
+		TEXT("Failed");
+	const FString Line = FString::Printf(
+		TEXT("%.6f,%.6f,%s,%s,%s,%s,%s,%.6f,%lld,%lld,%lld,%lld,%lld,%lld,%llu,%.6f,%llu,%llu,%.6f,%.6f,%.6f,%.6f,%llu,%s"),
+		Now - AdaptiveMetricsStarted,
+		CurrentTimeSeconds,
+		*Csv(PlaybackEnum->GetNameStringByValue(static_cast<int64>(PlaybackState))),
+		*Csv(InputEnum->GetNameStringByValue(static_cast<int64>(InputState))),
+		*Csv(UTF8_TO_TCHAR(SwitchInfo.active_representation.c_str())),
+		*Csv(UTF8_TO_TCHAR(SwitchInfo.pending_representation.c_str())),
+		*Csv(SwitchStateText),
+		AdaptiveSmoothedThroughputBps / 1000000.0,
+		DownloadedBytes,
+		CachedBytes,
+		HttpRequestCount,
+		NetworkRecoveryCount,
+		ActiveFragment,
+		CachedFragmentCount,
+		AdaptiveRebufferCount,
+		RebufferSeconds,
+		SwitchInfo.switch_count,
+		AdaptiveSwitchFailureCount,
+		AdaptiveLastSwitchLatency,
+		LastPresentationTime,
+		CurrentTimeSeconds - LastPresentationTime,
+		AdaptiveMetricFrameMilliseconds,
+		static_cast<uint64>(FPlatformMemory::GetStats().UsedPhysical),
+		*Csv(LastError));
+	WriteUtf8Line(*AdaptiveMetricsArchive, Line);
+	AdaptiveMetricsArchive->Flush();
+}
+
+void UOpenVolumetricComponent::CloseAdaptiveMetrics()
+{
+	if (AdaptiveMetricsArchive == nullptr)
+		return;
+	AdaptiveMetricsArchive->Flush();
+	AdaptiveMetricsArchive->Close();
+	delete AdaptiveMetricsArchive;
+	AdaptiveMetricsArchive = nullptr;
 }
 
 void UOpenVolumetricComponent::UpdateBufferDiagnostics()
@@ -560,6 +727,8 @@ void UOpenVolumetricComponent::UpdateBufferDiagnostics()
 	ResourceSizeBytes = static_cast<int64>(Info.resource_size_bytes);
 	CachedBytes = static_cast<int64>(Info.cached_bytes);
 	DownloadedBytes = static_cast<int64>(Info.downloaded_bytes);
+	TransferThroughputBitsPerSecond = static_cast<int64>(
+		Info.transfer_throughput_bits_per_second);
 	HttpRequestCount = static_cast<int64>(Info.request_count);
 	NetworkRecoveryCount = static_cast<int64>(Info.recovery_count);
 	bFragmentedInput = Info.fragmented;
@@ -593,6 +762,8 @@ void UOpenVolumetricComponent::UpdateAdaptivePolicy()
 			: 0;
 		AdaptiveDowngradeStarted = -1.0;
 		AdaptiveUpgradeHeadroomStarted = -1.0;
+		AdaptiveRetryAfter = -1.0;
+		AdaptiveConsecutiveSwitchFailures = 0;
 		UE_LOG(
 			LogOpenVolumetricComponent,
 			Log,
@@ -609,7 +780,14 @@ void UOpenVolumetricComponent::UpdateAdaptivePolicy()
 			*LastError);
 		Player->CancelAdaptiveSwitch();
 		LastError.Reset();
-		AdaptiveDowngradeStarted = FPlatformTime::Seconds();
+		++AdaptiveConsecutiveSwitchFailures;
+		const double RetryDelay = FMath::Min(
+			30.0,
+			5.0 * FMath::Pow(
+				2.0,
+				FMath::Min(AdaptiveConsecutiveSwitchFailures - 1, 3)));
+		AdaptiveRetryAfter = FPlatformTime::Seconds() + RetryDelay;
+		AdaptiveDowngradeStarted = -1.0;
 		AdaptiveUpgradeHeadroomStarted = -1.0;
 		return;
 	}
@@ -619,6 +797,13 @@ void UOpenVolumetricComponent::UpdateAdaptivePolicy()
 	}
 
 	const double Now = FPlatformTime::Seconds();
+	// Actual range-transfer rate measures network capacity; byte deltas measure
+	// only representation consumption and cannot reliably trigger an upgrade.
+	if (TransferThroughputBitsPerSecond > 0)
+	{
+		AdaptiveSmoothedThroughputBps =
+			static_cast<double>(TransferThroughputBitsPerSecond);
+	}
 	const uint64 CurrentDownloaded = DownloadedBytes > 0
 		? static_cast<uint64>(DownloadedBytes)
 		: 0;
@@ -634,7 +819,7 @@ void UOpenVolumetricComponent::UpdateAdaptivePolicy()
 		{
 			const uint64 Downloaded =
 				CurrentDownloaded - AdaptiveLastDownloadedBytes;
-			if (Downloaded > 0)
+			if (Downloaded > 0 && TransferThroughputBitsPerSecond <= 0)
 			{
 				const double Measured =
 					static_cast<double>(Downloaded) * 8.0 / Elapsed;
@@ -655,6 +840,8 @@ void UOpenVolumetricComponent::UpdateAdaptivePolicy()
 		AdaptiveRepresentations[HighIndex];
 	const bool bUsingHigh = SelectedRepresentationId == High.Id;
 	const bool bUsingLow = SelectedRepresentationId == Low.Id;
+	if (Now < AdaptiveRetryAfter)
+		return;
 	const bool bInsufficient =
 		InputState == EOpenVolumetricInputState::Rebuffering ||
 		(AdaptiveSmoothedThroughputBps > 0.0 &&
@@ -700,11 +887,18 @@ void UOpenVolumetricComponent::UpdateAdaptivePolicy()
 
 void UOpenVolumetricComponent::RequestAdaptiveRepresentation(
 	int32 TargetIndex,
-	const FString& Reason)
+	const FString& Reason,
+	bool bIgnoreRetryBackoff)
 {
+	// Automatic retries respect the failure backoff; explicit developer
+	// requests remain available for deterministic indexed-switch testing.
 	if (!AdaptiveRepresentations.IsValidIndex(TargetIndex))
 		return;
-	const double Lead = AdaptiveSegmentDuration * 1.25;
+	if (!bIgnoreRetryBackoff && FPlatformTime::Seconds() < AdaptiveRetryAfter)
+		return;
+	// Both directions need time to read indexed metadata and preroll a complete
+	// coupled presentation without racing the authoritative audio boundary.
+	const double Lead = AdaptiveSegmentDuration * 4.0;
 	const double Boundary = FMath::CeilToDouble(
 		(CurrentTimeSeconds + Lead) / AdaptiveSegmentDuration) *
 		AdaptiveSegmentDuration;
@@ -746,7 +940,8 @@ bool UOpenVolumetricComponent::RequestAdaptiveHigh(bool bHigh)
 		return true;
 	RequestAdaptiveRepresentation(
 		TargetIndex,
-		TEXT("Developer requested a manual adaptive transition."));
+		TEXT("Developer requested a manual adaptive transition."),
+		true);
 	return true;
 }
 

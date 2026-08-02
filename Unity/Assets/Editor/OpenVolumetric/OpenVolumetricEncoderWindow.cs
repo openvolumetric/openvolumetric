@@ -749,6 +749,12 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
                     Marshal.PtrToStringAnsi(GetAuthoringError()) ??
                     "Adaptive package validation failed.");
             }
+            string verificationReport =
+                Marshal.PtrToStringAnsi(GetAuthoringReport());
+            if(!String.IsNullOrWhiteSpace(verificationReport))
+            {
+                AppendLog(verificationReport);
+            }
 
             string finalLow = Path.Combine(outputDirectory, lowName);
             string finalHigh = Path.Combine(outputDirectory, highName);

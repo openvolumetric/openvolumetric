@@ -68,6 +68,7 @@ Unity/                  Unity project and integration
 Unreal/                 Unreal project and plug-in
 docs/                   Architecture, build, platform, and roadmap documents
 data/                   Local sample content
+tools/                  Package-serving and controlled-network evaluation tools
 ```
 
 ## Documentation
@@ -86,14 +87,16 @@ data/                   Local sample content
 - [Shared-topology compression design](docs/TOPOLOGY_COMPRESSION.md)
 - [Geometry packet format](docs/GEOMETRY_PACKET.md)
 - [Streaming and adaptive delivery design](docs/STREAMING_AND_ADAPTATION.md)
+- [Adaptive streaming evaluation](docs/ADAPTIVE_EVALUATION.md)
 
 ## Current limitations
 
 - Geometry compression reuses matching topology through Draco position-only
   updates, but its compression, reconstruction quality, and keyframe-interval
   defaults still need broader evaluation.
-- Local, progressive HTTP, and fixed fragmented HTTP playback are supported;
-  adaptive multi-representation streaming is not yet implemented.
+- Local, progressive HTTP, fixed fragmented HTTP, and adaptive low/high
+  multi-representation playback are implemented; full controlled-network and
+  cross-platform evaluation remains in progress.
 - The format is project-specific and has not yet been standardized.
 - VLC does not reliably ignore `vvge` in fragmented files; video/audio-only
   stream-copy previews remain available without re-encoding.

@@ -368,6 +368,7 @@ OPENVOLUMETRIC_API int openvolumetric_get_buffer_details(
 	long long& resource_size_bytes,
 	unsigned long long& cached_bytes,
 	unsigned long long& downloaded_bytes,
+	unsigned long long& transfer_throughput_bits_per_second,
 	unsigned long long& request_count,
 	unsigned long long& recovery_count)
 {
@@ -382,6 +383,8 @@ OPENVOLUMETRIC_API int openvolumetric_get_buffer_details(
 	cached_bytes = static_cast<unsigned long long>(info.cached_bytes);
 	downloaded_bytes =
 		static_cast<unsigned long long>(info.downloaded_bytes);
+	transfer_throughput_bits_per_second = static_cast<unsigned long long>(
+		info.transfer_throughput_bits_per_second);
 	request_count = static_cast<unsigned long long>(info.request_count);
 	recovery_count = static_cast<unsigned long long>(info.recovery_count);
 	return 1;

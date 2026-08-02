@@ -143,6 +143,15 @@ public class OpenVolumetric : MonoBehaviour
     [Header("Debug Settings")]
     [Tooltip("Enable debug, will launch an external console")]
     public bool debug = false;
+    /// <summary>Write periodic adaptive playback measurements as CSV.</summary>
+    [Header("Adaptive Evaluation")]
+    [Tooltip("Record transport, buffering, and quality-switch metrics in Application.persistentDataPath.")]
+    public bool recordAdaptiveMetrics;
+    [Tooltip("CSV filename written beneath Application.persistentDataPath.")]
+    public string adaptiveMetricsFileName = "openvolumetric-adaptive-metrics.csv";
+    [Range(0.05F, 5.0F)]
+    [Tooltip("Time in seconds between adaptive metric samples.")]
+    public float adaptiveMetricsInterval = 0.25F;
     private OpenVolumetricDecoder m_decoder;
     private AudioSource m_audio_source;
     private double m_start_time;
@@ -188,7 +197,23 @@ public class OpenVolumetric : MonoBehaviour
     private double m_adaptive_smoothed_throughput_bps;
     private double m_adaptive_downgrade_started = -1.0;
     private double m_adaptive_upgrade_headroom_started = -1.0;
+    private double m_adaptive_retry_after = -1.0;
+    private int m_adaptive_consecutive_switch_failures;
     private ulong m_adaptive_observed_switch_count;
+    private StreamWriter m_adaptive_metrics_writer;
+    private double m_adaptive_metrics_started;
+    private double m_adaptive_next_metric_time;
+    private double m_adaptive_switch_started = -1.0;
+    private double m_adaptive_last_switch_latency = -1.0;
+    private ulong m_adaptive_switch_failure_count;
+    private double m_adaptive_rebuffer_started = -1.0;
+    private double m_adaptive_total_rebuffer_time;
+    private ulong m_adaptive_rebuffer_count;
+    private OpenVolumetricDecoder.AdaptiveSwitchState
+        m_adaptive_previous_switch_state =
+            OpenVolumetricDecoder.AdaptiveSwitchState.Stable;
+    private OpenVolumetricDecoder.BufferState m_adaptive_previous_buffer_state =
+        OpenVolumetricDecoder.BufferState.Opening;
 
     private sealed class AdaptiveRuntimeRepresentation
     {
@@ -287,6 +312,8 @@ public class OpenVolumetric : MonoBehaviour
             });
         }
         m_adaptive_segment_duration = GetAdaptiveSegmentDuration();
+        m_adaptive_retry_after = -1.0;
+        m_adaptive_consecutive_switch_failures = 0;
     }
 
     /// <summary>
@@ -593,6 +620,7 @@ public class OpenVolumetric : MonoBehaviour
     {
         if(m_decoder != null)
         {
+            RecordAdaptiveMetrics();
             if(HandleNetworkRecovery())
             {
                 return;
@@ -792,6 +820,8 @@ public class OpenVolumetric : MonoBehaviour
                 m_decoder.InputBufferInfo.DownloadedBytes;
             m_adaptive_downgrade_started = -1.0;
             m_adaptive_upgrade_headroom_started = -1.0;
+            m_adaptive_retry_after = -1.0;
+            m_adaptive_consecutive_switch_failures = 0;
             Debug.Log(string.Format(
                 "OpenVolumetric - adaptive switch committed: {0}",
                 m_selected_representation_id));
@@ -802,8 +832,15 @@ public class OpenVolumetric : MonoBehaviour
                 "OpenVolumetric - adaptive preparation failed; retrying at a later boundary: " +
                 m_decoder.LastError);
             m_decoder.CancelAdaptiveSwitch();
-            m_adaptive_downgrade_started =
-                Time.realtimeSinceStartupAsDouble;
+            ++m_adaptive_consecutive_switch_failures;
+            double retryDelay = Math.Min(
+                30.0,
+                5.0 * Math.Pow(
+                    2.0,
+                    Math.Min(m_adaptive_consecutive_switch_failures - 1, 3)));
+            m_adaptive_retry_after =
+                Time.realtimeSinceStartupAsDouble + retryDelay;
+            m_adaptive_downgrade_started = -1.0;
             m_adaptive_upgrade_headroom_started = -1.0;
             return;
         }
@@ -814,6 +851,14 @@ public class OpenVolumetric : MonoBehaviour
 
         OpenVolumetricDecoder.BufferInfo buffer = m_decoder.InputBufferInfo;
         double now = Time.realtimeSinceStartupAsDouble;
+        // Range-transfer throughput reflects available capacity. Download-byte
+        // deltas only reflect the active representation's consumption rate and
+        // therefore cannot establish that Low has enough headroom for High.
+        if(buffer.TransferThroughputBitsPerSecond > 0)
+        {
+            m_adaptive_smoothed_throughput_bps =
+                buffer.TransferThroughputBitsPerSecond;
+        }
         if(m_adaptive_last_sample_time <= 0.0)
         {
             m_adaptive_last_sample_time = now;
@@ -826,7 +871,8 @@ public class OpenVolumetric : MonoBehaviour
             {
                 ulong downloaded = buffer.DownloadedBytes -
                     m_adaptive_last_downloaded_bytes;
-                if(downloaded > 0)
+                if(downloaded > 0 &&
+                    buffer.TransferThroughputBitsPerSecond == 0)
                 {
                     double measured = downloaded * 8.0 / elapsed;
                     m_adaptive_smoothed_throughput_bps =
@@ -845,6 +891,10 @@ public class OpenVolumetric : MonoBehaviour
             m_adaptive_representations[m_adaptive_representations.Count - 1];
         bool usingHigh = switchInfo.ActiveRepresentation == high.Id;
         bool usingLow = switchInfo.ActiveRepresentation == low.Id;
+        if(now < m_adaptive_retry_after)
+        {
+            return;
+        }
         bool insufficient = buffer.State == OpenVolumetricDecoder.BufferState.Rebuffering ||
             (m_adaptive_smoothed_throughput_bps > 0.0 &&
              m_adaptive_smoothed_throughput_bps < high.Bandwidth * 1.2);
@@ -891,9 +941,18 @@ public class OpenVolumetric : MonoBehaviour
 
     private void RequestAdaptiveRepresentation(
         AdaptiveRuntimeRepresentation target,
-        string reason)
+        string reason,
+        bool ignoreRetryBackoff = false)
     {
-        double lead = m_adaptive_segment_duration * 1.25;
+        if(!ignoreRetryBackoff &&
+            Time.realtimeSinceStartupAsDouble < m_adaptive_retry_after)
+        {
+            return;
+        }
+        // Opening an indexed remote candidate still requires its header,
+        // terminal duration fragment, and target fragment. Four boundaries
+        // keeps both upgrade and downgrade preparation ahead of the DSP clock.
+        double lead = m_adaptive_segment_duration * 4.0;
         double boundary = Math.Ceiling(
             (CurrentTime + lead) / m_adaptive_segment_duration) *
             m_adaptive_segment_duration;
@@ -931,7 +990,8 @@ public class OpenVolumetric : MonoBehaviour
         }
         RequestAdaptiveRepresentation(
             target,
-            "Developer requested a manual adaptive transition.");
+            "Developer requested a manual adaptive transition.",
+            true);
         return true;
     }
 
@@ -1161,6 +1221,7 @@ public class OpenVolumetric : MonoBehaviour
     /// </summary>
     private void Shutdown()
     {
+        CloseAdaptiveMetrics();
         if(m_audio_source != null)
         {
             m_audio_source.Stop();
@@ -1177,6 +1238,154 @@ public class OpenVolumetric : MonoBehaviour
             m_decoder = null;
         }
         m_playback_state = PlaybackState.STOPPED;
+    }
+
+    /// <summary>
+    /// Samples engine and native adaptive diagnostics into a stable CSV schema.
+    /// Transition edges derive rebuffer durations and preparation latency.
+    /// </summary>
+    private void RecordAdaptiveMetrics()
+    {
+        if(!recordAdaptiveMetrics || !useAdaptiveManifest || m_decoder == null)
+        {
+            return;
+        }
+        double now = Time.realtimeSinceStartupAsDouble;
+        if(m_adaptive_metrics_writer == null)
+        {
+            string filename = string.IsNullOrWhiteSpace(adaptiveMetricsFileName)
+                ? "openvolumetric-adaptive-metrics.csv"
+                : Path.GetFileName(adaptiveMetricsFileName);
+            string path = Path.Combine(Application.persistentDataPath, filename);
+            m_adaptive_metrics_writer = new StreamWriter(path, false);
+            m_adaptive_metrics_writer.AutoFlush = true;
+            m_adaptive_metrics_writer.WriteLine(
+                "wall_seconds,media_seconds,playback_state,input_state," +
+                "active_representation,pending_representation,switch_state," +
+                "throughput_mbps,downloaded_bytes,cached_bytes,http_requests," +
+                "network_recoveries,active_fragment,cached_fragments," +
+                "rebuffer_count,rebuffer_seconds,switch_count," +
+                "switch_failures,last_switch_latency_seconds,presented_seconds," +
+                "av_error_seconds,frame_ms,engine_memory_bytes,error");
+            m_adaptive_metrics_started = now;
+            m_adaptive_next_metric_time = now;
+            Debug.Log("OpenVolumetric - recording adaptive metrics: " + path);
+        }
+
+        OpenVolumetricDecoder.BufferInfo buffer = m_decoder.InputBufferInfo;
+        OpenVolumetricDecoder.AdaptiveSwitchInfo switching =
+            m_decoder.CurrentAdaptiveSwitchInfo;
+        if(buffer.State == OpenVolumetricDecoder.BufferState.Rebuffering &&
+            m_adaptive_previous_buffer_state !=
+                OpenVolumetricDecoder.BufferState.Rebuffering)
+        {
+            ++m_adaptive_rebuffer_count;
+            m_adaptive_rebuffer_started = now;
+        }
+        else if(buffer.State != OpenVolumetricDecoder.BufferState.Rebuffering &&
+            m_adaptive_previous_buffer_state ==
+                OpenVolumetricDecoder.BufferState.Rebuffering &&
+            m_adaptive_rebuffer_started >= 0.0)
+        {
+            m_adaptive_total_rebuffer_time +=
+                now - m_adaptive_rebuffer_started;
+            m_adaptive_rebuffer_started = -1.0;
+        }
+        m_adaptive_previous_buffer_state = buffer.State;
+
+        if(switching.State == OpenVolumetricDecoder.AdaptiveSwitchState.Preparing &&
+            m_adaptive_previous_switch_state !=
+                OpenVolumetricDecoder.AdaptiveSwitchState.Preparing)
+        {
+            m_adaptive_switch_started = now;
+        }
+        if(switching.State == OpenVolumetricDecoder.AdaptiveSwitchState.Failed &&
+            m_adaptive_previous_switch_state !=
+                OpenVolumetricDecoder.AdaptiveSwitchState.Failed)
+        {
+            ++m_adaptive_switch_failure_count;
+            if(m_adaptive_switch_started >= 0.0)
+            {
+                m_adaptive_last_switch_latency = now - m_adaptive_switch_started;
+                m_adaptive_switch_started = -1.0;
+            }
+        }
+        if(switching.State == OpenVolumetricDecoder.AdaptiveSwitchState.Stable &&
+            switching.SwitchCount > 0 &&
+            m_adaptive_previous_switch_state !=
+                OpenVolumetricDecoder.AdaptiveSwitchState.Stable &&
+            m_adaptive_switch_started >= 0.0)
+        {
+            m_adaptive_last_switch_latency = now - m_adaptive_switch_started;
+            m_adaptive_switch_started = -1.0;
+        }
+        m_adaptive_previous_switch_state = switching.State;
+
+        if(now < m_adaptive_next_metric_time)
+        {
+            return;
+        }
+        m_adaptive_next_metric_time = now +
+            Math.Max(0.05, adaptiveMetricsInterval);
+        double rebufferSeconds = m_adaptive_total_rebuffer_time;
+        if(m_adaptive_rebuffer_started >= 0.0)
+        {
+            rebufferSeconds += now - m_adaptive_rebuffer_started;
+        }
+        m_adaptive_metrics_writer.WriteLine(string.Join(",", new string[]
+        {
+            (now - m_adaptive_metrics_started).ToString("F6",
+                System.Globalization.CultureInfo.InvariantCulture),
+            CurrentTime.ToString("F6",
+                System.Globalization.CultureInfo.InvariantCulture),
+            Csv(m_playback_state.ToString()),
+            Csv(buffer.State.ToString()),
+            Csv(switching.ActiveRepresentation),
+            Csv(switching.PendingRepresentation),
+            Csv(switching.State.ToString()),
+            (m_adaptive_smoothed_throughput_bps / 1000000.0).ToString(
+                "F6", System.Globalization.CultureInfo.InvariantCulture),
+            buffer.DownloadedBytes.ToString(),
+            buffer.CachedBytes.ToString(),
+            buffer.RequestCount.ToString(),
+            buffer.RecoveryCount.ToString(),
+            buffer.ActiveFragment.ToString(),
+            buffer.CachedFragmentCount.ToString(),
+            m_adaptive_rebuffer_count.ToString(),
+            rebufferSeconds.ToString("F6",
+                System.Globalization.CultureInfo.InvariantCulture),
+            switching.SwitchCount.ToString(),
+            m_adaptive_switch_failure_count.ToString(),
+            m_adaptive_last_switch_latency.ToString("F6",
+                System.Globalization.CultureInfo.InvariantCulture),
+            m_decoder.LastPresentedTime.ToString("F6",
+                System.Globalization.CultureInfo.InvariantCulture),
+            (CurrentTime - m_decoder.LastPresentedTime).ToString("F6",
+                System.Globalization.CultureInfo.InvariantCulture),
+            (Time.unscaledDeltaTime * 1000.0F).ToString("F6",
+                System.Globalization.CultureInfo.InvariantCulture),
+            UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong().ToString(),
+            Csv(m_decoder.LastError)
+        }));
+    }
+
+    /// <summary>Escapes one value for an RFC 4180-compatible CSV field.</summary>
+    private static string Csv(string value)
+    {
+        string safe = value ?? string.Empty;
+        return "\"" + safe.Replace("\"", "\"\"") + "\"";
+    }
+
+    /// <summary>Flushes and closes the optional adaptive metrics output.</summary>
+    private void CloseAdaptiveMetrics()
+    {
+        if(m_adaptive_metrics_writer == null)
+        {
+            return;
+        }
+        m_adaptive_metrics_writer.Flush();
+        m_adaptive_metrics_writer.Dispose();
+        m_adaptive_metrics_writer = null;
     }
 
     /// <summary>

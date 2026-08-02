@@ -150,13 +150,14 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::OpenVolumetric.OpenVolumetric
   videoFilename: 
-  videoUrl: http://192.168.0.34:18765/manifest.json
+  videoUrl: http://192.168.0.34:8000/Adaptive/bbc_rachel/manifest.json
   useAdaptiveManifest: 1
   adaptiveQuality: 0
   adaptiveMaximumTextureDimension: 0
   adaptiveMaximumTextureBitrateMbps: 0
   adaptiveMaximumGeometryBitrateMbps: 0
   adaptiveMaximumBandwidthMbps: 0
+  enableLiveAdaptiveSwitching: 1
   luminanceCorrection: 0
   blueProjectionCorrection: 0
   redProjectionCorrection: 0
@@ -164,6 +165,9 @@ MonoBehaviour:
   enableScriptedStart: 0
   enableDeveloperOverlay: 1
   debug: 0
+  recordAdaptiveMetrics: 0
+  adaptiveMetricsFileName: openvolumetric-adaptive-metrics.csv
+  adaptiveMetricsInterval: 0.25
 --- !u!4 &160012004
 Transform:
   m_ObjectHideFlags: 0
@@ -230,6 +234,7 @@ MonoBehaviour:
   adaptiveMaximumTextureBitrateMbps: 0
   adaptiveMaximumGeometryBitrateMbps: 0
   adaptiveMaximumBandwidthMbps: 0
+  enableLiveAdaptiveSwitching: 1
   luminanceCorrection: 0
   blueProjectionCorrection: 0
   redProjectionCorrection: 0
@@ -237,6 +242,9 @@ MonoBehaviour:
   enableScriptedStart: 0
   enableDeveloperOverlay: 1
   debug: 0
+  recordAdaptiveMetrics: 0
+  adaptiveMetricsFileName: openvolumetric-adaptive-metrics.csv
+  adaptiveMetricsInterval: 0.25
 --- !u!4 &924422023
 Transform:
   m_ObjectHideFlags: 0
@@ -595,6 +603,7 @@ MonoBehaviour:
   adaptiveMaximumTextureBitrateMbps: 0
   adaptiveMaximumGeometryBitrateMbps: 0
   adaptiveMaximumBandwidthMbps: 0
+  enableLiveAdaptiveSwitching: 1
   luminanceCorrection: 0
   blueProjectionCorrection: 0
   redProjectionCorrection: 0
@@ -602,6 +611,9 @@ MonoBehaviour:
   enableScriptedStart: 0
   enableDeveloperOverlay: 1
   debug: 0
+  recordAdaptiveMetrics: 0
+  adaptiveMetricsFileName: openvolumetric-adaptive-metrics.csv
+  adaptiveMetricsInterval: 0.25
 --- !u!4 &1772797575
 Transform:
   m_ObjectHideFlags: 0
@@ -655,6 +667,7 @@ MonoBehaviour:
   adaptiveMaximumTextureBitrateMbps: 0
   adaptiveMaximumGeometryBitrateMbps: 0
   adaptiveMaximumBandwidthMbps: 0
+  enableLiveAdaptiveSwitching: 1
   luminanceCorrection: 0
   blueProjectionCorrection: 0
   redProjectionCorrection: 0
@@ -662,6 +675,9 @@ MonoBehaviour:
   enableScriptedStart: 0
   enableDeveloperOverlay: 1
   debug: 0
+  recordAdaptiveMetrics: 0
+  adaptiveMetricsFileName: openvolumetric-adaptive-metrics.csv
+  adaptiveMetricsInterval: 0.25
 --- !u!4 &2024382032
 Transform:
   m_ObjectHideFlags: 0

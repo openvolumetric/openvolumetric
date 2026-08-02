@@ -146,10 +146,11 @@ bool AVDecoderFFMPEG::init_audio_context()
 	m_audio_info.is_enabled = true;
 	m_audio_info.sample_rate = sample_rate;
 	m_audio_info.channels = stereo.nb_channels;
-	m_audio_info.total_time =
+	m_audio_info.total_time = std::max(
+		m_container->duration_seconds(),
 		m_audio_stream->duration <= 0
-			? m_container->duration_seconds()
-			: m_audio_stream->duration * av_q2d(m_audio_stream->time_base);
+			? 0.0
+			: m_audio_stream->duration * av_q2d(m_audio_stream->time_base));
 
 	// Four seconds absorbs decoder and render-thread scheduling jitter.
 	m_audio_samples.resize(
@@ -278,7 +279,11 @@ bool AVDecoderFFMPEG::init_video_context()
 
 		// Calculate video duration
 		double duration				= m_container->duration_seconds();
-		m_video_info.total_time		= m_video_stream->duration <= 0 ? duration : m_video_stream->duration * av_q2d(m_video_stream->time_base);
+		m_video_info.total_time = std::max(
+			duration,
+			m_video_stream->duration <= 0
+				? 0.0
+				: m_video_stream->duration * av_q2d(m_video_stream->time_base));
 
 		// Report video properties to log
 		LOG("AVDecoderFFMPEG::init_video_context - Video Stream:  %d",		m_video_stream_index);

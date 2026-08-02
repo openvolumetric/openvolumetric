@@ -49,7 +49,8 @@ public class OpenVolumetricRuntime : ModuleRules
 				new[]
 				{
 					// The core archive owns FFmpeg, Draco, and HTTP transport;
-					// list every static dependency required by that boundary.
+					// rebuild it before Unreal so this module links the current
+					// runtime, then list every dependency required by that boundary.
 					Path.Combine(NativeBuild, "src", "core", "libOpenVolumetricCore.a"),
 					Path.Combine(Installed, "lib", "libavformat.a"),
 					Path.Combine(Installed, "lib", "libavcodec.a"),

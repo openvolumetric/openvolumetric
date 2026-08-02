@@ -61,6 +61,8 @@ private:
 	bool discover_streams();
 	/// Completes FFmpeg stream discovery after native or custom I/O opens.
 	bool finish_open();
+	/// Derives fragmented duration from the final indexed video fragment.
+	bool discover_indexed_duration();
 	/// FFmpeg read callback; invoked only by the demux owner thread.
 	static int read_source(void* opaque, std::uint8_t* buffer, int size);
 	/// FFmpeg seek/size callback; invoked only by the demux owner thread.
@@ -75,6 +77,7 @@ private:
 	AVIOContext* m_io_context;
 	std::unique_ptr<IByteSource> m_source;
 	std::array<int, 3> m_stream_indices;
+	double m_duration_seconds;
 	bool m_end_of_stream;
 	std::string m_error;
 };

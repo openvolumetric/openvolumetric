@@ -152,6 +152,7 @@ HttpRangeByteSource::HttpRangeByteSource(
 	}
 	if (m_options.block_size == 0 ||
 		m_options.maximum_cache_bytes < m_options.block_size ||
+		m_options.fragment_read_ahead_count == 0 ||
 		m_options.sequential_read_ahead_blocks >
 			m_options.maximum_cache_bytes / m_options.block_size ||
 		m_options.connection_timeout_ms <= 0 ||
@@ -312,6 +313,8 @@ ByteSourceDiagnostics HttpRangeByteSource::diagnostics() const
 	result.resource_size_bytes = m_size;
 	result.cached_bytes = m_cache_bytes;
 	result.downloaded_bytes = m_downloaded_bytes;
+	result.transfer_throughput_bits_per_second = static_cast<std::uint64_t>(
+		m_transfer_throughput_bits_per_second);
 	result.request_count = m_request_count;
 	result.recovery_count = m_recovery_count;
 	result.fragmented = !m_fragments.empty();
@@ -327,6 +330,11 @@ bool HttpRangeByteSource::is_open() const
 {
 	std::lock_guard<std::mutex> lock(m_mutex);
 	return m_ready && m_error.empty();
+}
+
+void HttpRangeByteSource::enable_fragment_prefetch()
+{
+	m_fragment_prefetch_enabled.store(true, std::memory_order_release);
 }
 
 void HttpRangeByteSource::worker_loop()
@@ -372,7 +380,8 @@ void HttpRangeByteSource::worker_loop()
 
 		if (!m_fragments.empty())
 		{
-			prefetch_fragment_window(handle, block_index);
+			if (m_fragment_prefetch_enabled.load(std::memory_order_acquire))
+				prefetch_fragment_window(handle, block_index);
 			continue;
 		}
 
@@ -515,6 +524,8 @@ void HttpRangeByteSource::prefetch_fragment_window(
 	std::uint64_t scheduled_bytes = 0;
 	for (std::size_t index = *active; index < m_fragments.size(); ++index)
 	{
+		if (index - *active >= m_options.fragment_read_ahead_count)
+			break;
 		const Mp4FragmentRange& fragment = m_fragments[index];
 		if (index != *active &&
 			scheduled_bytes + fragment.size > m_options.maximum_cache_bytes)
@@ -600,7 +611,10 @@ bool HttpRangeByteSource::download_block(
 			std::lock_guard<std::mutex> lock(m_mutex);
 			++m_request_count;
 		}
+		const auto transfer_started = std::chrono::steady_clock::now();
 		const CURLcode result = curl_easy_perform(handle);
+		const double transfer_seconds = std::chrono::duration<double>(
+			std::chrono::steady_clock::now() - transfer_started).count();
 
 		long status = 0;
 		curl_easy_getinfo(handle, CURLINFO_RESPONSE_CODE, &status);
@@ -615,6 +629,17 @@ bool HttpRangeByteSource::download_block(
 			{
 				std::lock_guard<std::mutex> lock(m_mutex);
 				m_downloaded_bytes += output.bytes.size();
+				if (transfer_seconds > 0.0)
+				{
+					const double measured =
+						static_cast<double>(output.bytes.size()) * 8.0 /
+						transfer_seconds;
+					m_transfer_throughput_bits_per_second =
+						m_transfer_throughput_bits_per_second <= 0.0
+						? measured
+						: 0.75 * m_transfer_throughput_bits_per_second +
+							0.25 * measured;
+				}
 			}
 			insert_block(block_index, std::move(output.bytes));
 			return true;

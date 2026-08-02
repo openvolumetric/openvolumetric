@@ -382,12 +382,26 @@ verification.
 current implementation, `FFmpegMp4VolumetricContainer`, exclusively owns the
 `AVFormatContext`.
 
+Because authored OpenVolumetric MP4 files carry complete stream parameters and
+sample tables in `moov`, container opening deliberately avoids FFmpeg's generic
+`avformat_find_stream_info()` packet probe. That probe treats the custom
+geometry data track as unresolved and can scan every remote fragment. Stream
+classification and decoder initialization instead use the authoritative MP4
+metadata populated by `avformat_open_input()`.
+Fragmented inputs explicitly select the terminal `mfra`/`tfra` PTS index so
+FFmpeg does not construct an equivalent seek index by scanning every `moof`.
+The same index supports a bounded final-fragment duration lookup; the demux
+context is then reopened over the retained byte cache before playback.
+
 Container bytes are supplied through the engine-independent `IByteSource`
 contract. Current path-based playback creates a seekable
 `LocalFileByteSource`; FFmpeg reads and seeks it through a custom
 `AVIOContext`. HTTP and HTTPS inputs use `HttpRangeByteSource`, whose dedicated
-libcurl worker fills a 32 MiB LRU cache in 1 MiB ranges and reads ahead three
-blocks by default. FFmpeg remains on
+libcurl worker fills a 32 MiB LRU cache in 1 MiB ranges. Conventional files
+read ahead three blocks by default; fragmented files keep the demanded
+fragment and one successor warm after container metadata parsing completes.
+Metadata/index seeks fetch only their demanded blocks and cannot trigger
+fragment-window prefetch. FFmpeg remains on
 the demux thread and waits for cache blocks rather than performing socket I/O.
 The source contract provides terminal cross-thread cancellation so player
 destruction can interrupt an outstanding request before joining the demux
@@ -996,20 +1010,19 @@ a crash. Controlled retry exhaustion and deterministic geometry-packet
 corruption have also passed on Quest. Broader network-impairment evaluation
 remains future experimental work rather than an implementation blocker.
 
-The runtime does not yet provide:
+The fixed-quality path does not itself provide:
 
 - A forward playable-duration estimate derived from complete multimodal
   presentations.
 - Separately addressable delivery-object caching outside a single MP4.
 - Live geometry ingest.
-- Adaptive bitrate selection.
-- Representation switching.
+- A generalized multi-object segment cache or DASH client.
 - Segment-level integrity checking.
 
-### 12.2 Proposed adaptive delivery model (future work)
+### 12.2 Adaptive delivery model
 
-Adaptive delivery is planned as a package rather than as one self-contained
-file:
+Adaptive delivery is implemented as a package rather than as one
+self-contained file:
 
 ```text
 manifest
@@ -1045,7 +1058,7 @@ repeated topology cost against startup latency, seek cost, outage recovery,
 and switching responsiveness. Initial experiments should compare 1, 2, and
 4 second segments.
 
-### 12.3 Proposed representation and switching model
+### 12.3 Representation and switching model
 
 A representation describes both delivery cost and decode cost. Candidate
 dimensions include texture resolution and bitrate, video codec/profile,
@@ -1055,8 +1068,8 @@ whose software video or geometry decode cost exceeds its real-time budget;
 selection must therefore consider device capability and observed decoding
 time as well as throughput.
 
-The first implementation should treat texture and geometry as one coupled
-presentation representation. A quality change is committed only when the
+The implementation treats texture and geometry as one coupled presentation
+representation. A quality change is committed only when the
 complete compatible target segment is downloaded and decoded. At the switch
 timestamp, texture and geometry change atomically while the continuous audio
 clock is preserved. The player must never combine a texture from one quality
@@ -1072,9 +1085,11 @@ presented. A failed upgrade continues at the old quality; lack of a playable
 current or lower representation enters `Rebuffering` while retaining the last
 complete presentation and silencing audio.
 
-The initial automatic policy should be deliberately conservative:
+The initial automatic policy is deliberately conservative:
 
-1. Estimate throughput from completed segments using a smoothed estimator.
+1. Estimate available capacity from completed HTTP range-transfer durations
+   using a smoothed estimator. Measuring representation consumption over wall
+   time cannot reveal upgrade headroom while Low is active.
 2. Apply a safety margin and filter representations by declared device and
    codec capability.
 3. Step down when the complete-presentation buffer approaches a low
@@ -1085,7 +1100,7 @@ The initial automatic policy should be deliberately conservative:
 Manual representation selection and a maximum-quality cap are also required
 for experiments and user control.
 
-### 12.4 Proposed adaptive runtime and authoring architecture
+### 12.4 Adaptive runtime and authoring architecture
 
 The adaptive components belong in the engine-neutral core:
 
@@ -1123,8 +1138,8 @@ representation, texture, and geometry profiles. Version 1 references complete
 aligned fragmented-MP4 resources so it can reuse the existing range source and
 fragment index. Validation enforces version support, timeline bounds, unique
 representation IDs, compatibility metadata, codec/decode descriptors,
-geometry precision, and consistent declared bandwidth. Dynamic switching and
-DASH MPD mapping remain future work.
+geometry precision, and consistent declared bandwidth. OpenVolumetric manifest
+switching is implemented; DASH MPD mapping remains future work.
 
 `AdaptiveSelection` now adds engine-neutral local/HTTP manifest loading,
 relative resource resolution, and deterministic startup selection. Unity and
@@ -1147,7 +1162,9 @@ player. A preparation worker opens and seeks the target fragmented MP4, then
 decodes one complete texture/geometry presentation at an aligned manifest
 boundary. Generation identifiers prevent a cancelled or superseded worker
 from becoming active. The active decoder remains untouched until preparation
-is complete, so failed upgrades do not interrupt playback.
+is complete, so failed upgrades do not interrupt playback. Candidate seeking
+occurs before its decoder workers start to avoid downloading from timestamp
+zero, and failed automatic preparations use capped exponential retry backoff.
 
 Audio-bearing presentations commit inside the native interleaved PCM read. A
 DSP block crossing the boundary is divided at the exact sample: its prefix is
@@ -1161,11 +1178,22 @@ Local and HTTP startup selection at both quality levels has been manually
 validated in Unity and Unreal, including seeking, pause/resume, looping, and
 cross-stream synchronization.
 
+On 2 August 2026, Unity also passed one deterministic automatic High -> Low ->
+High run through constrained bandwidth, outage, lossy recovery, and restored
+capacity. The upgrade decision used completed range-transfer throughput rather
+than Low representation consumption, and the prepared presentation committed
+at an aligned boundary without an observed synchronization discontinuity.
+
 The shared authoring layer also defines deterministic low/high streaming
 ladders and validates completed adaptive outputs before publication. It probes
 actual MP4 metadata and the terminal fragment index, requires matching
-duration, fragment count, and audio layout, derives delivery and geometry
-bitrates, and atomically writes a self-validating manifest. Unity and Unreal
+codec, duration, frame rate, fragment count, geometry sample count, and
+sample-aligned audio layout and timing. It parses every geometry packet and
+validates position-update dependencies, then requires aligned video and
+independent-geometry access points at every legal switch boundary. Only after
+these checks pass does it derive delivery/geometry bitrates and atomically
+write a self-validating manifest. Its success report records representation,
+segment, switch-boundary, and geometry-sample counts. Unity and Unreal
 both orchestrate the two encode passes through their Editor windows. Each uses
 a standardized self-contained directory containing `manifest.json`,
 `low.mp4`, and `high.mp4`, selected through an output parent folder and
@@ -1197,6 +1225,16 @@ cost, dropped presentations, texture/geometry timestamp error, audio/visual
 error, geometry distortion, texture quality, and end-to-end bitrate. Baselines
 should include local playback, fixed-quality progressive HTTP, fixed-quality
 fragmented playback, and independent-mesh geometry without topology reuse.
+
+The repository provides a deterministic range-capable evaluation server whose
+scripted bandwidth is shared across concurrent requests, plus latency, jitter,
+outage, and periodic-failure phases. Its JSONL transport trace complements the
+matching Unity and Unreal CSV recorders. The engine logs sample playback,
+buffer, representation and switch state, throughput, bytes, cache/request
+counters, rebuffer count/duration, failure count, and switch preparation
+latency using a common schema. The evaluation procedure and preservation
+requirements are specified in
+[ADAPTIVE_EVALUATION.md](ADAPTIVE_EVALUATION.md).
 
 The full engineering plan and validation matrix are maintained in
 [STREAMING_AND_ADAPTATION.md](STREAMING_AND_ADAPTATION.md). Fixed fragmented

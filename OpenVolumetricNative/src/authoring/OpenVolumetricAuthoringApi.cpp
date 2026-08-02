@@ -374,12 +374,13 @@ int openvolumetric_authoring_write_adaptive_manifest(
 		 static_cast<std::uint32_t>(high_position_quantization_bits),
 		 static_cast<std::uint64_t>(high_geometry_payload_bytes),
 		 temporal_compression != 0}};
+	openvolumetric::authoring::AdaptivePackageVerification verification;
 	if (!openvolumetric::authoring::write_adaptive_package_manifest(
-			options, last_error))
+			options, last_error, &verification))
 	{
 		return -1;
 	}
-	last_report = "Adaptive manifest written with two aligned representations.";
+	last_report = verification.summary();
 	return 1;
 }
 

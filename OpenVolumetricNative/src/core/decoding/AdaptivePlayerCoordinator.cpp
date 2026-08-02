@@ -217,10 +217,13 @@ bool AdaptivePlayerCoordinator::request_switch(
 					candidate_info.audio_sample_rate == expected_info.audio_sample_rate &&
 					candidate_info.audio_channels == expected_info.audio_channels;
 			}
-			if (ready && should_start)
-				ready = candidate->player.start();
 			if (ready)
 				ready = candidate->player.seek(boundary_time);
+			// Position the unopened worker before starting it. Starting at zero and
+			// then seeking allowed FFmpeg to issue speculative reads from the start
+			// of the representation, competing with the active stream for bandwidth.
+			if (ready && should_start)
+				ready = candidate->player.start();
 			if (ready && should_start)
 			{
 				constexpr int maximum_attempts = 2000;

@@ -1,0 +1,38 @@
+{
+  "phases": [
+    {
+      "start_seconds": 0,
+      "name": "high",
+      "bandwidth_mbps": 80,
+      "latency_ms": 10,
+      "jitter_ms": 2
+    },
+    {
+      "start_seconds": 30,
+      "name": "constrained",
+      "bandwidth_mbps": 32,
+      "latency_ms": 50,
+      "jitter_ms": 15
+    },
+    {
+      "start_seconds": 60,
+      "name": "outage",
+      "outage": true
+    },
+    {
+      "start_seconds": 65,
+      "name": "lossy-recovery",
+      "bandwidth_mbps": 40,
+      "latency_ms": 80,
+      "jitter_ms": 20,
+      "failure_every_requests": 11
+    },
+    {
+      "start_seconds": 85,
+      "name": "high-restored",
+      "bandwidth_mbps": 80,
+      "latency_ms": 10,
+      "jitter_ms": 2
+    }
+  ]
+}

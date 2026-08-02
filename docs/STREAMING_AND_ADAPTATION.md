@@ -17,9 +17,10 @@ cache, download, request-count, and transport-state diagnostics. Fixed-quality
 fragmented MP4 authoring and whole-resource playback are implemented. The HTTP
 source now reads the terminal `mfra`/`tfra` index, schedules complete forward
 fragments within its byte budget, and allows demanded demux reads to pre-empt
-speculative downloads. The next implementation slice defines the versioned
-presentation manifest and engine-neutral representation model before adding
-multi-representation authoring and switching.
+speculative downloads. Versioned manifests, aligned low/high authoring,
+engine-neutral dual-session switching, and matching automatic policies in
+Unity and Unreal are implemented. Formal repeated evaluation and remaining
+platform coverage are the current work.
 
 The bounded fragment scheduler has been manually validated on Quest over
 Wi-Fi for uninterrupted playback, forward and backward seeking, and recovery
@@ -30,6 +31,15 @@ passed on Quest: retries terminated in the defined error state, corruption was
 contained without a crash, and clean input reopened normally.
 
 For current progressive-file testing:
+
+- Serve a completed adaptive package without impairment using
+  `python3 tools/package_server.py <package-directory>`. Its default manifest
+  URL is `http://<host-address>:8000/manifest.json`.
+- The same command accepts a single MP4 path for fixed-quality progressive
+  testing; the file is available at both `/` and `/<filename>`.
+- Use `tools/adaptive_test_server.py` instead when a deterministic network
+  scenario and JSONL request trace are required. Both servers default to
+  `0.0.0.0:8000` and implement the same range/CORS behavior.
 
 - In Unity, set `videoUrl` on the `OpenVolumetric` component. It takes
   precedence over `videoFilename`; the Quest developer overlay shows HTTP
@@ -267,6 +277,21 @@ texture/geometry presentation at a future manifest boundary. Each preparation
 has a generation token. Seek, close, recovery, or a newer request cancels the
 old byte source and prevents stale work from publishing. Runtime metadata is
 checked again before the pending session becomes eligible to commit.
+The candidate is positioned at the target boundary before its decoder workers
+start, preventing speculative reads from timestamp zero from competing with
+the active stream. Failed automatic preparations use 5, 10, 20, then 30 second
+retry delays (capped at 30 seconds); manual quality requests bypass this delay.
+Container opening reads authoritative MP4 `moov` metadata directly and does
+not run FFmpeg's generic stream-info packet probe. The latter scans all
+fragments when a custom geometry data track is present and would otherwise
+download an entire representation before startup or switching.
+The MOV demuxer is also configured to use the authored terminal `mfra`/`tfra`
+presentation-time index explicitly. Its default automatic mode otherwise
+walks every `moof` before deciding to use that index.
+Because fragmented `mvhd` duration is zero, the runtime uses that index to
+visit only the final video fragment and derive the exact end timestamp. It then
+reopens the lightweight demux context over the same cached byte source so
+normal decoding begins from a pristine start state.
 
 For presentations containing audio, the native PCM read owns the commit. It
 splits the output block at the exact boundary sample, drains the old session up
@@ -275,18 +300,41 @@ the new session. Texture and geometry wait at the boundary until this audio
 commit and then publish the already matched pending presentation. Content
 without audio commits from the presentation path at the same media timestamp.
 
-Unity and Unreal estimate active-transfer throughput from byte-source
-diagnostics. High downgrades after two seconds without 1.2x headroom or after a
-recovered rebuffer; Low upgrades only after ten seconds of Ready input with
-1.75x headroom. Preparation is requested at least 1.25 fragments ahead.
+Unity and Unreal estimate available network capacity from the elapsed duration
+of completed HTTP range transfers. This deliberately excludes idle cache time:
+download-byte deltas over wall time describe how quickly the active
+representation consumes data, not how quickly the connection can deliver it,
+and therefore cannot reliably establish upgrade headroom while Low is active.
+High downgrades after two seconds without 1.2x headroom or after a recovered
+rebuffer; Low upgrades only after ten seconds of Ready input with 1.75x
+headroom. Both directions prepare four fragments ahead to cover bounded remote
+metadata, final-fragment duration discovery, and coupled preroll work without
+racing the audio boundary.
 Developer controls can force a transition for repeatable validation: **Q** in
 Unity and **P** in Unreal. Automatic and forced platform-matrix validation is
 still required before Milestone 13 is complete.
+
+A deterministic range server now drives repeatable bandwidth, latency, jitter,
+outage, and failed-request phases. Unity and Unreal can record the same CSV
+schema for representation state, throughput, cache/request counters, rebuffer
+count and duration, switch failures, and switch preparation latency. The
+server writes a complementary JSONL request trace containing stable server/run
+identifiers and exact requested byte ranges. See
+[ADAPTIVE_EVALUATION.md](ADAPTIVE_EVALUATION.md) for the scenario format and
+test procedure.
 
 Manual startup selection was validated on 1 August 2026 in Unity and Unreal
 using both local and HTTP manifests. Low and High completed forward/backward
 seeking, pause/resume, looping, and synchronized audio, texture, and geometry
 playback without an observed error.
+
+On 2 August 2026, a controlled Unity automatic-policy run completed the full
+High -> Low -> High cycle. The client downgraded under constrained delivery,
+survived the scripted outage and lossy-recovery phases, detected restored
+capacity from actual range-transfer rates, prepared High, and committed it at
+an aligned boundary. Audio, texture, and geometry remained synchronized, and
+the run did not crash. Equivalent repeated runs and the remaining platform
+matrix are still required for the formal evaluation.
 
 ## Core runtime architecture
 
@@ -429,30 +477,40 @@ sparse track interleave.
 The fixed-representation scheduler discovers fragment byte ranges from the
 terminal MP4 random-access index rather than adding top-level `sidx` boxes.
 This preserves the unified FFmpeg seek behaviour of the custom geometry track.
-It fills the active and following complete fragments up to the configured
-32 MB cache budget, evicts old data by recent use, and immediately yields to a
-new demanded block after a seek. Conventional non-fragmented MP4 files retain
+It fills the active fragment and one following complete fragment within the
+configured 32 MB cache budget, evicts old data by recent use, and immediately
+yields to a new demanded block after a seek. This bounds the initial transfer
+burst without removing the short interruption cushion. Conventional
+non-fragmented MP4 files retain
 the smaller sequential block read-ahead path. Core diagnostics report whether
 the input is fragmented, total and active fragment indices, and the number of
 complete fragments currently cached; Unity and Unreal expose the same values.
+Fragment prefetch remains disabled while FFmpeg opens the container, because
+its scattered MP4 metadata/index reads are not playback demand. It is enabled
+only after stream discovery, preventing small metadata reads from expanding
+into downloads of every fragment.
 
-The remaining adaptive-package work is to:
+The adaptive-package pipeline now:
 
-1. Validate source duration, timestamps, and frame correspondence.
-2. Encode each requested video/geometry quality representation.
-3. Reuse the implemented aligned video and geometry random-access rules.
-4. Emit independently addressable delivery objects where required.
-5. Write the manifest/descriptor.
-6. Reopen and verify every initialization/media segment.
-7. Verify every representation switch boundary.
-8. Produce a size, bitrate, keyframe, and compatibility report.
+1. Encodes each requested video/geometry quality representation.
+2. Reuses the aligned video and geometry random-access rules.
+3. Emits independently addressable fragmented MP4 resources.
+4. Reopens both resources and inspects every video, audio, and geometry packet.
+5. Rejects codec, duration, frame-rate, fragment-count, geometry-count, audio
+   layout, or sample-aligned audio-timeline mismatches.
+6. Validates every temporal geometry dependency against its referenced
+   topology keyframe.
+7. Requires video and independent geometry access points at every legal
+   representation-switch boundary.
+8. Writes the manifest atomically only after validation and reports the
+   checked representations, segments, boundaries, and geometry samples.
 
-The current Desktop Streaming and Quest Streaming presets create one
+The Desktop Streaming and Quest Streaming presets create one
 fast-start or optionally fragmented MP4 with bounded texture-video rate and
-bounded video/geometry reference windows. A future adaptive packaging mode should extend this
-platform-and-delivery model to define a representation ladder, segment
-duration, aligned switch points, geometry precision, and decoder-capability
-constraints rather than only one output file.
+bounded video/geometry reference windows. Adaptive packaging extends this
+platform-and-delivery model with a low/high representation ladder, shared
+segment duration, aligned switch points, geometry precision, and declared
+decoder-capability requirements.
 
 Packaging may continue to invoke the FFmpeg executable for media encoding
 while using `OpenVolumetricAuthoringCore` for geometry encoding, muxing,
@@ -581,18 +639,18 @@ manifest rather than treating FFmpeg's per-track global indexes as atomic.
 
 ### Phase 3: Adaptive package and switching
 
-- Define the manifest/profile and compatibility metadata.
-- Author at least two aligned texture/geometry representations.
-- Add conservative automatic selection and manual override.
-- Switch atomically at aligned segment boundaries.
+- [x] Define the manifest/profile and compatibility metadata.
+- [x] Author at least two aligned texture/geometry representations.
+- [x] Add conservative automatic selection and manual override.
+- [x] Switch atomically at aligned segment boundaries.
 
 ### Phase 4: Engine integration
 
-- Expose URL/manifest input, buffer state, quality selection, and diagnostics
+- [x] Expose URL/manifest input, buffer state, quality selection, and diagnostics
   through the public core API.
-- Add corresponding Unity and Unreal properties/events without duplicating
+- [x] Add corresponding Unity and Unreal properties/events without duplicating
   transport logic.
-- Add development overlays for buffer and representation state.
+- [x] Add development overlays for buffer and representation state.
 
 ### Phase 5: Topology-compression integration
 

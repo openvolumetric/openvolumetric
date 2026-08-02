@@ -116,6 +116,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OpenVolumetric|Input|Adaptive")
 	bool bEnableLiveAdaptiveSwitching = true;
 
+	/** Record adaptive transport, buffering, and switching measurements as CSV. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OpenVolumetric|Developer|Evaluation")
+	bool bRecordAdaptiveMetrics = false;
+
+	/** CSV filename written beneath the Unreal project's Saved directory. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OpenVolumetric|Developer|Evaluation")
+	FString AdaptiveMetricsFileName = TEXT("openvolumetric-adaptive-metrics.csv");
+
+	/** Time between adaptive CSV samples. */
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "OpenVolumetric|Developer|Evaluation",
+		meta = (ClampMin = "0.05", UIMin = "0.05", UIMax = "5.0", Units = "s"))
+	double AdaptiveMetricsIntervalSeconds = 0.25;
+
 	/** Start playback automatically after a file opens successfully. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "OpenVolumetric|Playback")
 	bool bPlayOnOpen = true;
@@ -238,6 +254,9 @@ public:
 	int64 DownloadedBytes = 0;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status|Buffer")
+	int64 TransferThroughputBitsPerSecond = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status|Buffer")
 	int64 HttpRequestCount = 0;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "OpenVolumetric|Status|Buffer")
@@ -297,7 +316,12 @@ private:
 	void UpdateDeveloperControls(float DeltaTime);
 	void UpdateBufferDiagnostics();
 	void UpdateAdaptivePolicy();
-	void RequestAdaptiveRepresentation(int32 TargetIndex, const FString& Reason);
+	void RecordAdaptiveMetrics();
+	void CloseAdaptiveMetrics();
+	void RequestAdaptiveRepresentation(
+		int32 TargetIndex,
+		const FString& Reason,
+		bool bIgnoreRetryBackoff = false);
 	bool HandleNetworkRecovery();
 
 	bool bNetworkRebuffering = false;
@@ -320,6 +344,21 @@ private:
 	double AdaptiveSmoothedThroughputBps = 0.0;
 	double AdaptiveDowngradeStarted = -1.0;
 	double AdaptiveUpgradeHeadroomStarted = -1.0;
+	double AdaptiveRetryAfter = -1.0;
+	int32 AdaptiveConsecutiveSwitchFailures = 0;
+	class FArchive* AdaptiveMetricsArchive = nullptr;
+	double AdaptiveMetricsStarted = 0.0;
+	double AdaptiveNextMetricTime = 0.0;
+	double AdaptiveSwitchStarted = -1.0;
+	double AdaptiveLastSwitchLatency = -1.0;
+	uint64 AdaptiveSwitchFailureCount = 0;
+	double AdaptiveRebufferStarted = -1.0;
+	double AdaptiveTotalRebufferTime = 0.0;
+	uint64 AdaptiveRebufferCount = 0;
+	int32 AdaptivePreviousSwitchState = 0;
+	EOpenVolumetricInputState AdaptivePreviousInputState =
+		EOpenVolumetricInputState::Opening;
+	double AdaptiveMetricFrameMilliseconds = 0.0;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> DynamicMaterial;

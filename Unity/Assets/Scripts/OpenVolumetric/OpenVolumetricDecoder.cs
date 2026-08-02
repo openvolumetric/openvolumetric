@@ -75,6 +75,7 @@ public class OpenVolumetricDecoder : IDisposable
         ref long resourceSizeBytes,
         ref ulong cachedBytes,
         ref ulong downloadedBytes,
+        ref ulong transferThroughputBitsPerSecond,
         ref ulong requestCount,
         ref ulong recoveryCount);
 
@@ -337,6 +338,7 @@ public class OpenVolumetricDecoder : IDisposable
         public long ResourceSizeBytes;
         public ulong CachedBytes;
         public ulong DownloadedBytes;
+        public ulong TransferThroughputBitsPerSecond;
         public ulong RequestCount;
         public ulong RecoveryCount;
         public bool IsFragmented;
@@ -456,6 +458,7 @@ public class OpenVolumetricDecoder : IDisposable
                 ref info.ResourceSizeBytes,
                 ref info.CachedBytes,
                 ref info.DownloadedBytes,
+                ref info.TransferThroughputBitsPerSecond,
                 ref info.RequestCount,
                 ref info.RecoveryCount);
             info.State = (BufferState)state;

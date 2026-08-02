@@ -976,14 +976,18 @@ public:
 						TCHAR_TO_UTF8(*ManifestOutput));
 					Options.segment_duration_seconds = FragmentDurationSeconds;
 					Options.representations = std::move(AdaptiveInputs);
+					// The shared verifier must pass before the manifest is published.
+					openvolumetric::authoring::AdaptivePackageVerification Verification;
 					if (!openvolumetric::authoring::write_adaptive_package_manifest(
-						Options, NativeError))
+						Options, NativeError, &Verification))
 					{
 						Failure = UTF8_TO_TCHAR(NativeError.c_str());
 						bSuccess = false;
 					}
 					else
 					{
+						Job->Append(UTF8_TO_TCHAR(
+							Verification.summary().c_str()));
 						Job->Append(TEXT("Created ") + ManifestOutput);
 					}
 				}
