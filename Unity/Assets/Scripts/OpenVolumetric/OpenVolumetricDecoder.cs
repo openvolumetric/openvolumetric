@@ -198,6 +198,7 @@ public class OpenVolumetricDecoder : IDisposable
         public double BufferedDuration;
         public ulong UnderrunCount;
 
+        /// <summary>Whether decoded PCM covers the requested startup duration.</summary>
         public bool HasPreroll(double requiredDuration)
         {
             return BufferedDuration >= requiredDuration;
@@ -347,6 +348,7 @@ public class OpenVolumetricDecoder : IDisposable
         public ulong CachedFragmentCount;
     }
 
+    /// <summary>Native input transport and bounded-cache lifecycle.</summary>
     public enum BufferState
     {
         Opening = 0,
@@ -357,6 +359,7 @@ public class OpenVolumetricDecoder : IDisposable
         Ended = 5
     }
 
+    /// <summary>Lifecycle of one generation-safe representation switch.</summary>
     public enum AdaptiveSwitchState
     {
         Stable,
@@ -365,6 +368,7 @@ public class OpenVolumetricDecoder : IDisposable
         Failed
     }
 
+    /// <summary>Immutable native adaptive-transition snapshot.</summary>
     public struct AdaptiveSwitchInfo
     {
         public AdaptiveSwitchState State;
@@ -400,6 +404,7 @@ public class OpenVolumetricDecoder : IDisposable
                 reason) == 1;
     }
 
+    /// <summary>Cancels candidate preparation while retaining active playback.</summary>
     public void CancelAdaptiveSwitch()
     {
         if(m_instance_id >= 0)

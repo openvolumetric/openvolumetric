@@ -20,7 +20,7 @@ TextureMetal::TextureMetal()
 	  m_height_uv(0),
 	  m_row_bytes_uv(0)
 {
-	for (unsigned int i = 0; i < TEXTURE_NUM; ++i)
+	for (unsigned int i = 0; i < TEXTURE_COUNT; ++i)
 		m_textures[i] = nullptr;
 }
 
@@ -39,7 +39,7 @@ int TextureMetal::init(void* handler, unsigned int width, unsigned int height)
 	m_device = handler;
 	m_width_y = width;
 	m_height_y = height;
-	m_row_bytes_y = ((width + CPU_ALIGMENT - 1) / CPU_ALIGMENT) * CPU_ALIGMENT;
+	m_row_bytes_y = ((width + CPU_ALIGNMENT - 1) / CPU_ALIGNMENT) * CPU_ALIGNMENT;
 	m_width_uv = width / 2;
 	m_height_uv = height / 2;
 	m_row_bytes_uv = m_row_bytes_y / 2;
@@ -52,10 +52,10 @@ int TextureMetal::init(void* handler, unsigned int width, unsigned int height)
 	m_unity_metal = unity_metal;
 	m_device = (__bridge void*)device;
 
-	const unsigned int widths[TEXTURE_NUM] = {m_width_y, m_width_uv, m_width_uv};
-	const unsigned int heights[TEXTURE_NUM] = {m_height_y, m_height_uv, m_height_uv};
+	const unsigned int widths[TEXTURE_COUNT] = {m_width_y, m_width_uv, m_width_uv};
+	const unsigned int heights[TEXTURE_COUNT] = {m_height_y, m_height_uv, m_height_uv};
 
-	for (unsigned int i = 0; i < TEXTURE_NUM; ++i)
+	for (unsigned int i = 0; i < TEXTURE_COUNT; ++i)
 	{
 		MTLTextureDescriptor* descriptor =
 			[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatA8Unorm
@@ -81,7 +81,7 @@ int TextureMetal::init(void* handler, unsigned int width, unsigned int height)
 	return 1;
 }
 
-void TextureMetal::getResourcePointers(void*& ptry, void*& ptru, void*& ptrv)
+void TextureMetal::get_resource_pointers(void*& ptry, void*& ptru, void*& ptrv)
 {
 	ptry = m_textures[0];
 	ptru = m_textures[1];
@@ -93,10 +93,10 @@ void TextureMetal::upload(unsigned char* ych, unsigned char* uch, unsigned char*
 	if (m_device == nullptr || ych == nullptr || uch == nullptr || vch == nullptr)
 		return;
 
-	const unsigned char* data[TEXTURE_NUM] = {ych, uch, vch};
-	const unsigned int widths[TEXTURE_NUM] = {m_width_y, m_width_uv, m_width_uv};
-	const unsigned int heights[TEXTURE_NUM] = {m_height_y, m_height_uv, m_height_uv};
-	const unsigned int row_bytes[TEXTURE_NUM] = {m_row_bytes_y, m_row_bytes_uv, m_row_bytes_uv};
+	const unsigned char* data[TEXTURE_COUNT] = {ych, uch, vch};
+	const unsigned int widths[TEXTURE_COUNT] = {m_width_y, m_width_uv, m_width_uv};
+	const unsigned int heights[TEXTURE_COUNT] = {m_height_y, m_height_uv, m_height_uv};
+	const unsigned int row_bytes[TEXTURE_COUNT] = {m_row_bytes_y, m_row_bytes_uv, m_row_bytes_uv};
 
 	IUnityGraphicsMetal* unity_metal =
 		static_cast<IUnityGraphicsMetal*>(m_unity_metal);
@@ -115,7 +115,7 @@ void TextureMetal::upload(unsigned char* ych, unsigned char* uch, unsigned char*
 	if (blit == nil)
 		return;
 
-	for (unsigned int i = 0; i < TEXTURE_NUM; ++i)
+	for (unsigned int i = 0; i < TEXTURE_COUNT; ++i)
 	{
 		id<MTLTexture> texture = (__bridge id<MTLTexture>)m_textures[i];
 		// Metal texture blits require a 256-byte-aligned source row pitch.
@@ -154,7 +154,7 @@ void TextureMetal::upload(unsigned char* ych, unsigned char* uch, unsigned char*
 
 void TextureMetal::destroy()
 {
-	for (unsigned int i = 0; i < TEXTURE_NUM; ++i)
+	for (unsigned int i = 0; i < TEXTURE_COUNT; ++i)
 	{
 		if (m_textures[i] != nullptr)
 		{

@@ -65,6 +65,45 @@ The first dependency build can take several minutes, particularly FFmpeg and
 OpenSSL. Subsequent builds reuse the vcpkg installed tree. CI should
 additionally configure a vcpkg binary cache.
 
+## Native tests
+
+Desktop configurations build `OpenVolumetricCoreTests` by default through
+CMake's standard `BUILD_TESTING` option. The fast suite creates its inputs in
+memory or temporary files and currently covers geometry-packet framing and
+dependencies, adaptive manifest validation and local representation selection,
+fragmented-MP4 random-access index parsing, local byte-source seeking and
+cancellation, failed-player lifecycle rollback, and topology identity across
+vertex, UV, and winding changes. A reproducible 12 KiB three-track fixture also
+covers successful open/start, complete presentation, active seek,
+end-of-stream restart, repeated start/stop, and idempotent close.
+Additional small fixtures cover independent geometry, no-audio playback,
+fragmented MP4, adaptive package resolution, and recovery from a corrupt
+temporal update at the next independent geometry sample.
+
+When a Python 3 interpreter is available at configure time, CTest also builds
+and runs `OpenVolumetricHttpTransportTests`. Its loopback-only server validates
+bounded range reads and seeks, transient 503 recovery, permanent retry
+exhaustion, truncated 206 responses, and cancellation of a delayed request.
+The test chooses an ephemeral localhost port and requires no internet access.
+
+Fixture contents and regeneration instructions are recorded in
+[`tests/fixtures/README.md`](../OpenVolumetricNative/tests/fixtures/README.md).
+
+After configuring and building the normal host preset, run:
+
+```sh
+cd OpenVolumetricNative
+ctest --preset vcpkg
+```
+
+Use `-DBUILD_TESTING=OFF` when a production-only desktop build should omit the
+test executable. Android configurations always omit the host test target and
+its doctest dependency.
+
+The complete automated and manual acceptance procedure is in
+[TESTING.md](TESTING.md). Clang and GCC hosts can run ASan and UBSan through
+the `vcpkg-sanitizers` configure, build, and test presets.
+
 ### macOS
 
 The macOS build produces the Metal Unity runtime and the authoring library:
@@ -141,6 +180,7 @@ cmake -S OpenVolumetricNative \
   -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
   -DVCPKG_TARGET_TRIPLET=arm64-osx-openvolumetric \
   -DVCPKG_OVERLAY_TRIPLETS=OpenVolumetricNative/triplets \
+  -DBUILD_TESTING=OFF \
   -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0
 
 cmake --build OpenVolumetricNative/build/unreal-host-macos14

@@ -14,7 +14,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-        "VCPKG_MANIFEST_DIR": "${sourceDir}"
+        "VCPKG_MANIFEST_DIR": "${sourceDir}",
+        "VCPKG_MANIFEST_FEATURES": "tests"
       }
     },
     {
@@ -45,7 +46,23 @@
         "CMAKE_SYSTEM_VERSION": "29",
         "CMAKE_ANDROID_ARCH_ABI": "arm64-v8a",
         "CMAKE_ANDROID_NDK": "$env{ANDROID_NDK_ROOT}",
-        "VCPKG_TARGET_TRIPLET": "arm64-android"
+        "VCPKG_TARGET_TRIPLET": "arm64-android",
+        "VCPKG_MANIFEST_FEATURES": ""
+      }
+    },
+    {
+      "name": "vcpkg-sanitizers",
+      "displayName": "Native tests with ASan and UBSan",
+      "inherits": "vcpkg",
+      "binaryDir": "${sourceDir}/build/${presetName}-${hostSystemName}",
+      "condition": {
+        "type": "notEquals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "OPENVOLUMETRIC_ENABLE_SANITIZERS": "ON",
+        "OPENVOLUMETRIC_WARNINGS_AS_ERRORS": "ON"
       }
     }
   ],
@@ -61,6 +78,34 @@
     {
       "name": "vcpkg-android-arm64",
       "configurePreset": "vcpkg-android-arm64"
+    },
+    {
+      "name": "vcpkg-sanitizers",
+      "configurePreset": "vcpkg-sanitizers",
+      "targets": ["OpenVolumetricCoreTests", "OpenVolumetricHttpTransportTests"]
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "vcpkg",
+      "configurePreset": "vcpkg",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "vcpkg-macos-x64",
+      "configurePreset": "vcpkg-macos-x64",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "vcpkg-sanitizers",
+      "configurePreset": "vcpkg-sanitizers",
+      "output": {
+        "outputOnFailure": true
+      }
     }
   ]
 }

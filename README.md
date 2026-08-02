@@ -74,6 +74,7 @@ tools/                  Package-serving and controlled-network evaluation tools
 ## Documentation
 
 - [Building](docs/BUILDING.md)
+- [Testing and engine acceptance](docs/TESTING.md)
 - [Licensing and distribution](docs/LICENSING.md)
 - [Technical overview](docs/TECHNICAL_OVERVIEW.md)
 - [Container compatibility](docs/CONTAINER_COMPATIBILITY.md)
@@ -102,7 +103,9 @@ tools/                  Package-serving and controlled-network evaluation tools
   stream-copy previews remain available without re-encoding.
 - Quest video decoding is software-based.
 - Windows, Quest 3S, and Unreal packaged-build validation remain outstanding.
-- Automated conformance and performance testing is still limited.
+- Native format, lifecycle, transport, corruption-recovery, and sanitizer
+  regression checks are automated; engine conformance and performance testing
+  remains manual.
 
 ## Contributors
 
@@ -112,5 +115,5 @@ tools/                  Package-serving and controlled-network evaluation tools
 
 OpenVolumetric is licensed under the
 [Apache License 2.0](LICENSE). Third-party components retain their own
-licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and the
+licenses; see the [third-party notices](docs/THIRD_PARTY_NOTICES.md) and the
 [licensing guide](docs/LICENSING.md).

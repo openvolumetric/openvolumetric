@@ -325,8 +325,9 @@ OpenVolumetricAudioBufferInfo AdaptivePlayerCoordinator::audio_buffer_info() con
 		: OpenVolumetricAudioBufferInfo{};
 }
 
-const std::string& AdaptivePlayerCoordinator::error() const
+std::string AdaptivePlayerCoordinator::error() const
 {
+	std::lock_guard<std::mutex> lock(m_mutex);
 	return m_error;
 }
 

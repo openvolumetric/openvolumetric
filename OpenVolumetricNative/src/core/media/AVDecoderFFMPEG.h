@@ -113,6 +113,10 @@ protected:
 
 	/// Receives all currently available video frames from the active packet.
 	bool decode_video_frame();
+	/// Moves every currently available decoded video frame into the output queue.
+	bool receive_video_frames();
+	/// Flushes video frames delayed internally by FFmpeg at demux end-of-stream.
+	bool drain_video_decoder();
 
 	/// Receives, resamples, and queues audio from the active packet.
 	bool decode_audio_frame();
@@ -204,6 +208,7 @@ private:
 	std::atomic<std::uint64_t> m_playback_generation;
 	double m_last_video_packet_time = -1.0;
 	double m_last_geometry_packet_time = -1.0;
+	bool m_video_decoder_drained = false;
 
 	// Runtime seeks are submitted by an engine thread and executed only by the
 	// demux thread, which exclusively owns FFmpeg container/codec mutation.

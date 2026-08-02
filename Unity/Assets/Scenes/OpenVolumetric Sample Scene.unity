@@ -152,7 +152,7 @@ MonoBehaviour:
   videoFilename: 
   videoUrl: http://192.168.0.34:8000/Adaptive/bbc_rachel/manifest.json
   useAdaptiveManifest: 1
-  adaptiveQuality: 0
+  adaptiveQuality: 2
   adaptiveMaximumTextureDimension: 0
   adaptiveMaximumTextureBitrateMbps: 0
   adaptiveMaximumGeometryBitrateMbps: 0

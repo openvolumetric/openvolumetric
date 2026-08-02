@@ -450,6 +450,11 @@ Decoded frames are retained as `AVFrame` objects in a bounded queue of 32
 frames. Their `best_effort_timestamp` values are converted to seconds using
 the video stream time base.
 
+When demux reaches natural end-of-stream, the demux thread drains delayed
+video frames from the codec before marking the output queue complete. This is
+required for very short inputs and preserves the final frame-threading window
+of ordinary inputs.
+
 The output format expected by the graphics integrations is planar YUV420P:
 
 - Full-resolution Y plane.
@@ -1480,11 +1485,21 @@ The most significant limitations of the current system are:
   in-file fragment scheduling are implemented. Quest playback, bidirectional
   seeking, and brief Wi-Fi interruption recovery have passed manual testing;
   Unreal interruption and synchronized recovery have also passed. Quest
-  controlled retry exhaustion and corruption tests pass. Manifests, adaptive
-  streaming, and live playback are not implemented.
+  controlled retry exhaustion and corruption tests pass. Versioned adaptive
+  packages, aligned Low/High authoring, conservative startup selection,
+  generation-safe candidate preparation, sample-exact audio handoff, and
+  automatic or forced boundary switching are implemented in Unity and Unreal.
+  One controlled Unity High -> Low -> High run has passed; repeated trials,
+  remaining platform coverage, and quantitative evaluation remain outstanding.
 - The authoring tool depends on an external FFmpeg executable.
-- macOS and Quest validation is manual rather than an automated conformance
-  suite.
+- A deterministic native CTest baseline covers packet/container parsing,
+  topology identity, lifecycle rollback, local and controlled HTTP transport,
+  independent and temporal geometry, fragmented and adaptive fixtures,
+  no-audio input, end-of-stream restart, and corrupt temporal-update recovery
+  at the next independent mesh. CI runs desktop warnings-as-errors builds,
+  Linux ASan/UBSan, and an Android ARM64 build. Unity, Quest, and Unreal
+  graphics/audio acceptance remains manual because it requires engine and
+  device environments; `TESTING.md` defines the shared procedure.
 - Windows requires clean-build and runtime validation after recent
   restructuring.
 - Quest 3S thermal, battery, and sustained-performance evaluation is
@@ -1497,6 +1512,11 @@ The most significant limitations of the current system are:
   replacement rather than a direct RHI upload path.
 - Unreal packaged builds and platforms beyond the macOS Editor are not yet
   validated.
+- Live downgrade/upgrade thresholds and timers are intentionally equivalent
+  but currently mirrored in the Unity and Unreal components. Moving this last
+  decision layer into the engine-neutral core is required before expanding to
+  larger quality ladders; startup selection, candidate preparation, and atomic
+  switching are already shared.
 - A Nuke integration remains planned.
 - Error recovery generally stops or seeks the pipeline; damaged-sample
   concealment is limited.
@@ -1512,17 +1532,12 @@ authoring, and engine-integration design that treats dynamic geometry as timed
 media alongside texture and audio.
 
 The implementation demonstrates the complete path from numbered images and
-OBJ meshes to a verified MP4 and synchronized local or progressive HTTP
-playback in both Unity and Unreal, including Unity standalone VR. The next
-steps needed for an academic release are format stabilization, controlled
-cross-platform evaluation, clean Windows and Unreal packaged-build
-validation, broader datasets, and quantitative comparison of compression,
-decode cost, synchronization, memory use, and sustained performance.
-
-The planned adaptive-streaming work extends rather than replaces this
-architecture: fragmented representations will reuse the same timed tracks,
-decoder ownership, playback generations, and atomic presentation matcher.
-The paper should distinguish the demonstrated progressive transport from the
-future adaptive contribution and report the latter only after aligned
-segment authoring, coupled representation switching, and network/device
-experiments have been completed.
+OBJ meshes to verified fixed or adaptive fragmented MP4 packages and
+synchronized local or HTTP playback in both Unity and Unreal, including Unity
+standalone VR. Adaptive playback reuses the same timed tracks, decoder
+ownership, playback generations, and atomic presentation matcher while
+exchanging whole compatible sessions at aligned boundaries. The next steps
+needed for an academic release are format stabilization, repeated controlled
+adaptive evaluation, clean Windows and Unreal packaged-build validation,
+broader datasets, and quantitative comparison of compression, decode cost,
+synchronization, memory use, switching behavior, and sustained performance.

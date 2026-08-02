@@ -1,0 +1,111 @@
+name: Native regression checks
+
+on:
+  push:
+    paths:
+      - "OpenVolumetricNative/**"
+      - ".github/workflows/native.yml"
+  pull_request:
+    paths:
+      - "OpenVolumetricNative/**"
+      - ".github/workflows/native.yml"
+
+jobs:
+  desktop:
+    name: ${{ matrix.os }} native tests
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: microsoft/vcpkg
+          ref: 40f3c709db80acf154ac4b17a1f83c564ebd022e
+          path: vcpkg
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+      - name: Bootstrap vcpkg
+        if: runner.os != 'Windows'
+        shell: bash
+        run: ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
+      - name: Bootstrap vcpkg (Windows)
+        if: runner.os == 'Windows'
+        run: .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+      - name: Configure
+        shell: bash
+        run: >-
+          cmake -S OpenVolumetricNative -B OpenVolumetricNative/build/ci
+          -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+          -DVCPKG_MANIFEST_FEATURES=tests
+          -DOPENVOLUMETRIC_WARNINGS_AS_ERRORS=ON
+          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+      - name: Build
+        run: cmake --build OpenVolumetricNative/build/ci --parallel
+      - name: Test
+        run: ctest --test-dir OpenVolumetricNative/build/ci --output-on-failure
+
+  sanitizers:
+    name: Linux ASan and UBSan
+    runs-on: ubuntu-latest
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: microsoft/vcpkg
+          ref: 40f3c709db80acf154ac4b17a1f83c564ebd022e
+          path: vcpkg
+      - run: ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
+      - name: Configure sanitizers
+        run: >-
+          cmake -S OpenVolumetricNative -B OpenVolumetricNative/build/ci-sanitizers
+          -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=ON
+          -DVCPKG_MANIFEST_FEATURES=tests
+          -DOPENVOLUMETRIC_WARNINGS_AS_ERRORS=ON
+          -DOPENVOLUMETRIC_ENABLE_SANITIZERS=ON
+          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+      - name: Build tests
+        run: >-
+          cmake --build OpenVolumetricNative/build/ci-sanitizers --parallel
+          --target OpenVolumetricCoreTests OpenVolumetricHttpTransportTests
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_leaks=1:strict_string_checks=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ctest --test-dir OpenVolumetricNative/build/ci-sanitizers --output-on-failure
+
+  android-arm64:
+    name: Android ARM64 native build
+    runs-on: ubuntu-latest
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: microsoft/vcpkg
+          ref: 40f3c709db80acf154ac4b17a1f83c564ebd022e
+          path: vcpkg
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "ndk;27.2.12479018"
+      - run: ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
+      - name: Configure
+        env:
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/27.2.12479018
+        run: >-
+          cmake -S OpenVolumetricNative -B OpenVolumetricNative/build/ci-android
+          -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+          -DOPENVOLUMETRIC_WARNINGS_AS_ERRORS=ON
+          -DCMAKE_SYSTEM_NAME=Android -DCMAKE_SYSTEM_VERSION=29
+          -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a
+          -DCMAKE_ANDROID_NDK="$ANDROID_NDK_ROOT"
+          -DVCPKG_TARGET_TRIPLET=arm64-android
+          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+      - name: Build
+        run: cmake --build OpenVolumetricNative/build/ci-android --parallel

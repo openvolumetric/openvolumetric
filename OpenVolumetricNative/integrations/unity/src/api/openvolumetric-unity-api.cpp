@@ -765,7 +765,7 @@ OPENVOLUMETRIC_API int	openvolumetric_get_texture_pointers(int id, void*& yPoint
 		return -1;
 	}
 
-	instance->texture()->getResourcePointers(
+	instance->texture()->get_resource_pointers(
 		yPointer, uPointer, vPointer);
 
 	LOG("openvolumetric_set_texture_pointer - end");
@@ -780,7 +780,7 @@ OPENVOLUMETRIC_API int openvolumetric_register_texture_pointers(
 		yPointer == nullptr || uPointer == nullptr || vPointer == nullptr)
 		return -1;
 
-	instance->texture()->registerResourcePointers(
+	instance->texture()->register_resource_pointers(
 		yPointer, uPointer, vPointer);
 	return 1;
 }

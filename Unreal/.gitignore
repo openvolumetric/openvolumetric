@@ -26,6 +26,8 @@ Content/*_HLOD*.uasset
 Content/*.mp4
 Content/*.mov
 Content/*.mkv
+Content/Adaptive/
+Content/openvolumetric.json
 
 # Generated output belonging to plugins. Keep plugin descriptors, Source,
 # Config, Resources, and Content (including .uasset files) tracked.
@@ -43,6 +45,5 @@ StagedBuilds/
 Content/*.mp4
 Content/*.mov
 Content/*.mkv
-
 
 

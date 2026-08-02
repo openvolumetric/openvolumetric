@@ -15,12 +15,19 @@ namespace openvolumetric
 /// Stable stream metadata returned without exposing FFmpeg structures.
 struct OpenVolumetricMediaInfo
 {
+	/// Decoded luma width in pixels.
 	int width = 0;
+	/// Decoded luma height in pixels.
 	int height = 0;
+	/// Nominal video rate used for presentation tolerances.
 	double frame_rate = 0.0;
+	/// Presentation duration in seconds.
 	double duration = 0.0;
+	/// Whether a supported audio track was opened.
 	bool has_audio = false;
+	/// Decoded PCM rate, or zero when audio is absent.
 	int audio_sample_rate = 0;
+	/// Interleaved decoded channel count, or zero when audio is absent.
 	int audio_channels = 0;
 };
 
@@ -68,28 +75,41 @@ struct OpenVolumetricPresentation
 class OpenVolumetricPlayer final
 {
 public:
+	/// Constructs a closed player with no workers or codec resources.
 	OpenVolumetricPlayer();
+	/// Idempotently stops workers and releases all owned decoder state.
 	~OpenVolumetricPlayer();
 
 	OpenVolumetricPlayer(const OpenVolumetricPlayer&) = delete;
 	OpenVolumetricPlayer& operator=(const OpenVolumetricPlayer&) = delete;
 
+	/// Opens one local path or HTTP(S) OpenVolumetric representation.
 	bool open(const char* path);
+	/// Starts media and geometry decoder workers after a successful open.
 	bool start();
+	/// Stops and joins decoder workers while retaining opened metadata.
 	void stop();
-	/** Cancels blocking local or HTTP input without waiting for worker shutdown. */
+	/// Cancels blocking local or HTTP input without waiting for worker shutdown.
 	void cancel_pending_io();
+	/// Idempotently stops and releases all media, queue, and decoder resources.
 	void close();
+	/// Resets all modalities and prepares a presentation at the requested time.
 	bool seek(double time);
 
+	/// Returns immutable metadata valid until close() or the next open().
 	const OpenVolumetricMediaInfo& media_info() const;
+	/// Returns a thread-safe input transport/cache snapshot.
 	OpenVolumetricBufferInfo buffer_info() const;
+	/// Returns a thread-safe decoded PCM snapshot.
 	OpenVolumetricAudioBufferInfo audio_buffer_info() const;
+	/// Returns the latest persistent failure message.
 	const std::string& error() const;
 
+	/// Copies one timestamp-matched texture/geometry presentation into output.
 	FrameMatchResult presentation(
 		double requested_time,
 		OpenVolumetricPresentation& output);
+	/// Fills interleaved float PCM, writing silence for unavailable samples.
 	int read_audio(float* output, int sample_count);
 
 private:

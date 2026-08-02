@@ -26,9 +26,6 @@ Desktop.ini
 # tracked so importer settings remain stable after rebuilding.
 *.dylib
 *.so
-
-
-
 .tmp*
 .utmp*
 
@@ -41,13 +38,9 @@ Desktop.ini
 !/data/sync-test/generate.py
 !/data/sync-test/README.md
 /tmp/
-data/sync-test/README.md
-.gitignore
-data/sync-test/generate.py
-OpenVolumetricNative/.gitignore
-Unity/Assets/Plugins/OpenVolumetric/Android/arm64-v8a/libAudioPluginOpenVolumetricUnity.so.meta
-Unreal/Content/Adaptive/bbc_rachel/manifest.json
-.gitignore
-Unreal/Content/Adaptive/bbc_rachel/high.mp4
-Unreal/Content/Adaptive/bbc_rachel/low.mp4
-Unreal/Content/openvolumetric.json
+
+# Unity packages generate editor-specific preferences beneath Assets even
+# though they are not reproducible project inputs.
+/Unity/Assets/CompositionLayers/UserSettings/
+/Unity/Assets/XR/Temp/
+/Unity/Assets/XR/UserSimulationSettings/

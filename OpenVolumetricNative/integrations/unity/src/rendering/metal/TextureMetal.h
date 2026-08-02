@@ -17,7 +17,7 @@ public:
 	/// Allocates luma and half-resolution chroma textures.
 	int init(void* handler, unsigned int width, unsigned int height) override;
 	/// Exposes native MTLTexture pointers for Unity wrapping.
-	void getResourcePointers(void*& ptry, void*& ptru, void*& ptrv) override;
+	void get_resource_pointers(void*& y, void*& u, void*& v) override;
 	/// Replaces all three planes with one decoded YUV420P frame.
 	void upload(unsigned char* ych, unsigned char* uch, unsigned char* vch) override;
 	/// Releases textures and invalidates borrowed interface pointers.
@@ -26,7 +26,7 @@ public:
 private:
 	void* m_device;
 	void* m_unity_metal;
-	void* m_textures[TEXTURE_NUM];
+	void* m_textures[TEXTURE_COUNT];
 	unsigned int m_width_y;
 	unsigned int m_height_y;
 	unsigned int m_row_bytes_y;

@@ -99,7 +99,9 @@ void FOpenVolumetricPlayerAdapter::CancelAdaptiveSwitch()
 
 FString FOpenVolumetricPlayerAdapter::GetError() const
 {
-	return UTF8_TO_TCHAR(Player.error().c_str());
+	// Keep the copied core string alive for the complete UTF-8 conversion.
+	const std::string Error = Player.error();
+	return UTF8_TO_TCHAR(Error.c_str());
 }
 
 void FOpenVolumetricPlayerAdapter::Close()

@@ -22,10 +22,10 @@ public:
     /// Records frame dimensions and obtains Unity's Vulkan interface.
     int init(void* handler, unsigned int width, unsigned int height) override;
     /// Returns fallback image handles before Unity supplies external textures.
-    void getResourcePointers(
+    void get_resource_pointers(
         void*& y, void*& u, void*& v) override;
     /// Resolves Unity texture handles to Vulkan images used for transfers.
-    void registerResourcePointers(
+    void register_resource_pointers(
         void* y, void* u, void* v) override;
     /// Copies one YUV frame into a free staging slot and records image barriers
     /// and buffer-to-image transfers on Unity's command buffer.
@@ -57,12 +57,12 @@ private:
 
     IUnityGraphicsVulkan* m_unity_vulkan = nullptr;
     UnityVulkanInstance m_instance{};
-    std::array<VkImage, TEXTURE_NUM> m_images{};
-    std::array<void*, TEXTURE_NUM> m_unity_texture_handles{};
-    std::array<VkDeviceMemory, TEXTURE_NUM> m_image_memory{};
-    std::array<unsigned int, TEXTURE_NUM> m_widths{};
-    std::array<unsigned int, TEXTURE_NUM> m_heights{};
-    std::array<VkDeviceSize, TEXTURE_NUM> m_offsets{};
+    std::array<VkImage, TEXTURE_COUNT> m_images{};
+    std::array<void*, TEXTURE_COUNT> m_unity_texture_handles{};
+    std::array<VkDeviceMemory, TEXTURE_COUNT> m_image_memory{};
+    std::array<unsigned int, TEXTURE_COUNT> m_widths{};
+    std::array<unsigned int, TEXTURE_COUNT> m_heights{};
+    std::array<VkDeviceSize, TEXTURE_COUNT> m_offsets{};
     std::array<UploadSlot, kUploadSlots> m_slots;
     VkDeviceSize m_upload_size = 0;
 };

@@ -21,7 +21,7 @@ public:
 	int init(void* handler, unsigned int width, unsigned int height) override;
 
 	/// Returns shader-resource views for Unity external texture wrapping.
-	void getResourcePointers(void*& ptry, void*& ptru, void*& ptrv) override;
+	void get_resource_pointers(void*& y, void*& u, void*& v) override;
 	
 	/// Updates the three texture planes with one decoded YUV420P frame.
 	void upload(unsigned char* ych, unsigned char* uch, unsigned char* vch) override;
@@ -42,8 +42,8 @@ private:
 	unsigned int m_length_uv = 0;
 
 	/// Plugin-owned textures and views released by destroy().
-	ID3D11Texture2D* m_textures[TEXTURE_NUM]{};
-	ID3D11ShaderResourceView* m_shader_resource_views[TEXTURE_NUM]{};
+	ID3D11Texture2D* m_textures[TEXTURE_COUNT]{};
+	ID3D11ShaderResourceView* m_shader_resource_views[TEXTURE_COUNT]{};
 };
 
 } // namespace openvolumetric::unity

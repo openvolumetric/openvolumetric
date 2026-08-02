@@ -8,6 +8,11 @@ set(VV_UNITY_API_SOURCES
 set(VV_UNITY_INCLUDE_DIRS
   "${CMAKE_CURRENT_SOURCE_DIR}/src/api"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/audio"
+)
+
+# Treat the vendored Unity SDK as external so strict warning builds report
+# OpenVolumetric issues without requiring edits to upstream headers.
+set(VV_UNITY_SYSTEM_INCLUDE_DIR
   "${CMAKE_CURRENT_SOURCE_DIR}/third_party/unity_native_plugin_sdk/include"
 )
 
@@ -23,10 +28,8 @@ if(WIN32)
       ${VV_UNITY_INCLUDE_DIRS}
       "${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/d3d11"
   )
-
-  target_compile_definitions(OpenVolumetricUnityPlugin
-    PRIVATE
-      NATIVEPLUGIN_EXPORTS
+  target_include_directories(OpenVolumetricUnityPlugin SYSTEM PRIVATE
+    "${VV_UNITY_SYSTEM_INCLUDE_DIR}"
   )
 
   target_link_libraries(OpenVolumetricUnityPlugin
@@ -59,6 +62,9 @@ elseif(APPLE)
     PRIVATE
       ${VV_UNITY_INCLUDE_DIRS}
       "${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/metal"
+  )
+  target_include_directories(OpenVolumetricUnityPlugin SYSTEM PRIVATE
+    "${VV_UNITY_SYSTEM_INCLUDE_DIR}"
   )
 
   target_link_libraries(OpenVolumetricUnityPlugin
@@ -95,10 +101,8 @@ elseif(ANDROID)
       ${VV_UNITY_INCLUDE_DIRS}
       "${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/vulkan"
   )
-
-  target_compile_definitions(OpenVolumetricUnityPlugin
-    PRIVATE
-      NATIVEPLUGIN_EXPORTS
+  target_include_directories(OpenVolumetricUnityPlugin SYSTEM PRIVATE
+    "${VV_UNITY_SYSTEM_INCLUDE_DIR}"
   )
 
   target_link_libraries(OpenVolumetricUnityPlugin

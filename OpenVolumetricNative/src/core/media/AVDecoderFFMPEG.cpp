@@ -304,6 +304,7 @@ bool AVDecoderFFMPEG::init_video_context()
 }
 bool AVDecoderFFMPEG::init(const char* filepath)
 {
+	m_video_decoder_drained = false;
 	const bool remote_source =
 		filepath != nullptr &&
 		is_http_url(filepath);
@@ -501,6 +502,13 @@ bool AVDecoderFFMPEG::decode()
 				!m_pending_audio_packets.empty() ||
 				!m_pending_geometry_packets.empty())
 			{
+				return true;
+			}
+			if (!m_video_decoder_drained)
+			{
+				if (!drain_video_decoder())
+					return false;
+				m_video_decoder_drained = true;
 				return true;
 			}
 			m_video_frames.mark_end_of_stream();
@@ -925,69 +933,13 @@ void AVDecoderFFMPEG::flush_audio()
 }
 bool AVDecoderFFMPEG::decode_video_frame()
 {
-	auto receive_available_frames = [this]()
-	{
-		while (true)
-		{
-			AVFrame* frame = av_frame_alloc();
-			if (frame == nullptr)
-			{
-				m_video_frames.set_error(
-					"Could not allocate a decoded video frame.");
-				return false;
-			}
-
-			const int receive_result =
-				avcodec_receive_frame(m_video_codec_ctx, frame);
-			if (receive_result == AVERROR(EAGAIN) ||
-				receive_result == AVERROR_EOF)
-			{
-				av_frame_free(&frame);
-				return true;
-			}
-			if (receive_result < 0)
-			{
-				av_frame_free(&frame);
-				char error[AV_ERROR_MAX_STRING_SIZE]{};
-				av_strerror(receive_result, error, sizeof(error));
-				m_video_frames.set_error(
-					std::string("FFmpeg video receive failed: ") + error);
-				LOG(
-					"AVDecoderFFMPEG::decode_video_frame - receive failed: %s",
-					error);
-				return false;
-			}
-
-			FrameData framedata;
-			framedata.data = frame;
-			framedata.frame_time =
-				av_q2d(m_video_stream->time_base) *
-				static_cast<double>(frame->best_effort_timestamp);
-			if (std::abs(
-				framedata.frame_time - m_last_video_packet_time) < 1e-9)
-			{
-				LOG(
-					"SYNC duplicate video timestamp pts=%f",
-					framedata.frame_time);
-			}
-			m_last_video_packet_time = framedata.frame_time;
-
-			if (!m_video_frames.try_push(std::move(framedata)))
-			{
-				av_frame_free(&frame);
-				m_video_frames.set_error("Decoded video queue is full.");
-				return false;
-			}
-		}
-	};
-
 	int send_result = avcodec_send_packet(m_video_codec_ctx, &m_packet);
 	if (send_result == AVERROR(EAGAIN))
 	{
 		// FFmpeg still owns output from an earlier packet. Drain that output,
 		// then retry this exact packet instead of silently dropping it.
 		LOG("AVDecoderFFMPEG::decode_video_frame - recovering send EAGAIN");
-		if (!receive_available_frames())
+		if (!receive_video_frames())
 			return false;
 		send_result = avcodec_send_packet(m_video_codec_ctx, &m_packet);
 	}
@@ -1003,7 +955,83 @@ bool AVDecoderFFMPEG::decode_video_frame()
 		return false;
 	}
 
-	return receive_available_frames();
+	return receive_video_frames();
+}
+
+bool AVDecoderFFMPEG::receive_video_frames()
+{
+	while (true)
+	{
+		AVFrame* frame = av_frame_alloc();
+		if (frame == nullptr)
+		{
+			m_video_frames.set_error(
+				"Could not allocate a decoded video frame.");
+			return false;
+		}
+
+		const int receive_result =
+			avcodec_receive_frame(m_video_codec_ctx, frame);
+		if (receive_result == AVERROR(EAGAIN) ||
+			receive_result == AVERROR_EOF)
+		{
+			av_frame_free(&frame);
+			return true;
+		}
+		if (receive_result < 0)
+		{
+			av_frame_free(&frame);
+			char error[AV_ERROR_MAX_STRING_SIZE]{};
+			av_strerror(receive_result, error, sizeof(error));
+			m_video_frames.set_error(
+				std::string("FFmpeg video receive failed: ") + error);
+			LOG(
+				"AVDecoderFFMPEG::receive_video_frames - failed: %s",
+				error);
+			return false;
+		}
+
+		FrameData framedata;
+		framedata.data = frame;
+		framedata.frame_time =
+			av_q2d(m_video_stream->time_base) *
+			static_cast<double>(frame->best_effort_timestamp);
+		if (std::abs(
+			framedata.frame_time - m_last_video_packet_time) < 1e-9)
+		{
+			LOG(
+				"SYNC duplicate video timestamp pts=%f",
+				framedata.frame_time);
+		}
+		m_last_video_packet_time = framedata.frame_time;
+
+		if (!m_video_frames.try_push(std::move(framedata)))
+		{
+			av_frame_free(&frame);
+			m_video_frames.set_error("Decoded video queue is full.");
+			return false;
+		}
+	}
+}
+
+bool AVDecoderFFMPEG::drain_video_decoder()
+{
+	int send_result = avcodec_send_packet(m_video_codec_ctx, nullptr);
+	if (send_result == AVERROR(EAGAIN))
+	{
+		if (!receive_video_frames())
+			return false;
+		send_result = avcodec_send_packet(m_video_codec_ctx, nullptr);
+	}
+	if (send_result < 0 && send_result != AVERROR_EOF)
+	{
+		char error[AV_ERROR_MAX_STRING_SIZE]{};
+		av_strerror(send_result, error, sizeof(error));
+		m_video_frames.set_error(
+			std::string("FFmpeg video drain failed: ") + error);
+		return false;
+	}
+	return receive_video_frames();
 }
 void AVDecoderFFMPEG::clean_frame_data()
 {
@@ -1120,6 +1148,7 @@ bool AVDecoderFFMPEG::perform_seek(double time)
 	m_playback_generation.fetch_add(1, std::memory_order_acq_rel);
 	m_last_video_packet_time = -1.0;
 	m_last_geometry_packet_time = -1.0;
+	m_video_decoder_drained = false;
 	m_decoder_state = DECODING;
 
 	return true;

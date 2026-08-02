@@ -53,6 +53,7 @@ or headers in the native core.
 
 | Interface | Responsibility |
 | --- | --- |
+| `AdaptivePlayerCoordinator` | Retains active playback while a generation-safe candidate session opens, seeks, primes, and commits atomically at an aligned boundary. |
 | `OpenVolumetricPlayer` | Owns media and geometry decoding, seeking, timestamp matching, and complete CPU-side presentations. |
 | `IAVDecoder` | Opens the combined MP4 and supplies timestamped YUV video, PCM audio, and compressed geometry. |
 | `IGeometryDecoder` | Converts generation-tagged Draco payloads into timestamped engine-neutral `Mesh` values. |
@@ -70,17 +71,16 @@ decode or synchronization policy.
 
 An adapter follows this order:
 
-1. Create one coordinator instance for one volumetric player.
-2. Create its media decoder, geometry decoder, texture uploader, and mesh
-   uploader.
-3. Open the combined MP4 through `IAVDecoder::init()`.
-4. Initialize the geometry decoder.
-5. Read `VideoInfo` and `AudioInfo`, then create engine texture, mesh, and
-   audio resources.
-6. Start the media and geometry workers.
-7. Submit presentation time from one monotonic engine playback clock.
-8. On shutdown, stop and join both workers before destroying queues, codec
-   state, graphics resources, or the coordinator.
+1. Create one `AdaptivePlayerCoordinator` per engine player.
+2. Resolve a direct MP4 or select the initial representation from a manifest.
+3. Call `open()` and read `OpenVolumetricMediaInfo`.
+4. Create engine texture, mesh, and audio resources.
+5. Call `start()` to launch the core media and geometry workers.
+6. Poll owned `OpenVolumetricPresentation` values from one monotonic engine
+   playback clock and pull PCM through `read_audio()`.
+7. Request adaptive candidates only at manifest-declared aligned boundaries.
+8. On shutdown, call `close()` before releasing engine graphics/audio objects;
+   it cancels input, joins preparation and decode workers, and is idempotent.
 
 Partially initialized instances must remain destructible. Engine teardown must
 not release graphics resources while an engine render command can still refer
@@ -93,31 +93,33 @@ to them.
 | Engine/game thread | Playback state, presentation-clock updates, and synchronous seek requests. |
 | Core demux thread | The only caller of container read/seek and the only mutator of FFmpeg container and codec state during playback. |
 | Core geometry worker | Draco decode and publication of completed CPU meshes. |
-| Engine render thread | Select a complete presentation, upload YUV planes and mesh data, then release consumed frames. |
-| Engine audio thread | Call `IAVDecoder::read_audio()` to pull interleaved floating-point PCM; never block on rendering or seeking. |
+| Engine render thread | Unity uploads the complete presentation selected by its native façade; do not retain engine graphics handles past teardown. |
+| Engine audio thread | Call the coordinator's `read_audio()` to pull interleaved floating-point PCM; never initiate rendering or seeking. |
+| Adaptive preparation worker | Open, seek, start, and prime one candidate player; publish only when its generation is current. |
+| HTTP byte-source worker | Fetch demanded ranges and bounded fragment read-ahead without mutating decoder state. |
 
-An adapter must not invoke FFmpeg, manipulate core queues, or mutate decoder
-state from an engine thread. Runtime seeks are submitted through
-`IAVDecoder::seek()` and executed synchronously by the demux thread between
-packet reads.
+An adapter must not invoke FFmpeg or manipulate core queues from an engine
+thread. Runtime seeks are submitted through `AdaptivePlayerCoordinator::seek()`
+and executed synchronously by the active player between packet reads.
 
 ## Presentation contract
 
 The engine supplies seconds from the same monotonic clock used to schedule
 audio:
 
-1. Publish the current engine clock to the engine adapter.
-2. Move compressed geometry up to the look-ahead limit into the Draco worker.
-3. Select video by PTS using half a source-frame interval plus 0.1 ms.
-4. Match decoded geometry against the selected video PTS using the same
+1. Poll the coordinator with the current engine clock.
+2. The player moves compressed geometry up to its look-ahead limit.
+3. The player selects video by PTS using half a source-frame interval plus
+   0.1 ms.
+4. It matches decoded geometry against the selected video PTS using the same
    tolerance.
-5. Upload texture and mesh only when both return `FrameMatchResult::Ready`.
-6. Keep the previous complete presentation visible while either side returns
+5. It copies YUV planes and the mesh into one owned
+   `OpenVolumetricPresentation` only when both are ready.
+6. The adapter uploads texture and mesh from that same presentation.
+7. Keep the previous complete presentation visible while either side returns
    `NotReady`.
-7. Drop and diagnose a sample that returns `Missing`; never combine texture
+8. Drop and diagnose a sample that returns `Missing`; never combine texture
    and geometry from different timestamp windows.
-8. After upload, call `clean_frame_data()` and `clear_frame_data()` exactly
-   once to release the selected video and mesh.
 
 Frame numbers are diagnostic metadata and must not be used as the primary
 synchronization key.
@@ -126,26 +128,23 @@ synchronization key.
 
 | Data | Owner and validity |
 | --- | --- |
-| Y, U, V pointers returned by `get_video_data()` | Owned by the media decoder. Valid only until the selected frame is cleaned, a seek/reset completes, or the decoder is destroyed. Upload immediately; do not retain them in engine objects. |
-| `Mesh` returned by `get_mesh_data()` | CPU value copied from the geometry queue. The adapter may use it during the current upload, but should not retain unbounded historical meshes. |
-| Output passed to `read_audio()` | Owned by the engine caller. The core fills available samples and writes silence for an underrun. |
+| `OpenVolumetricPresentation` Y/U/V vectors and `Mesh` | Owned by the caller after `presentation()` returns `Ready`; valid independently of decoder queues and safe to translate immediately into engine resources. |
+| Output passed to coordinator `read_audio()` | Owned by the engine caller. The core fills available samples and writes silence for an underrun. |
 | Compressed geometry payload | Owned while moving between core queues; an engine adapter never retains or modifies it. |
 | Graphics handles passed to `ITexture`/`IMeshBuffer` | Owned by the engine. The platform uploader may use them only under the engine's render-thread rules. |
 
-The present pointer-returning video API requires the adapter to ensure that a
-render upload cannot overlap destruction. A future façade should prefer an
-explicit presentation lease or copied/upload callback, but adapters must
-honour the lifetime above until that change is made.
+The lower-level decoder interfaces still expose borrowed video pointers
+internally, but engine integrations consume copied façade presentations and
+must not bypass `OpenVolumetricPlayer` to retain those pointers.
 
 ## Seeking and looping
 
 - The engine clock chooses the target time and loop boundary.
-- `IAVDecoder::seek()` pauses packet production on the demux thread, seeks the
+- Coordinator/player seek pauses packet production on the demux thread, seeks the
   MP4, flushes codecs, clears staged media/geometry, resets audio, and advances
   the playback generation.
-- The adapter resets `IGeometryDecoder` to that generation.
-- For a running player, call `prepare_presentation()` so decode advances from
-  the preceding video keyframe until matching video and geometry are ready.
+- The player resets geometry decoding to that generation and decodes forward
+  from the preceding access point until matching video and geometry are ready.
 - Audio decoded before the requested target is discarded during preroll.
 - Do not implement a second automatic rewind in an engine adapter or another
   worker thread.
@@ -158,8 +157,9 @@ adapters should attach this message to their normal logging and error UI.
 samples. An adapter must treat malformed input as a controlled playback
 failure rather than continuing with stale pointers.
 
-Structured counters are a future API improvement. Engine integrations should
-not parse log text as a data interface.
+Structured buffer, recovery, fragment, adaptive-switch, audio-underrun, and
+transfer-throughput counters are exposed through the façade. Engine
+integrations must not parse log text as a data interface.
 
 ## Unreal implementation
 
@@ -194,15 +194,9 @@ tests, and Unreal Android/Quest support remain outstanding.
 
 ## Public-boundary improvement backlog
 
-These changes can improve the adapter API without changing the file format:
+These changes can further improve the adapter API without changing the file
+format:
 
-- replace raw owned members with factories and RAII smart pointers;
-- expose a single engine-neutral player façade instead of concrete decoder
-  construction;
 - replace `void*` graphics handles with adapter-owned upload callbacks;
-- introduce a presentation lease that makes video-plane lifetime explicit;
-- expose structured synchronization, queue, and drop counters;
+- expose additional structured synchronization, queue, and drop counters;
 - make lifecycle/state queries thread-safe and strongly typed.
-
-Until those improvements are implemented, the rules in this document are the
-required integration contract.

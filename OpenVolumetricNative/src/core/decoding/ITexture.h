@@ -20,14 +20,13 @@ public:
 	virtual int init(void* handler, unsigned int width, unsigned int height) = 0;
 
 	/// Returns backend resource handles that the engine can wrap.
-	virtual void getResourcePointers(void*& ptry, void*& ptru, void*& ptrv) = 0;
+	virtual void get_resource_pointers(void*& y, void*& u, void*& v) = 0;
 
 	/// Registers handles returned after the engine creates external textures.
 	///
 	/// Vulkan requires this second handshake because Unity owns the images.
 	/// Backends that expose their own resources intentionally use this no-op.
-	virtual void registerResourcePointers(
-		void* ptry, void* ptru, void* ptrv) {}
+	virtual void register_resource_pointers(void*, void*, void*) {}
 	
 	/// Copies one decoded YUV420P frame into the three GPU texture planes.
 	virtual void upload(unsigned char* ych, unsigned char* uch, unsigned char* vch) = 0;
@@ -36,10 +35,10 @@ public:
 	virtual void destroy() = 0;
 
 	/// Alignment used by CPU-visible staging allocations.
-	static const unsigned int CPU_ALIGMENT = 64;
+	static constexpr unsigned int CPU_ALIGNMENT = 64;
 	
 	/// Number of planes in the supported YUV420P layout.
-	static const unsigned int TEXTURE_NUM = 3;
+	static constexpr unsigned int TEXTURE_COUNT = 3;
 };
 
 } // namespace openvolumetric

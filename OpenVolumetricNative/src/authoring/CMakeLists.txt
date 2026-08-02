@@ -18,6 +18,7 @@ target_include_directories(OpenVolumetricAuthoringCore
 
 target_link_libraries(OpenVolumetricAuthoringCore
   PUBLIC
+    OpenVolumetricBuildOptions
     OpenVolumetricCore
 )
 

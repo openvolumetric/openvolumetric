@@ -34,5 +34,17 @@
       "name": "pkgconf",
       "host": true
     }
-  ]
+  ],
+  "features": {
+    "tests": {
+      "description": "Dependencies for the native regression suite.",
+      "dependencies": [
+        {
+          "name": "doctest",
+          "version>=": "2.4.12",
+          "platform": "!android"
+        }
+      ]
+    }
+  }
 }

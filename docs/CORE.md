@@ -14,7 +14,13 @@ The source-level contract implemented by Unity and Unreal is documented in
 ## Runtime data flow
 
 ```text
-combined MP4
+local file or HTTP byte-range source
+    |
+    v
+fixed representation or AdaptivePlayerCoordinator
+    |
+    v
+combined fragmented MP4
     |
     v
 AVDecoderFFMPEG (one demux thread)
@@ -36,6 +42,14 @@ decoder matches its mesh against that video PTS. A presentation is exposed
 only when both are available. Unity uploads it through its native render
 callback; Unreal converts the same engine-neutral presentation into its
 dynamic mesh and transient texture resources.
+
+For an adaptive manifest, the engine selects an initial representation before
+opening this pipeline. `AdaptivePlayerCoordinator` retains the active
+`OpenVolumetricPlayer` while a private worker opens, seeks, and primes a second
+player. A generation token prevents cancelled work from publishing. The
+coordinator exchanges complete sessions at an aligned fragment boundary; an
+audio-bearing switch is committed inside the PCM read so the old and new
+sessions divide one DSP block at the exact boundary sample.
 
 ## Timestamp synchronization
 
@@ -68,6 +82,10 @@ dynamic mesh and transient texture resources.
 - `decoding/` contains interfaces and coordinates media, geometry, and
   platform upload components.
 - `support/` contains shared utilities such as logging.
+- `io/` owns local and HTTP byte sources, fragmented-MP4 indexing, bounded
+  caching, retry state, and completed-range transfer diagnostics.
+- `adaptive/` parses the versioned package manifest and performs deterministic
+  startup representation selection.
 
 ## Threading and ownership
 
@@ -97,9 +115,19 @@ dynamic mesh and transient texture resources.
 - Every seek or loop advances a playback generation. Compressed and decoded
   geometry carry that generation, allowing a Draco result that completed
   during a reset to be discarded instead of appearing in the next loop.
-- At natural end-of-stream, queued tail frames remain available to consumers.
+- At natural end-of-stream, the demux owner sends FFmpeg's video drain marker
+  and receives codec-delayed frames before publishing queue end-of-stream, so
+  short clips and the final decoder-delay window remain presentable. Queued
+  tail frames remain available to consumers.
   The engine playback clock explicitly seeks all native streams at its loop
   boundary, clearing old video, geometry, and audio state together.
+- Adaptive candidate preparation has one private worker owned and joined by
+  `AdaptivePlayerCoordinator`. The active player continues decoding until a
+  complete compatible candidate is ready; close, seek, cancellation, and a
+  newer request invalidate the previous generation before joining it.
+- HTTP downloading has one byte-source worker and a byte-budgeted cache.
+  Container reads block only on the requested range, while speculative
+  fragment read-ahead yields to demanded reads.
 
 ## Container validation
 

@@ -44,6 +44,12 @@ public class OpenVolumetricRuntime : ModuleRules
 					Path.Combine(NativeRoot, "src", "core", "support")
 				});
 			PublicSystemIncludePaths.Add(Path.Combine(Installed, "include"));
+			string CoreArchive = Path.Combine(
+				NativeBuild, "src", "core", "libOpenVolumetricCore.a");
+			// UnrealBuildTool does not otherwise notice that an externally built
+			// static archive changed, which can leave the Editor linked to a stale
+			// core implementation after a successful native rebuild.
+			ExternalDependencies.Add(CoreArchive);
 
 			PublicAdditionalLibraries.AddRange(
 				new[]
@@ -51,7 +57,7 @@ public class OpenVolumetricRuntime : ModuleRules
 					// The core archive owns FFmpeg, Draco, and HTTP transport;
 					// rebuild it before Unreal so this module links the current
 					// runtime, then list every dependency required by that boundary.
-					Path.Combine(NativeBuild, "src", "core", "libOpenVolumetricCore.a"),
+					CoreArchive,
 					Path.Combine(Installed, "lib", "libavformat.a"),
 					Path.Combine(Installed, "lib", "libavcodec.a"),
 					Path.Combine(Installed, "lib", "libswresample.a"),

@@ -1321,6 +1321,7 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             Description = description;
         }
 
+        /// <summary>Converts the editor preset into the stable native ABI layout.</summary>
         public NativeEncodingSettings ToNative()
         {
             return new NativeEncodingSettings
@@ -1341,6 +1342,7 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             };
         }
 
+        /// <summary>Creates editor settings from a shared native preset.</summary>
         public static EncodingSettings FromNative(
             NativeEncodingSettings settings,
             string description)

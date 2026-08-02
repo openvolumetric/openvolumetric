@@ -55,7 +55,7 @@ int TextureVulkan::init(
     m_widths = {width, width / 2, width / 2};
     m_heights = {height, height / 2, height / 2};
     m_upload_size = 0;
-    for (unsigned int i = 0; i < TEXTURE_NUM; ++i)
+    for (unsigned int i = 0; i < TEXTURE_COUNT; ++i)
     {
         m_offsets[i] = m_upload_size;
         m_upload_size +=
@@ -83,7 +83,8 @@ bool TextureVulkan::create_image(
     unsigned int width,
     unsigned int height)
 {
-    VkImageCreateInfo image_info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    VkImageCreateInfo image_info{};
+    image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     image_info.imageType = VK_IMAGE_TYPE_2D;
     image_info.format = VK_FORMAT_R8_UNORM;
     image_info.extent = {width, height, 1};
@@ -112,7 +113,8 @@ bool TextureVulkan::create_image(
             memory_type))
         return false;
 
-    VkMemoryAllocateInfo allocation{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    VkMemoryAllocateInfo allocation{};
+    allocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocation.allocationSize = requirements.size;
     allocation.memoryTypeIndex = memory_type;
     if (vkAllocateMemory(
@@ -128,7 +130,7 @@ bool TextureVulkan::create_image(
                0) == VK_SUCCESS;
 }
 
-void TextureVulkan::getResourcePointers(
+void TextureVulkan::get_resource_pointers(
     void*& y,
     void*& u,
     void*& v)
@@ -139,7 +141,7 @@ void TextureVulkan::getResourcePointers(
     v = &m_images[2];
 }
 
-void TextureVulkan::registerResourcePointers(
+void TextureVulkan::register_resource_pointers(
     void* y,
     void* u,
     void* v)
@@ -180,18 +182,18 @@ void TextureVulkan::upload(
         return;
     }
 
-    const unsigned char* planes[TEXTURE_NUM] = {y, u, v};
+    const unsigned char* planes[TEXTURE_COUNT] = {y, u, v};
     auto* destination =
         static_cast<unsigned char*>(slot->upload.mapped());
-    for (unsigned int i = 0; i < TEXTURE_NUM; ++i)
+    for (unsigned int i = 0; i < TEXTURE_COUNT; ++i)
     {
         const std::size_t length =
             static_cast<std::size_t>(m_widths[i]) * m_heights[i];
         std::memcpy(destination + m_offsets[i], planes[i], length);
     }
 
-    std::array<UnityVulkanImage, TEXTURE_NUM> images{};
-    for (unsigned int i = 0; i < TEXTURE_NUM; ++i)
+    std::array<UnityVulkanImage, TEXTURE_COUNT> images{};
+    for (unsigned int i = 0; i < TEXTURE_COUNT; ++i)
     {
         if (m_unity_texture_handles[i] == nullptr)
         {
@@ -217,7 +219,7 @@ void TextureVulkan::upload(
             &state,
             kUnityVulkanGraphicsQueueAccess_DontCare))
         return;
-    for (unsigned int i = 0; i < TEXTURE_NUM; ++i)
+    for (unsigned int i = 0; i < TEXTURE_COUNT; ++i)
     {
         VkBufferImageCopy copy{};
         copy.bufferOffset = m_offsets[i];
@@ -233,7 +235,7 @@ void TextureVulkan::upload(
             &copy);
     }
 
-    for (unsigned int i = 0; i < TEXTURE_NUM; ++i)
+    for (unsigned int i = 0; i < TEXTURE_COUNT; ++i)
     {
         UnityVulkanImage image{};
         if (!m_unity_vulkan->AccessTexture(
@@ -260,7 +262,7 @@ void TextureVulkan::destroy()
         slot.frame = 0;
         slot.used = false;
     }
-    for (unsigned int i = 0; i < TEXTURE_NUM; ++i)
+    for (unsigned int i = 0; i < TEXTURE_COUNT; ++i)
     {
         if (m_instance.device != VK_NULL_HANDLE &&
             m_images[i] != VK_NULL_HANDLE)

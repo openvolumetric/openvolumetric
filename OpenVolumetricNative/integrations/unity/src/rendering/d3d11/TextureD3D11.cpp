@@ -18,7 +18,7 @@ void TextureD3D11::destroy()
 	m_width_y = m_height_y = m_length_y = 0;
 	m_width_uv = m_height_uv = m_length_uv = 0;
 
-	for (int i = 0; i < TEXTURE_NUM; i++) {
+	for (int i = 0; i < TEXTURE_COUNT; i++) {
 		if (m_textures[i] != nullptr) {
 			m_textures[i]->Release();
 			m_textures[i] = nullptr;
@@ -43,7 +43,7 @@ int TextureD3D11::init(void* handler, unsigned int width, unsigned int height)
 
 	m_device = (ID3D11Device*)handler;
 	
-	m_width_y = (unsigned int)(ceil((float)width / CPU_ALIGMENT) * CPU_ALIGMENT);
+	m_width_y = (unsigned int)(ceil((float)width / CPU_ALIGNMENT) * CPU_ALIGNMENT);
 	m_height_y = height;
 	m_length_y = m_width_y * m_height_y;
 
@@ -113,7 +113,7 @@ int TextureD3D11::init(void* handler, unsigned int width, unsigned int height)
 	return 1;
 }
 
-void TextureD3D11::getResourcePointers(void*& ptry, void*& ptru, void*& ptrv)
+void TextureD3D11::get_resource_pointers(void*& ptry, void*& ptru, void*& ptrv)
 {
 	if (m_device == nullptr)
 	{
@@ -135,8 +135,8 @@ void TextureD3D11::upload(unsigned char* ych, unsigned char* uch, unsigned char*
 	ID3D11DeviceContext* ctx = nullptr;
 	m_device->GetImmediateContext(&ctx);
 
-	D3D11_MAPPED_SUBRESOURCE mappedResource[TEXTURE_NUM];
-	for (int i = 0; i < TEXTURE_NUM; i++) {
+	D3D11_MAPPED_SUBRESOURCE mappedResource[TEXTURE_COUNT];
+	for (int i = 0; i < TEXTURE_COUNT; i++) {
 		ZeroMemory(&(mappedResource[i]), sizeof(D3D11_MAPPED_SUBRESOURCE));
 		ctx->Map(m_textures[i], 0, D3D11_MAP_WRITE_DISCARD, 0, &(mappedResource[i]));
 	}
@@ -193,7 +193,7 @@ void TextureD3D11::upload(unsigned char* ych, unsigned char* uch, unsigned char*
 		UVThread.join();
 	}
 
-	for (int i = 0; i < TEXTURE_NUM; i++) {
+	for (int i = 0; i < TEXTURE_COUNT; i++) {
 		ctx->Unmap(m_textures[i], 0);
 	}
 	ctx->Release();

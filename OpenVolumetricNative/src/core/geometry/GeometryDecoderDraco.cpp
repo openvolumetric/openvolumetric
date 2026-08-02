@@ -223,12 +223,19 @@ bool GeometryDecoderDraco::decode()
 		if (!decoded)
 		{
 			m_decode_active.store(false, std::memory_order_release);
-			m_decoded_meshes.set_error(
-				"Draco geometry frame could not be decoded.");
 			LOG(
-				"GeometryDecoderDraco::decode - failed at pts=%f",
+				"GeometryDecoderDraco::decode - dropping corrupt frame at pts=%f; "
+				"recovery requires the next independent mesh",
 				encoded.presentation_time);
-			return false;
+			// A corrupt independent sample invalidates the topology window. A
+			// corrupt update cannot be trusted as a reference either. Continue
+			// consuming so the next self-contained Draco mesh can recover the
+			// synchronized presentation stream without restarting the player.
+			m_topology_mesh = {};
+			m_topology_id = 0;
+			m_topology_keyframe = 0;
+			m_topology_generation = 0;
+			return true;
 		}
 
 		MeshData mesh_data;

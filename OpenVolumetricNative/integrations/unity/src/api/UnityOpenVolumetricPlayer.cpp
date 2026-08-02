@@ -158,7 +158,7 @@ OpenVolumetricAudioBufferInfo UnityOpenVolumetricPlayer::audio_buffer_info() con
 	return m_player.audio_buffer_info();
 }
 
-const std::string& UnityOpenVolumetricPlayer::error() const
+std::string UnityOpenVolumetricPlayer::error() const
 {
 	return m_player.error();
 }

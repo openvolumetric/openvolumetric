@@ -356,8 +356,8 @@ seeking rules, validation matrix, and phased implementation are recorded in
 
 **Status: complete (31 July 2026).**
 
-The complete progressive-download, fragmented-MP4, adaptive-selection,
-threading, recovery, authoring, and validation design is recorded in
+The complete progressive-download, fragmented-MP4, transport, threading,
+recovery, authoring, and validation design is recorded in
 [STREAMING_AND_ADAPTATION.md](STREAMING_AND_ADAPTATION.md).
 
 - [x] Add an engine-independent byte/segment source beneath the MP4
@@ -452,6 +452,11 @@ threading, recovery, authoring, and validation design is recorded in
       representation, switch-latency, and recovery measurements.
 - [ ] Measure startup delay, rebuffering, quality, wasted bytes, memory,
       synchronization error, and decode cost on desktop and Quest hardware.
+- [ ] Move the currently mirrored Unity/Unreal live adaptation thresholds and
+      timers into one engine-neutral core policy before adding more than two
+      representations. Startup selection and atomic switching are already
+      core-owned; centralizing the remaining decision state will prevent the
+      engine integrations from drifting.
 
 ### Milestone 13 exit criteria
 
@@ -467,11 +472,227 @@ threading, recovery, authoring, and validation design is recorded in
 - Local, progressive, fixed-fragmented, and adaptive inputs share the same
   core decoding and presentation architecture.
 
+## Milestone 14: Architecture hardening and public SDK readiness
+
+This milestone consolidates policy, stabilizes integration boundaries, and
+adds regression protection before further engine or delivery features expand
+the public surface. Each phase must preserve the currently validated local,
+HTTP, fragmented, adaptive, temporal-geometry, Unity, Unreal, and native-DSP
+audio behavior. Structural changes should be small enough to validate and
+commit independently.
+
+### Phase 1: Regression baseline and automated checks (complete)
+
+- [x] Record a small generated texture/audio/temporal-geometry lifecycle
+      fixture and its regeneration process.
+- [x] Add independent-geometry, fragmented, adaptive, and no-audio fixtures as
+      their integration tests are introduced. Keep large media
+      outside normal Git history where necessary and document how to obtain or
+      regenerate it.
+- [x] Add focused native tests for geometry-packet round trips, malformed
+      packets, temporal references, fragment indexing, manifest parsing, and
+      representation selection.
+- [x] Add generated topology-identity coverage proving that position-only
+      motion retains topology while UV or triangle-order changes do not.
+- [x] Add decoded temporal-topology seek and corrupt-dependent recovery tests.
+      Adaptive-policy state tests remain intentionally coupled to the Phase 2
+      engine-neutral policy rather than locking in duplicated engine behavior.
+- [x] Add local byte-source read, seek, invalid-range, cancellation, missing
+      input, and diagnostics tests without committed binary fixtures.
+- [x] Add failed-open, partial rollback, and repeated stop/close lifecycle
+      coverage.
+- [x] Add lifecycle tests covering partial open failure, repeated start/stop,
+      seek while active, end-of-stream restart, close after failure, and
+      repeated destruction.
+- [x] Add controlled byte-source transport tests for ranged reads and seeks,
+      truncated responses, transient failure recovery, retry exhaustion, and
+      cancellation of an in-flight delayed request.
+- [x] Add end-to-end player tests for corrupt media/geometry delivery and
+      synchronized recovery at the next valid presentation access point.
+- [x] Add CI jobs for warnings-as-errors checks and clean native builds on
+      macOS, Windows, Linux, and Android ARM64 where hosted runners and SDK
+      licensing permit them.
+- [x] Keep engine smoke tests separate from fast core tests. Document the
+      manual Unity, Quest, and Unreal acceptance procedure until reliable
+      engine automation is available.
+
+Phase 1 local validation completed on macOS with 17 native cases and 190
+assertions, all controlled HTTP transport scenarios, a warnings-as-errors
+native/Unity plug-in build, ASan/UBSan, and an Android ARM64 warnings-as-errors
+build. GitHub Actions owns clean Linux, Windows, macOS, Linux sanitizer, and
+Android ARM64 validation on pushed changes; engine/device acceptance remains
+the documented manual gate.
+
+### Phase 2: One engine-neutral adaptive policy
+
+- [ ] Introduce a core `AdaptivePolicy` that consumes representation metadata,
+      transport/buffer observations, monotonic time, and switch outcomes.
+- [ ] Make the policy return explicit stay, switch, or retry-later decisions;
+      keep resource opening and boundary-safe commits in
+      `AdaptivePlayerCoordinator`.
+- [ ] Move throughput smoothing, safety factors, downgrade/upgrade dwell
+      times, failure backoff, and recovery state out of Unity and Unreal.
+- [ ] Generalize decisions from the current lowest/highest pair to adjacent
+      movement through an arbitrary capability-compatible representation
+      ladder.
+- [ ] Preserve manual representation selection as a deterministic override of
+      automatic policy.
+- [ ] Feed identical scripted observations through the core policy and verify
+      identical decisions when called through Unity and Unreal.
+- [ ] Remove the temporary adaptive-policy exception from
+      `CODING_STYLE.md` after both engines become policy consumers only.
+
+### Phase 3: Stable native API and error model
+
+- [ ] Define an opaque, versioned native player handle and a result enum that
+      distinguishes invalid input, unsupported format, corruption, network
+      failure, timeout, cancellation, decoder failure, and internal failure.
+- [ ] Replace C++ references and ABI-dependent types in exported C functions
+      with pointers, fixed-width integers, versioned value structs, and
+      explicit success/failure values.
+- [ ] Replace snapshot-then-get thread-local adaptive diagnostics with one
+      atomic value snapshot and caller-owned string buffers.
+- [ ] Define string, handle, callback, and returned-buffer ownership and
+      lifetime rules in the public header.
+- [ ] Retain detailed human-readable error messages alongside stable error
+      categories.
+- [ ] Add an API-version query and compatibility policy before declaring the
+      ABI stable. Migrate Unity atomically; do not maintain two permanent
+      runtime APIs while the project remains pre-release.
+- [ ] Return immutable metadata snapshots by value so open/close cannot race a
+      borrowed reference advertised as thread-safe.
+
+### Phase 4: Enforce core and engine boundaries
+
+- [ ] Move `ITexture` and `IMeshBuffer` from `src/core/decoding` into the Unity
+      rendering integration because their contracts describe Unity graphics
+      resources rather than engine-neutral decoding.
+- [ ] Keep the core presentation boundary as owned CPU texture planes, mesh
+      data, timestamps, audio samples, and diagnostics with no Unity or Unreal
+      concepts.
+- [ ] Add narrow internal construction seams or factories for byte sources,
+      containers, and decoders so tests can supply deterministic substitutes
+      without introducing a general dependency-injection framework.
+- [ ] Verify public core headers compile without Unity or Unreal include paths.
+- [ ] Verify engine modules depend on public core façades rather than concrete
+      FFmpeg, Draco, container, or transport implementations.
+
+### Phase 5: Decompose engine orchestration
+
+- [ ] Reduce the Unity `OpenVolumetric` component to serialized configuration,
+      public controls, and lifecycle orchestration. Extract source resolution,
+      playback/DSP clock coordination, recovery, and metrics into private
+      single-purpose managed classes.
+- [ ] Keep `OpenVolumetricDecoder` as the disposable managed wrapper around the
+      stable native API; keep Unity objects and graphics work on their required
+      engine threads.
+- [ ] Reduce Unreal `UOpenVolumetricComponent` to the public Blueprint/component
+      surface and lifecycle. Extract source resolution, playback clock,
+      recovery, metrics, and presentation upload into private plain C++
+      helpers where Unreal ownership permits it.
+- [ ] Keep adaptive decisions in the core rather than recreating policy in an
+      extracted Unity or Unreal helper.
+- [ ] Split the Unity and Unreal authoring windows into UI state, validation,
+      job/process execution, and progress reporting while continuing to use
+      shared native presets, validation, FFmpeg argument construction, Draco
+      encoding, packaging, and verification.
+- [ ] Preserve serialized Unity fields and Unreal reflected properties through
+      the refactor so existing scenes, prefabs, assets, and Blueprints load
+      unchanged.
+
+### Phase 6: Rendering and allocation cleanup
+
+- [ ] Remove per-frame D3D11 thread creation from texture and mesh uploads;
+      benchmark direct render-thread copies before considering persistent
+      workers or GPU staging paths.
+- [ ] Check every graphics map, resource creation, and upload result and report
+      a stable error instead of dereferencing an invalid mapping.
+- [ ] Reuse Unreal texture-upload storage and region descriptions to avoid
+      avoidable allocation churn.
+- [ ] Profile Unreal CPU YUV conversion and implement an RHI/native planar path
+      only when measurements justify the added platform complexity.
+- [ ] Document render-resource ownership, valid threads, synchronization, and
+      destruction order for Metal, D3D11, Vulkan, and Unreal RHI uploads.
+- [ ] Compare frame time, allocations, memory, and synchronization before and
+      after each rendering change; do not accept speculative optimizations that
+      regress correctness or clarity.
+
+### Phase 7: Logging, diagnostics, and internal maintainability
+
+- [ ] Replace the manually allocated logger singleton and process-wide stdout
+      redirection with a thread-safe function-local service and optional host
+      callback carrying level, message, and user context.
+- [ ] Route native messages through Unity, Unreal, Android, or a test sink
+      without adding engine dependencies to the core.
+- [ ] Keep high-frequency decode and audio paths free of unbounded formatting,
+      allocation, or engine callbacks.
+- [ ] Internally separate FFmpeg packet routing, audio conversion, and queue
+      management where doing so clarifies invariants, while retaining one
+      owner for mutable demux and codec state.
+- [ ] Replace narrative or statement-repeating legacy comments with API,
+      ownership, threading, invariant, and non-obvious-decision documentation.
+- [ ] Apply the documented C++, C#, and Unreal style rules to every file
+      materially changed by this milestone; avoid a behavior-changing global
+      formatting rewrite.
+
+### Phase 8: Packaging and SDK consumption
+
+- [ ] Add CMake install/export rules and a namespaced
+      `OpenVolumetric::Core` package target with a deliberate public-header
+      set.
+- [ ] Stop requiring consumers to enumerate internal source include
+      directories.
+- [ ] Generalize Unreal build rules and staged dependencies for macOS and
+      Windows first, then Android/Quest if Unreal Quest support becomes a
+      release target.
+- [ ] Remove source-repository-relative native library assumptions from the
+      distributable Unreal plugin.
+- [ ] Define supported compiler, architecture, engine, FFmpeg, Draco, Android
+      SDK/NDK, and operating-system versions in one compatibility document.
+- [ ] Validate installation and consumption from a clean directory rather than
+      only from the monorepo build tree.
+
+### Validation gates
+
+After every phase:
+
+- [ ] Build the native core and authoring library cleanly with warnings enabled.
+- [ ] Run all native tests and the relevant controlled transport tests.
+- [ ] Confirm local, fragmented HTTP, adaptive, seek, loop, pause/resume,
+      end/restart, audio synchronization, and temporal geometry behavior on
+      the integrations affected by that phase.
+- [ ] Run AddressSanitizer and UndefinedBehaviorSanitizer on a supported native
+      desktop configuration; use platform graphics/debug validation where
+      available.
+- [ ] Update the technical overview, core/API documentation, engine integration
+      guide, coding conventions, and release notes in the same change.
+- [ ] Commit the phase independently only after its supported-platform matrix
+      passes, so a structural regression can be bisected or reverted cleanly.
+
+### Milestone 14 exit criteria
+
+- Unity and Unreal consume one tested engine-neutral adaptive policy and do not
+  duplicate synchronization, recovery, or representation-selection rules.
+- The native integration boundary is a documented, versioned C ABI with
+  explicit ownership, thread, lifetime, and error semantics.
+- Engine-specific rendering contracts no longer reside in the core.
+- Core state machines and format parsing have automated regression coverage,
+  and clean supported-platform builds run continuously or through documented
+  reproducible procedures.
+- Large engine classes have clear single-purpose collaborators without
+  changing the public user workflow or serialized content.
+- Windows D3D11 uploads do not create threads per frame, and recurring upload
+  storage is reused where profiling demonstrates value.
+- The logger is host-routable and safe under concurrent decoder activity.
+- A consumer can install and link the core, and package the supported Unity and
+  Unreal integrations, without relying on the repository's internal build-tree
+  layout.
+
 ## Test matrix
 
 - [x] MP4 with HEVC, AAC, and geometry.
 - [x] MP4 with HEVC and geometry but no audio.
-- [ ] First, middle, and final geometry samples decode correctly.
+- [x] First, middle, and final geometry samples decode correctly.
 - [x] Payload corruption produces a controlled error.
 - [ ] Missing geometry samples follow documented behavior.
 - [ ] Geometry and video frame-count mismatch is detected by the packer.
