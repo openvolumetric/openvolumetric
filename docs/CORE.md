@@ -87,13 +87,22 @@ coordinator's responsibility.
   plus compressed geometry extraction.
 - `geometry/` converts compressed Draco payloads into the engine-neutral
   `Mesh` representation.
-- `decoding/` contains interfaces and coordinates media, geometry, and
-  platform upload components.
+- `decoding/` contains the engine-neutral player façade and presentation
+  coordination. It exposes owned CPU texture planes, mesh values, timestamps,
+  audio, and diagnostics; platform upload contracts live in engine
+  integrations.
 - `support/` contains shared utilities such as logging.
 - `io/` owns local and HTTP byte sources, fragmented-MP4 indexing, bounded
   caching, retry state, and completed-range transfer diagnostics.
 - `adaptive/` parses the versioned package manifest and performs deterministic
   startup representation selection.
+
+The default player constructs FFmpeg media and Draco geometry decoders for
+production. Its internal owned-decoder constructor is a deliberately narrow
+test seam for deterministic `IAVDecoder` and `IGeometryDecoder` substitutes.
+At the lower boundary, containers accept an owned `IByteSource`, allowing file
+and HTTP behavior to be substituted without exposing their concrete classes
+to an engine adapter.
 
 ## Threading and ownership
 

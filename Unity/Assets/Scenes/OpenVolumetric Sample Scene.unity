@@ -136,7 +136,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &160012003
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -152,7 +152,7 @@ MonoBehaviour:
   videoFilename: 
   videoUrl: http://192.168.0.34:8000/manifest.json
   useAdaptiveManifest: 1
-  adaptiveQuality: 2
+  adaptiveQuality: 0
   adaptiveMaximumTextureDimension: 0
   adaptiveMaximumTextureBitrateMbps: 0
   adaptiveMaximumGeometryBitrateMbps: 0
@@ -646,7 +646,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &2024382031
 MonoBehaviour:
   m_ObjectHideFlags: 0

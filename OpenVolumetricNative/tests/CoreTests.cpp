@@ -59,6 +59,72 @@ private:
 	std::filesystem::path m_path;
 };
 
+class StubMediaDecoder final : public IAVDecoder
+{
+public:
+	StubMediaDecoder()
+	{
+		m_video_info.width = 8;
+		m_video_info.height = 4;
+		m_video_info.fps = 30.0;
+		m_video_info.total_time = 2.0;
+	}
+
+	bool init(const char*) override { ++init_count; return true; }
+	bool start_decoding() override { ++start_count; return true; }
+	bool stop_decoding() override { ++stop_count; return true; }
+	bool decode() override { return true; }
+	bool seek(double) override { return true; }
+	FrameMatchResult get_video_data(
+		double, double, double&, std::uint8_t**, std::uint8_t**,
+		std::uint8_t**) override { return FrameMatchResult::NotReady; }
+	bool copy_selected_video(
+		std::vector<std::uint8_t>&, std::vector<std::uint8_t>&,
+		std::vector<std::uint8_t>&) override { return false; }
+	int read_audio(float*, int) override { return 0; }
+	AudioBufferInfo audio_buffer_info() const override { return {}; }
+	bool has_embedded_geometry() const override { return true; }
+	bool get_geometry_data(double, EncodedGeometryFrame&) override { return false; }
+	bool geometry_end_of_stream() const override { return false; }
+	std::uint64_t playback_generation() const override { return 1; }
+	std::string get_last_error() const override { return {}; }
+	void cancel_pending_io() override { ++cancel_count; }
+	ByteSourceDiagnostics source_diagnostics() const override { return {}; }
+	void clean_frame_data() override {}
+	void destroy() override { ++destroy_count; }
+
+	int init_count = 0;
+	int start_count = 0;
+	int stop_count = 0;
+	int cancel_count = 0;
+	int destroy_count = 0;
+};
+
+class StubGeometryDecoder final : public IGeometryDecoder
+{
+public:
+	bool init() override { ++init_count; return true; }
+	bool start_decoding() override { ++start_count; return true; }
+	bool stop_decoding() override { ++stop_count; return true; }
+	bool submit_encoded_frame(
+		std::uint64_t, double, GeometryPacket) override { return true; }
+	bool can_accept_encoded_frame() const override { return true; }
+	std::string get_last_error() const override { return {}; }
+	void reset(std::uint64_t) override {}
+	void mark_end_of_stream(std::uint64_t) override {}
+	FrameMatchResult get_mesh_data(
+		double, double, double&, Mesh&) override {
+		return FrameMatchResult::NotReady;
+	}
+	void clear_frame_data() override {}
+	void destroy() override { ++destroy_count; }
+
+	int init_count = 0;
+	int start_count = 0;
+	int stop_count = 0;
+	int destroy_count = 0;
+};
+
 const char* kValidManifest = R"json(
 {
   "format": "openvolumetric-adaptive",
@@ -217,6 +283,30 @@ FrameMatchResult wait_for_terminal_presentation_result(
 }
 
 } // namespace
+
+TEST_CASE("player construction seam owns deterministic decoder substitutes")
+{
+	auto media = std::make_unique<StubMediaDecoder>();
+	auto geometry = std::make_unique<StubGeometryDecoder>();
+	StubMediaDecoder* media_observer = media.get();
+	StubGeometryDecoder* geometry_observer = geometry.get();
+	OpenVolumetricPlayer player(std::move(media), std::move(geometry));
+
+	REQUIRE(player.open("deterministic://presentation"));
+	CHECK(player.media_info().width == 8);
+	CHECK(player.media_info().height == 4);
+	CHECK(media_observer->init_count == 1);
+	CHECK(geometry_observer->init_count == 1);
+	REQUIRE(player.start());
+	CHECK(media_observer->start_count == 1);
+	CHECK(geometry_observer->start_count == 1);
+	player.stop();
+	CHECK(media_observer->stop_count == 1);
+	CHECK(geometry_observer->stop_count == 1);
+	player.close();
+	CHECK(media_observer->destroy_count == 2);
+	CHECK(geometry_observer->destroy_count == 2);
+}
 
 TEST_CASE("independent geometry packets round trip")
 {

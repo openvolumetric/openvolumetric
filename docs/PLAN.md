@@ -551,42 +551,63 @@ between independent engine consumers. Local validation completed with 21
 native cases and 233 assertions, the controlled HTTP suite, macOS and Android
 ARM64 native plug-in builds, and an Unreal Editor macOS build.
 
-### Phase 3: Stable native API and error model
+### Phase 3: Stable native API and error model (complete)
 
-- [ ] Define an opaque, versioned native player handle and a result enum that
+- [x] Define an opaque, versioned native player handle and a result enum that
       distinguishes invalid input, unsupported format, corruption, network
       failure, timeout, cancellation, decoder failure, and internal failure.
-- [ ] Replace C++ references and ABI-dependent types in exported C functions
+- [x] Replace C++ references and ABI-dependent types in exported C functions
       with pointers, fixed-width integers, versioned value structs, and
       explicit success/failure values.
-- [ ] Replace snapshot-then-get thread-local adaptive diagnostics with one
+- [x] Replace snapshot-then-get thread-local adaptive diagnostics with one
       atomic value snapshot and caller-owned string buffers.
-- [ ] Define string, handle, callback, and returned-buffer ownership and
+- [x] Define string, handle, callback, and returned-buffer ownership and
       lifetime rules in the public header.
-- [ ] Retain detailed human-readable error messages alongside stable error
+- [x] Retain detailed human-readable error messages alongside stable error
       categories.
-- [ ] Add an API-version query and compatibility policy before declaring the
+- [x] Add an API-version query and compatibility policy before declaring the
       ABI stable. Migrate Unity atomically; do not maintain two permanent
       runtime APIs while the project remains pre-release.
-- [ ] Return immutable metadata snapshots by value so open/close cannot race a
+- [x] Return immutable metadata snapshots by value so open/close cannot race a
       borrowed reference advertised as thread-safe.
 
-### Phase 4: Enforce core and engine boundaries
+Phase 3 replaces Unity's integer runtime API atomically with ABI version 1.0.0.
+Unity owns one opaque native handle and obtains a distinct integer only for
+`GL.IssuePluginEvent` routing. Media, transport/audio, adaptive-switch, and
+manifest-selection data cross the boundary through size-versioned caller-owned
+snapshots. Stable result categories accompany copied human-readable errors.
+See [NATIVE_API.md](NATIVE_API.md) for compatibility and ownership rules.
+Local validation passed the C/C++ public-header syntax check, ABI version and
+adaptive-selection smoke tests, Unity managed Roslyn compilation, 21 native
+cases with 233 assertions, warnings-as-errors macOS and Android ARM64 plug-in
+builds, and an Unreal Editor macOS build.
 
-- [ ] Move `ITexture` and `IMeshBuffer` from `src/core/decoding` into the Unity
+### Phase 4: Enforce core and engine boundaries (complete)
+
+- [x] Move `ITexture` and `IMeshBuffer` from `src/core/decoding` into the Unity
       rendering integration because their contracts describe Unity graphics
       resources rather than engine-neutral decoding.
-- [ ] Keep the core presentation boundary as owned CPU texture planes, mesh
+- [x] Keep the core presentation boundary as owned CPU texture planes, mesh
       data, timestamps, audio samples, and diagnostics with no Unity or Unreal
       concepts.
-- [ ] Add narrow internal construction seams or factories for byte sources,
+- [x] Add narrow internal construction seams or factories for byte sources,
       containers, and decoders so tests can supply deterministic substitutes
       without introducing a general dependency-injection framework.
-- [ ] Verify public core headers compile without Unity or Unreal include paths.
-- [ ] Verify engine modules depend on public core façades rather than concrete
+- [x] Verify public core headers compile without Unity or Unreal include paths.
+- [x] Verify engine modules depend on public core façades rather than concrete
       FFmpeg, Draco, container, or transport implementations.
 
-### Phase 5: Decompose engine orchestration
+Phase 4 moves Unity's graphics-resource contracts into
+`integrations/unity/src/rendering/common` and leaves the core presentation as
+caller-owned CPU YUV planes, mesh values, timestamps, PCM, and diagnostics.
+`OpenVolumetricPlayer` now has a narrow decoder-construction seam for
+deterministic tests, while byte sources remain injectable through the
+container interface. An isolated compile target checks the public core headers
+using only core include paths. Local validation passed 22 native cases with
+245 assertions, the HTTP transport suite, warnings-as-errors macOS and Android
+ARM64 builds, and the Unreal Editor macOS build.
+
+### Phase 5: Decompose engine orchestration (in progress)
 
 - [ ] Reduce the Unity `OpenVolumetric` component to serialized configuration,
       public controls, and lifecycle orchestration. Extract source resolution,
@@ -608,6 +629,16 @@ ARM64 native plug-in builds, and an Unreal Editor macOS build.
 - [ ] Preserve serialized Unity fields and Unreal reflected properties through
       the refactor so existing scenes, prefabs, assets, and Blueprints load
       unchanged.
+
+The first Phase 5 checkpoint extracts Unity source resolution, adaptive
+manifest interop, DSP/media clock calculation, lag-recovery policy, and CSV
+metrics into private managed collaborators. The serialized component and
+`OpenVolumetricDecoder` public surfaces are unchanged. Unreal local/HTTP and
+adaptive source resolution now lives in a private plain-C++ resolver which
+delegates manifest selection to the core. Unity managed compilation and an
+Unreal Editor macOS build pass at this checkpoint. Unreal clock, recovery,
+metrics/presentation extraction and both authoring-window decompositions remain
+before the phase is complete.
 
 ### Phase 6: Rendering and allocation cleanup
 

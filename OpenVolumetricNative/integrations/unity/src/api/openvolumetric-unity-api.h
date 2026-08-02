@@ -1,190 +1,226 @@
 #pragma once
 
-#include <Unity/IUnityInterface.h>
+#include <stdint.h>
 
-#define OPENVOLUMETRIC_API UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
+#if defined(_WIN32)
+#define OPENVOLUMETRIC_API __declspec(dllexport) __stdcall
+#else
+#define OPENVOLUMETRIC_API __attribute__((visibility("default")))
+#endif
+#define OPENVOLUMETRIC_ABI_VERSION_MAJOR 1u
+#define OPENVOLUMETRIC_ABI_VERSION_MINOR 0u
+#define OPENVOLUMETRIC_ABI_VERSION_PATCH 0u
+#define OPENVOLUMETRIC_ABI_STRING_SMALL 128u
+#define OPENVOLUMETRIC_ABI_STRING_LARGE 512u
 
-// C ABI consumed by OpenVolumetricDecoder.cs. Player instances are
-// identified by the integer returned from openvolumetric_init().
-// Resource setup runs on Unity's main thread. Frame uploads happen through
-// GetRenderEventFunc() on Unity's render thread, using the texture and mesh
-// resources registered through this interface.
-extern "C" 
-{
-	/// Opens the optional desktop console used for native diagnostics.
-	OPENVOLUMETRIC_API void	openvolumetric_open_external_console();
+/*
+ * Stable C ABI consumed by OpenVolumetricDecoder.cs.
+ *
+ * Ownership and lifetime:
+ * - openvolumetric_player_create allocates an opaque handle. Exactly one call
+ *   to openvolumetric_player_destroy releases it; destroy must not race another
+ *   call using the same handle.
+ * - All input strings are borrowed UTF-8 and need remain valid only for the
+ *   duration of the call.
+ * - Snapshot structures and error buffers are caller-owned. Native code never
+ *   retains their addresses. Set struct_size before every snapshot call.
+ * - Graphics pointers and mesh-buffer handles are borrowed Unity resources;
+ *   they must outlive playback and be unregistered by destroying the player
+ *   before Unity releases them.
+ * - GetRenderEventFunc is owned by Unity. The integer returned by
+ *   openvolumetric_player_get_render_event_id is routing data only, not a
+ *   player handle.
+ *
+ * Threading:
+ * normal API and render calls are synchronized against destruction. Unity
+ * object/resource setup remains on the main thread, rendering on the render
+ * thread, and DSP reads on Unity's audio thread.
+ */
 
-	/// Closes a diagnostic console previously opened by this plugin.
-	OPENVOLUMETRIC_API void	openvolumetric_close_external_console();
+#if defined(__cplusplus)
+extern "C" {
+#endif
+	typedef struct OpenVolumetricPlayer OpenVolumetricPlayer;
 
-	/// Creates a graphics-backend instance and writes its stable identifier.
-	/// Returns 1 on success and -1 when the active graphics API is unsupported.
-	OPENVOLUMETRIC_API int	openvolumetric_init(int& id);
-	
-	/// Destroys one instance and releases all of its native resources.
-	OPENVOLUMETRIC_API void	openvolumetric_quit(int id);
+	typedef enum OpenVolumetricResult
+	{
+		OPENVOLUMETRIC_RESULT_OK = 0,
+		OPENVOLUMETRIC_RESULT_INVALID_ARGUMENT = 1,
+		OPENVOLUMETRIC_RESULT_INVALID_HANDLE = 2,
+		OPENVOLUMETRIC_RESULT_UNSUPPORTED_FORMAT = 3,
+		OPENVOLUMETRIC_RESULT_CORRUPT_DATA = 4,
+		OPENVOLUMETRIC_RESULT_NETWORK_FAILURE = 5,
+		OPENVOLUMETRIC_RESULT_TIMEOUT = 6,
+		OPENVOLUMETRIC_RESULT_CANCELLED = 7,
+		OPENVOLUMETRIC_RESULT_DECODER_FAILURE = 8,
+		OPENVOLUMETRIC_RESULT_NOT_READY = 9,
+		OPENVOLUMETRIC_RESULT_INTERNAL_FAILURE = 10
+	} OpenVolumetricResult;
 
-	/// Sets the desired presentation time from the engine playback clock.
-	OPENVOLUMETRIC_API void openvolumetric_set_time(int id, double time);
+	typedef struct OpenVolumetricApiVersionV1
+	{
+		uint32_t struct_size;
+		uint32_t major;
+		uint32_t minor;
+		uint32_t patch;
+	} OpenVolumetricApiVersionV1;
 
+	typedef struct OpenVolumetricMediaInfoV1
+	{
+		uint32_t struct_size;
+		int32_t width;
+		int32_t height;
+		double frame_rate;
+		double duration;
+		int32_t has_audio;
+		int32_t audio_sample_rate;
+		int32_t audio_channels;
+	} OpenVolumetricMediaInfoV1;
 
-	/// Starts media and geometry worker threads for one initialized instance.
-	OPENVOLUMETRIC_API int	openvolumetric_start_decoding(int id);
+	typedef struct OpenVolumetricRuntimeSnapshotV1
+	{
+		uint32_t struct_size;
+		int32_t input_state;
+		int32_t remote;
+		int64_t resource_size_bytes;
+		uint64_t cached_bytes;
+		uint64_t downloaded_bytes;
+		uint64_t transfer_throughput_bits_per_second;
+		uint64_t request_count;
+		uint64_t recovery_count;
+		int32_t fragmented;
+		int64_t active_fragment;
+		uint64_t fragment_count;
+		uint64_t cached_fragment_count;
+		double audio_read_time;
+		double audio_buffered_duration;
+		uint64_t audio_underrun_count;
+		double last_presented_time;
+		double adaptive_policy_throughput_bits_per_second;
+	} OpenVolumetricRuntimeSnapshotV1;
 
-	/// Stops worker threads while preserving initialized graphics resources.
-	OPENVOLUMETRIC_API int	openvolumetric_stop_decoding(int id);
+	typedef struct OpenVolumetricAdaptiveSwitchSnapshotV1
+	{
+		uint32_t struct_size;
+		int32_t state;
+		uint64_t generation;
+		uint64_t switch_count;
+		double boundary_time;
+		char active_representation[OPENVOLUMETRIC_ABI_STRING_SMALL];
+		char pending_representation[OPENVOLUMETRIC_ABI_STRING_SMALL];
+		char reason[OPENVOLUMETRIC_ABI_STRING_LARGE];
+	} OpenVolumetricAdaptiveSwitchSnapshotV1;
 
-	/// Seeks the unified media pipeline to time in seconds.
-	OPENVOLUMETRIC_API int	openvolumetric_seek(int id, double time);
+	typedef struct OpenVolumetricCentroidV1
+	{
+		uint32_t struct_size;
+		float x;
+		float y;
+		float z;
+	} OpenVolumetricCentroidV1;
 
+	typedef struct OpenVolumetricAdaptiveSelectionRequestV1
+	{
+		uint32_t struct_size;
+		const char* manifest_json;
+		const char* manifest_location;
+		int32_t quality;
+		uint32_t maximum_texture_width;
+		uint32_t maximum_texture_height;
+		uint64_t maximum_texture_bitrate;
+		uint64_t maximum_geometry_bitrate;
+		uint64_t maximum_bandwidth;
+	} OpenVolumetricAdaptiveSelectionRequestV1;
 
-	/// Opens a combined MP4. Fails if video or vvge geometry is absent.
-	OPENVOLUMETRIC_API int	openvolumetric_load_video(int id, const char* filepath);
+	typedef struct OpenVolumetricAdaptiveRepresentationV1
+	{
+		uint32_t struct_size;
+		uint64_t bandwidth;
+		char id[OPENVOLUMETRIC_ABI_STRING_SMALL];
+		char resource[OPENVOLUMETRIC_ABI_STRING_LARGE];
+	} OpenVolumetricAdaptiveRepresentationV1;
 
-	/// Returns a borrowed human-readable error string for the instance.
-	OPENVOLUMETRIC_API const char* openvolumetric_get_last_error(int id);
-	/// Returns the timestamp most recently uploaded by the render thread.
-	OPENVOLUMETRIC_API double openvolumetric_get_last_presented_time(int id);
-	/// Retrieves the vertex centroid of the most recently uploaded geometry.
-	OPENVOLUMETRIC_API int openvolumetric_get_geometry_centroid(
-		int id,
-		float& x,
-		float& y,
-		float& z);
-	/// Retrieves input transport, cache, download, and request counters.
-	OPENVOLUMETRIC_API int openvolumetric_get_buffer_details(
-		int id,
-		int& state,
-		int& remote,
-		long long& resource_size_bytes,
-		unsigned long long& cached_bytes,
-		unsigned long long& downloaded_bytes,
-		unsigned long long& transfer_throughput_bits_per_second,
-		unsigned long long& request_count,
-		unsigned long long& recovery_count);
-	/// Retrieves fragmented-input scheduler and bounded-cache progress.
-	OPENVOLUMETRIC_API int openvolumetric_get_fragment_details(
-		int id,
-		int& fragmented,
-		long long& active_fragment,
-		unsigned long long& fragment_count,
-		unsigned long long& cached_fragment_count);
+	typedef struct OpenVolumetricAdaptiveSelectionV1
+	{
+		uint32_t struct_size;
+		uint64_t measured_throughput_bits_per_second;
+		uint32_t representation_count;
+		double segment_duration;
+		char representation_id[OPENVOLUMETRIC_ABI_STRING_SMALL];
+		char resource_uri[OPENVOLUMETRIC_ABI_STRING_LARGE];
+		char resolved_resource[OPENVOLUMETRIC_ABI_STRING_LARGE];
+		char decision_reason[OPENVOLUMETRIC_ABI_STRING_LARGE];
+		char error[OPENVOLUMETRIC_ABI_STRING_LARGE];
+	} OpenVolumetricAdaptiveSelectionV1;
 
-	/// Parses an adaptive manifest and selects Auto (0), Low (1), or High (2).
-	OPENVOLUMETRIC_API int openvolumetric_select_adaptive_representation(
-		const char* manifest_json,
-		const char* manifest_location,
-		int quality);
-	/// Loads a local or HTTP manifest and applies the same startup selection.
-	OPENVOLUMETRIC_API int openvolumetric_load_adaptive_representation(
-		const char* manifest_location,
-		int quality);
-	/// Loads and selects while applying device limits to Auto quality.
-	OPENVOLUMETRIC_API int openvolumetric_load_adaptive_representation_with_capabilities(
-		const char* manifest_location,
-		int quality,
-		unsigned int maximum_texture_width,
-		unsigned int maximum_texture_height,
-		unsigned long long maximum_texture_bitrate,
-		unsigned long long maximum_geometry_bitrate,
-		unsigned long long maximum_bandwidth);
-	/// Parses and selects while applying device limits to Auto quality.
-	OPENVOLUMETRIC_API int openvolumetric_select_adaptive_representation_with_capabilities(
-		const char* manifest_json,
-		const char* manifest_location,
-		int quality,
-		unsigned int maximum_texture_width,
-		unsigned int maximum_texture_height,
-		unsigned long long maximum_texture_bitrate,
-		unsigned long long maximum_geometry_bitrate,
-		unsigned long long maximum_bandwidth);
-	/// Returns the selected representation's URI exactly as stored in JSON.
-	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_resource_uri();
-	/// Returns the selected resource resolved against the manifest location.
-	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_resource();
-	/// Returns the selected representation identifier.
-	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_representation_id();
-	/// Returns the bounded HTTP startup probe result in bits per second.
-	OPENVOLUMETRIC_API unsigned long long openvolumetric_get_adaptive_throughput_bps();
-	/// Returns a human-readable explanation of the startup selection.
-	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_decision_reason();
-	/// Returns the number of capability-eligible representations, lowest first.
-	OPENVOLUMETRIC_API unsigned long long openvolumetric_get_adaptive_representation_count();
-	/// Returns an eligible representation identifier by ascending bandwidth.
-	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_representation_id_at(
-		unsigned long long index);
-	/// Returns an eligible resolved resource by ascending bandwidth.
-	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_resource_at(
-		unsigned long long index);
-	OPENVOLUMETRIC_API unsigned long long openvolumetric_get_adaptive_bandwidth_at(
-		unsigned long long index);
-	/// Returns the shared adaptive fragment duration in seconds.
-	OPENVOLUMETRIC_API double openvolumetric_get_adaptive_segment_duration();
-	/// Associates the initially opened decoder with its manifest representation.
-	OPENVOLUMETRIC_API int openvolumetric_configure_adaptive_instance(
-		int id,
-		const char* representation_id);
-	/// Configures and evaluates the engine-neutral adaptive policy.
-	OPENVOLUMETRIC_API void openvolumetric_clear_adaptive_policy(int id);
-	OPENVOLUMETRIC_API void openvolumetric_add_adaptive_policy_representation(
-		int id,
-		const char* representation_id,
-		const char* resource,
-		unsigned long long bandwidth);
-	OPENVOLUMETRIC_API int openvolumetric_update_adaptive_policy(
-		int id, double now, double presentation_time, double duration,
-		double segment_duration);
-	OPENVOLUMETRIC_API int openvolumetric_request_adaptive_policy_index(
-		int id, unsigned long long target_index, double now,
-		double presentation_time, double duration, double segment_duration);
-	OPENVOLUMETRIC_API double openvolumetric_get_adaptive_policy_throughput(
-		int id);
-	/// Snapshots switch state, generation, count, and boundary for later getters.
-	OPENVOLUMETRIC_API int openvolumetric_get_adaptive_switch_details(
-		int id,
-		int& state,
-		unsigned long long& generation,
-		unsigned long long& switch_count,
-		double& boundary_time);
-	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_switch_active_id();
-	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_switch_pending_id();
-	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_switch_reason();
-	/// Returns the most recent manifest-selection error.
-	OPENVOLUMETRIC_API const char* openvolumetric_get_adaptive_error();
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_get_api_version(
+		OpenVolumetricApiVersionV1* version);
+	OPENVOLUMETRIC_API void openvolumetric_open_external_console();
+	OPENVOLUMETRIC_API void openvolumetric_close_external_console();
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_create(
+		OpenVolumetricPlayer** player);
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_destroy(
+		OpenVolumetricPlayer* player);
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_get_render_event_id(
+		OpenVolumetricPlayer* player, int32_t* event_id);
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_set_time(
+		OpenVolumetricPlayer* player, double time);
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_open(
+		OpenVolumetricPlayer* player, const char* resource);
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_start(
+		OpenVolumetricPlayer* player);
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_stop(
+		OpenVolumetricPlayer* player);
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_seek(
+		OpenVolumetricPlayer* player, double time);
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_get_error(
+		OpenVolumetricPlayer* player, char* buffer, uint32_t capacity,
+		uint32_t* required_capacity, OpenVolumetricResult* category);
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_get_media_info(
+		OpenVolumetricPlayer* player, OpenVolumetricMediaInfoV1* info);
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_get_runtime_snapshot(
+		OpenVolumetricPlayer* player, OpenVolumetricRuntimeSnapshotV1* snapshot);
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_get_adaptive_switch_snapshot(
+		OpenVolumetricPlayer* player,
+		OpenVolumetricAdaptiveSwitchSnapshotV1* snapshot);
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_get_centroid(
+		OpenVolumetricPlayer* player, OpenVolumetricCentroidV1* centroid);
 
-	/// Retrieves decoded dimensions, nominal FPS, and duration in seconds.
-	OPENVOLUMETRIC_API int	openvolumetric_get_video_details(int id, int& width, int& height, double& fps, double& duration);
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_configure_adaptive(
+		OpenVolumetricPlayer* player, const char* representation_id);
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_clear_adaptive_policy(
+		OpenVolumetricPlayer* player);
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_add_adaptive_representation(
+		OpenVolumetricPlayer* player, const char* representation_id,
+		const char* resource, uint64_t bandwidth);
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_update_adaptive_policy(
+		OpenVolumetricPlayer* player, double now, double presentation_time,
+		double duration, double segment_duration, int32_t* action);
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_request_adaptive_index(
+		OpenVolumetricPlayer* player, uint64_t target_index, double now,
+		double presentation_time, double duration, double segment_duration,
+		int32_t* action);
 
-	/// Retrieves decoded PCM layout. Returns 0 when audio is absent.
-	OPENVOLUMETRIC_API int	openvolumetric_get_audio_details(int id, int& sample_rate, int& channels);
-
-	/// Arms native DSP audio at an absolute Unity sample tick.
-	OPENVOLUMETRIC_API int openvolumetric_schedule_dsp_audio(
-		int id,
-		unsigned long long dsp_start_tick,
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_schedule_dsp_audio(
+		OpenVolumetricPlayer* player, uint64_t dsp_start_tick,
 		double media_start_time);
-
-	/// Stops native DSP audio consumption before pause, seek, or destruction.
-	OPENVOLUMETRIC_API void openvolumetric_stop_dsp_audio(int id);
-
-	/// Returns the media time most recently processed by Unity's DSP callback.
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_stop_dsp_audio(
+		OpenVolumetricPlayer* player);
 	OPENVOLUMETRIC_API double openvolumetric_get_dsp_audio_time();
 
-	/// Retrieves the PCM read timestamp, queued duration, and underrun count.
-	OPENVOLUMETRIC_API int openvolumetric_get_audio_buffer_details(
-		int id,
-		double& read_time,
-		double& buffered_duration,
-		unsigned long long& underrun_count);
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_get_texture_pointers(
+		OpenVolumetricPlayer* player, void** y, void** u, void** v);
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_register_texture_pointers(
+		OpenVolumetricPlayer* player, void* y, void* u, void* v);
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_set_mesh_buffers(
+		OpenVolumetricPlayer* player, void* index_buffer, int32_t index_count,
+		void* vertex_buffer, int32_t vertex_count);
 
-	/// Returns platform texture handles used to construct Unity textures.
-	OPENVOLUMETRIC_API int	openvolumetric_get_texture_pointers(int id, void*& yPointer, void*& uPointer, void*& vPointer);
-	/// Registers the handles Unity exposes after creating external textures.
-	OPENVOLUMETRIC_API int openvolumetric_register_texture_pointers(
-		int id, void* yPointer, void* uPointer, void* vPointer);
-
-
-	/// Registers Unity-owned index and vertex buffers for native uploads.
-	OPENVOLUMETRIC_API int	openvolumetric_set_mesh_pointer(int id, void* indexBufferHandle, int index_size, void* vertexBufferHandle, int vertex_size);
-
+	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_adaptive_select(
+		const OpenVolumetricAdaptiveSelectionRequestV1* request,
+		OpenVolumetricAdaptiveSelectionV1* selection,
+		OpenVolumetricAdaptiveRepresentationV1* representations,
+		uint32_t representation_capacity);
+#if defined(__cplusplus)
 }
+#endif

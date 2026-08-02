@@ -8,6 +8,7 @@ set(VV_UNITY_API_SOURCES
 set(VV_UNITY_INCLUDE_DIRS
   "${CMAKE_CURRENT_SOURCE_DIR}/src/api"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/audio"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/common"
 )
 
 # Treat the vendored Unity SDK as external so strict warning builds report

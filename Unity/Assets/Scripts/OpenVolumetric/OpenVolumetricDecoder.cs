@@ -7,6 +7,7 @@ using Unity.Collections;
 
 using System.Runtime.InteropServices;
 using System;
+using System.Text;
 
 namespace OpenVolumetric
 {
@@ -33,139 +34,171 @@ public class OpenVolumetricDecoder : IDisposable
     [DllImport(PluginName, EntryPoint = "openvolumetric_close_external_console")]
     private static extern void openvolumetric_close_external_console();
 
-    [DllImport(PluginName, EntryPoint = "openvolumetric_init")]
-    private static extern int openvolumetric_init(ref int id);
+    private enum NativeResult
+    {
+        Ok,
+        InvalidArgument,
+        InvalidHandle,
+        UnsupportedFormat,
+        CorruptData,
+        NetworkFailure,
+        Timeout,
+        Cancelled,
+        DecoderFailure,
+        NotReady,
+        InternalFailure
+    }
 
-    [DllImport(PluginName, EntryPoint = "openvolumetric_quit")]
-    private static extern void openvolumetric_quit(int id);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeApiVersion
+    {
+        public uint StructSize;
+        public uint Major;
+        public uint Minor;
+        public uint Patch;
+    }
 
-    [DllImport(PluginName, EntryPoint = "openvolumetric_set_time")]
-    private static extern void openvolumetric_set_time(int id, double time);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeMediaInfo
+    {
+        public uint StructSize;
+        public int Width;
+        public int Height;
+        public double FrameRate;
+        public double Duration;
+        public int HasAudio;
+        public int AudioSampleRate;
+        public int AudioChannels;
+    }
 
-    [DllImport(PluginName, EntryPoint = "openvolumetric_start_decoding")]
-    private static extern int openvolumetric_start_decoding(int id);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRuntimeSnapshot
+    {
+        public uint StructSize;
+        public int InputState;
+        public int Remote;
+        public long ResourceSizeBytes;
+        public ulong CachedBytes;
+        public ulong DownloadedBytes;
+        public ulong TransferThroughputBitsPerSecond;
+        public ulong RequestCount;
+        public ulong RecoveryCount;
+        public int Fragmented;
+        public long ActiveFragment;
+        public ulong FragmentCount;
+        public ulong CachedFragmentCount;
+        public double AudioReadTime;
+        public double AudioBufferedDuration;
+        public ulong AudioUnderrunCount;
+        public double LastPresentedTime;
+        public double AdaptivePolicyThroughputBitsPerSecond;
+    }
 
-    [DllImport(PluginName, EntryPoint = "openvolumetric_stop_decoding")]
-    private static extern int openvolumetric_stop_decoding(int id);
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+    private struct NativeAdaptiveSwitchSnapshot
+    {
+        public uint StructSize;
+        public int State;
+        public ulong Generation;
+        public ulong SwitchCount;
+        public double BoundaryTime;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+        public string ActiveRepresentation;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+        public string PendingRepresentation;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 512)]
+        public string Reason;
+    }
 
-    [DllImport(PluginName, EntryPoint = "openvolumetric_seek")]
-    private static extern int openvolumetric_seek(int id, double time);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeCentroid
+    {
+        public uint StructSize;
+        public float X;
+        public float Y;
+        public float Z;
+    }
 
-    [DllImport(PluginName, EntryPoint = "openvolumetric_load_video")]
-    private static extern int openvolumetric_load_video(int id, string filename);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_last_error")]
-    private static extern IntPtr openvolumetric_get_last_error(int id);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_last_presented_time")]
-    private static extern double openvolumetric_get_last_presented_time(int id);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_geometry_centroid")]
-    private static extern int openvolumetric_get_geometry_centroid(
-        int id,
-        ref float x,
-        ref float y,
-        ref float z);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_buffer_details")]
-    private static extern int openvolumetric_get_buffer_details(
-        int id,
-        ref int state,
-        ref int remote,
-        ref long resourceSizeBytes,
-        ref ulong cachedBytes,
-        ref ulong downloadedBytes,
-        ref ulong transferThroughputBitsPerSecond,
-        ref ulong requestCount,
-        ref ulong recoveryCount);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_fragment_details")]
-    private static extern int openvolumetric_get_fragment_details(
-        int id,
-        ref int fragmented,
-        ref long activeFragment,
-        ref ulong fragmentCount,
-        ref ulong cachedFragmentCount);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_configure_adaptive_instance")]
-    private static extern int openvolumetric_configure_adaptive_instance(
-        int id,
-        string representationId);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_clear_adaptive_policy")]
-    private static extern void openvolumetric_clear_adaptive_policy(int id);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_add_adaptive_policy_representation")]
-    private static extern void openvolumetric_add_adaptive_policy_representation(
-        int id, string representationId, string resource, ulong bandwidth);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_update_adaptive_policy")]
-    private static extern int openvolumetric_update_adaptive_policy(
-        int id, double now, double presentationTime, double duration,
-        double segmentDuration);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_request_adaptive_policy_index")]
-    private static extern int openvolumetric_request_adaptive_policy_index(
-        int id, ulong targetIndex, double now, double presentationTime,
-        double duration, double segmentDuration);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_policy_throughput")]
-    private static extern double openvolumetric_get_adaptive_policy_throughput(int id);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_switch_details")]
-    private static extern int openvolumetric_get_adaptive_switch_details(
-        int id,
-        ref int state,
-        ref ulong generation,
-        ref ulong switchCount,
-        ref double boundaryTime);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_switch_active_id")]
-    private static extern IntPtr openvolumetric_get_adaptive_switch_active_id();
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_switch_pending_id")]
-    private static extern IntPtr openvolumetric_get_adaptive_switch_pending_id();
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_switch_reason")]
-    private static extern IntPtr openvolumetric_get_adaptive_switch_reason();
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_video_details")]
-    private static extern int openvolumetric_get_video_details(int id, ref int width, ref int height, ref double fps, ref double duration);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_audio_details")]
-    private static extern int openvolumetric_get_audio_details(int id, ref int sample_rate, ref int channels);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_schedule_dsp_audio")]
-    private static extern int openvolumetric_schedule_dsp_audio(
-        int id,
-        ulong dspStartTick,
-        double mediaStartTime);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_stop_dsp_audio")]
-    private static extern void openvolumetric_stop_dsp_audio(int id);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_get_api_version(
+        ref NativeApiVersion version);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_player_create(
+        ref IntPtr player);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_player_destroy(IntPtr player);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_player_get_render_event_id(
+        IntPtr player, ref int eventId);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_player_set_time(
+        IntPtr player, double time);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_player_open(
+        IntPtr player, string resource);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_player_start(IntPtr player);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_player_stop(IntPtr player);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_player_seek(
+        IntPtr player, double time);
+    [DllImport(PluginName, CharSet = CharSet.Ansi)]
+    private static extern NativeResult openvolumetric_player_get_error(
+        IntPtr player, StringBuilder buffer, uint capacity,
+        ref uint requiredCapacity, ref NativeResult category);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_player_get_media_info(
+        IntPtr player, ref NativeMediaInfo info);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_player_get_runtime_snapshot(
+        IntPtr player, ref NativeRuntimeSnapshot snapshot);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_player_get_adaptive_switch_snapshot(
+        IntPtr player, ref NativeAdaptiveSwitchSnapshot snapshot);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_player_get_centroid(
+        IntPtr player, ref NativeCentroid centroid);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_player_configure_adaptive(
+        IntPtr player, string representationId);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_player_clear_adaptive_policy(
+        IntPtr player);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_player_add_adaptive_representation(
+        IntPtr player, string representationId, string resource, ulong bandwidth);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_player_update_adaptive_policy(
+        IntPtr player, double now, double presentationTime, double duration,
+        double segmentDuration, ref int action);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_player_request_adaptive_index(
+        IntPtr player, ulong targetIndex, double now, double presentationTime,
+        double duration, double segmentDuration, ref int action);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_player_schedule_dsp_audio(
+        IntPtr player, ulong dspStartTick, double mediaStartTime);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_player_stop_dsp_audio(
+        IntPtr player);
 
     [DllImport(PluginName, EntryPoint = "openvolumetric_get_dsp_audio_time")]
     private static extern double openvolumetric_get_dsp_audio_time();
 
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_audio_buffer_details")]
-    private static extern int openvolumetric_get_audio_buffer_details(
-        int id,
-        ref double readTime,
-        ref double bufferedDuration,
-        ref ulong underrunCount);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_player_get_texture_pointers(
+        IntPtr player, ref IntPtr y, ref IntPtr u, ref IntPtr v);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_player_register_texture_pointers(
+        IntPtr player, IntPtr y, IntPtr u, IntPtr v);
+    [DllImport(PluginName)]
+    private static extern NativeResult openvolumetric_player_set_mesh_buffers(
+        IntPtr player, IntPtr indexBuffer, int indexCount,
+        IntPtr vertexBuffer, int vertexCount);
 
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_texture_pointers")]
-    private static extern int openvolumetric_get_texture_pointers(int id, ref IntPtr Y, ref IntPtr U, ref IntPtr V);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_register_texture_pointers")]
-    private static extern int openvolumetric_register_texture_pointers(
-        int id, IntPtr Y, IntPtr U, IntPtr V);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_set_mesh_pointer")]
-    private static extern int openvolumetric_set_mesh_pointer(int id, IntPtr index_buffer_handle, int index_size, IntPtr vertex_buffer_handle, int vertex_size);
-
-    // The native instance identifier is valid until Dispose destroys it.
-    private int m_instance_id = -1;
+    private IntPtr m_player = IntPtr.Zero;
+    private int m_render_event_id = -1;
 
     // Stream metadata is populated once the combined MP4 opens.
     private int video_width = -1, video_height = -1;
@@ -220,13 +253,12 @@ public class OpenVolumetricDecoder : IDisposable
         get
         {
             AudioBufferInfo info = new AudioBufferInfo();
-            if(m_instance_id >= 0 && HasAudio)
+            NativeRuntimeSnapshot snapshot;
+            if(HasAudio && TryGetRuntimeSnapshot(out snapshot))
             {
-                openvolumetric_get_audio_buffer_details(
-                    m_instance_id,
-                    ref info.ReadTime,
-                    ref info.BufferedDuration,
-                    ref info.UnderrunCount);
+                info.ReadTime = snapshot.AudioReadTime;
+                info.BufferedDuration = snapshot.AudioBufferedDuration;
+                info.UnderrunCount = snapshot.AudioUnderrunCount;
             }
             return info;
         }
@@ -296,14 +328,22 @@ public class OpenVolumetricDecoder : IDisposable
     {
         get
         {
-            if(m_instance_id < 0)
+            if(m_player == IntPtr.Zero)
             {
                 return String.Empty;
             }
-            IntPtr message = openvolumetric_get_last_error(m_instance_id);
-            return message == IntPtr.Zero
-                ? String.Empty
-                : Marshal.PtrToStringAnsi(message);
+            uint required = 0;
+            NativeResult category = NativeResult.Ok;
+            openvolumetric_player_get_error(
+                m_player, null, 0, ref required, ref category);
+            if(required <= 1)
+            {
+                return String.Empty;
+            }
+            StringBuilder message = new StringBuilder((int)required);
+            return openvolumetric_player_get_error(
+                m_player, message, required, ref required, ref category) ==
+                NativeResult.Ok ? message.ToString() : String.Empty;
         }
     }
 
@@ -312,9 +352,9 @@ public class OpenVolumetricDecoder : IDisposable
     {
         get
         {
-            return m_instance_id >= 0
-                ? openvolumetric_get_last_presented_time(m_instance_id)
-                : -1.0;
+            NativeRuntimeSnapshot snapshot;
+            return TryGetRuntimeSnapshot(out snapshot)
+                ? snapshot.LastPresentedTime : -1.0;
         }
     }
 
@@ -324,19 +364,20 @@ public class OpenVolumetricDecoder : IDisposable
     public bool TryGetGeometryCentroid(out Vector3 centroid)
     {
         centroid = Vector3.zero;
-        if(m_instance_id < 0)
+        if(m_player == IntPtr.Zero)
         {
             return false;
         }
-        float x = 0.0F;
-        float y = 0.0F;
-        float z = 0.0F;
-        if(openvolumetric_get_geometry_centroid(
-            m_instance_id, ref x, ref y, ref z) != 1)
+        NativeCentroid native = new NativeCentroid
+        {
+            StructSize = (uint)Marshal.SizeOf<NativeCentroid>()
+        };
+        if(openvolumetric_player_get_centroid(m_player, ref native) !=
+            NativeResult.Ok)
         {
             return false;
         }
-        centroid = new Vector3(x, y, z);
+        centroid = new Vector3(native.X, native.Y, native.Z);
         return true;
     }
 
@@ -392,17 +433,17 @@ public class OpenVolumetricDecoder : IDisposable
     /// <summary>Associates the opened native session with its manifest entry.</summary>
     public bool ConfigureAdaptiveRepresentation(string representationId)
     {
-        return m_instance_id >= 0 &&
-            openvolumetric_configure_adaptive_instance(
-                m_instance_id, representationId) == 1;
+        return m_player != IntPtr.Zero &&
+            openvolumetric_player_configure_adaptive(
+                m_player, representationId) == NativeResult.Ok;
     }
 
     /// <summary>Clears the shared native adaptive-policy ladder.</summary>
     public void ClearAdaptivePolicy()
     {
-        if(m_instance_id >= 0)
+        if(m_player != IntPtr.Zero)
         {
-            openvolumetric_clear_adaptive_policy(m_instance_id);
+            openvolumetric_player_clear_adaptive_policy(m_player);
         }
     }
 
@@ -410,10 +451,10 @@ public class OpenVolumetricDecoder : IDisposable
     public void AddAdaptivePolicyRepresentation(
         string id, string resource, ulong bandwidth)
     {
-        if(m_instance_id >= 0)
+        if(m_player != IntPtr.Zero)
         {
-            openvolumetric_add_adaptive_policy_representation(
-                m_instance_id, id, resource, bandwidth);
+            openvolumetric_player_add_adaptive_representation(
+                m_player, id, resource, bandwidth);
         }
     }
 
@@ -422,10 +463,11 @@ public class OpenVolumetricDecoder : IDisposable
         double now, double presentationTime, double duration,
         double segmentDuration)
     {
-        return m_instance_id >= 0
-            ? openvolumetric_update_adaptive_policy(
-                m_instance_id, now, presentationTime, duration, segmentDuration)
-            : -1;
+        int action = -1;
+        return m_player != IntPtr.Zero &&
+            openvolumetric_player_update_adaptive_policy(
+                m_player, now, presentationTime, duration, segmentDuration,
+                ref action) == NativeResult.Ok ? action : -1;
     }
 
     /// <summary>Requests a ladder entry while bypassing automatic backoff.</summary>
@@ -433,20 +475,20 @@ public class OpenVolumetricDecoder : IDisposable
         ulong index, double now, double presentationTime, double duration,
         double segmentDuration)
     {
-        return m_instance_id >= 0
-            ? openvolumetric_request_adaptive_policy_index(
-                m_instance_id, index, now, presentationTime, duration,
-                segmentDuration)
-            : -1;
+        int action = -1;
+        return m_player != IntPtr.Zero &&
+            openvolumetric_player_request_adaptive_index(
+                m_player, index, now, presentationTime, duration,
+                segmentDuration, ref action) == NativeResult.Ok ? action : -1;
     }
 
     public double AdaptivePolicyThroughputBitsPerSecond
     {
         get
         {
-            return m_instance_id >= 0
-                ? openvolumetric_get_adaptive_policy_throughput(m_instance_id)
-                : 0.0;
+            NativeRuntimeSnapshot snapshot;
+            return TryGetRuntimeSnapshot(out snapshot)
+                ? snapshot.AdaptivePolicyThroughputBitsPerSecond : 0.0;
         }
     }
 
@@ -456,27 +498,28 @@ public class OpenVolumetricDecoder : IDisposable
         get
         {
             AdaptiveSwitchInfo info = new AdaptiveSwitchInfo();
-            if(m_instance_id < 0)
+            if(m_player == IntPtr.Zero)
             {
                 return info;
             }
-            int state = 0;
-            if(openvolumetric_get_adaptive_switch_details(
-                m_instance_id,
-                ref state,
-                ref info.Generation,
-                ref info.SwitchCount,
-                ref info.BoundaryTime) != 1)
+            NativeAdaptiveSwitchSnapshot snapshot =
+                new NativeAdaptiveSwitchSnapshot
+                {
+                    StructSize =
+                        (uint)Marshal.SizeOf<NativeAdaptiveSwitchSnapshot>()
+                };
+            if(openvolumetric_player_get_adaptive_switch_snapshot(
+                m_player, ref snapshot) != NativeResult.Ok)
             {
                 return info;
             }
-            info.State = (AdaptiveSwitchState)state;
-            info.ActiveRepresentation = Marshal.PtrToStringAnsi(
-                openvolumetric_get_adaptive_switch_active_id()) ?? "";
-            info.PendingRepresentation = Marshal.PtrToStringAnsi(
-                openvolumetric_get_adaptive_switch_pending_id()) ?? "";
-            info.Reason = Marshal.PtrToStringAnsi(
-                openvolumetric_get_adaptive_switch_reason()) ?? "";
+            info.State = (AdaptiveSwitchState)snapshot.State;
+            info.Generation = snapshot.Generation;
+            info.SwitchCount = snapshot.SwitchCount;
+            info.BoundaryTime = snapshot.BoundaryTime;
+            info.ActiveRepresentation = snapshot.ActiveRepresentation ?? "";
+            info.PendingRepresentation = snapshot.PendingRepresentation ?? "";
+            info.Reason = snapshot.Reason ?? "";
             return info;
         }
     }
@@ -487,34 +530,37 @@ public class OpenVolumetricDecoder : IDisposable
         get
         {
             BufferInfo info = new BufferInfo();
-            if(m_instance_id < 0)
+            NativeRuntimeSnapshot snapshot;
+            if(!TryGetRuntimeSnapshot(out snapshot))
             {
                 return info;
             }
-            int state = 0;
-            int remote = 0;
-            openvolumetric_get_buffer_details(
-                m_instance_id,
-                ref state,
-                ref remote,
-                ref info.ResourceSizeBytes,
-                ref info.CachedBytes,
-                ref info.DownloadedBytes,
-                ref info.TransferThroughputBitsPerSecond,
-                ref info.RequestCount,
-                ref info.RecoveryCount);
-            info.State = (BufferState)state;
-            info.IsRemote = remote != 0;
-            int fragmented = 0;
-            openvolumetric_get_fragment_details(
-                m_instance_id,
-                ref fragmented,
-                ref info.ActiveFragment,
-                ref info.FragmentCount,
-                ref info.CachedFragmentCount);
-            info.IsFragmented = fragmented != 0;
+            info.State = (BufferState)snapshot.InputState;
+            info.IsRemote = snapshot.Remote != 0;
+            info.ResourceSizeBytes = snapshot.ResourceSizeBytes;
+            info.CachedBytes = snapshot.CachedBytes;
+            info.DownloadedBytes = snapshot.DownloadedBytes;
+            info.TransferThroughputBitsPerSecond =
+                snapshot.TransferThroughputBitsPerSecond;
+            info.RequestCount = snapshot.RequestCount;
+            info.RecoveryCount = snapshot.RecoveryCount;
+            info.IsFragmented = snapshot.Fragmented != 0;
+            info.ActiveFragment = snapshot.ActiveFragment;
+            info.FragmentCount = snapshot.FragmentCount;
+            info.CachedFragmentCount = snapshot.CachedFragmentCount;
             return info;
         }
+    }
+
+    private bool TryGetRuntimeSnapshot(out NativeRuntimeSnapshot snapshot)
+    {
+        snapshot = new NativeRuntimeSnapshot
+        {
+            StructSize = (uint)Marshal.SizeOf<NativeRuntimeSnapshot>()
+        };
+        return m_player != IntPtr.Zero &&
+            openvolumetric_player_get_runtime_snapshot(
+                m_player, ref snapshot) == NativeResult.Ok;
     }
 
     /// <summary>
@@ -530,13 +576,28 @@ public class OpenVolumetricDecoder : IDisposable
             Debug.Log("OpenVolumetricDecoder - Opening External Console");
             openvolumetric_open_external_console();
         }
-        if (openvolumetric_init(ref m_instance_id) == -1)
+        NativeApiVersion version = new NativeApiVersion
+        {
+            StructSize = (uint)Marshal.SizeOf<NativeApiVersion>()
+        };
+        if(openvolumetric_get_api_version(ref version) != NativeResult.Ok ||
+            version.Major != 1)
+        {
+            Debug.LogError("OpenVolumetricDecoder - incompatible native API");
+            m_decoder_state = DecoderState.INIT_FAIL;
+            return;
+        }
+        if (openvolumetric_player_create(ref m_player) != NativeResult.Ok ||
+            openvolumetric_player_get_render_event_id(
+                m_player, ref m_render_event_id) != NativeResult.Ok)
         {
             Debug.LogError("OpenVolumetricDecoder::init - failed to init");
             m_decoder_state = DecoderState.INIT_FAIL;
             return;
         }
-        Debug.Log(String.Format("OpenVolumetricDecoder::init - instance id: {0}", m_instance_id));
+        Debug.Log(String.Format(
+            "OpenVolumetricDecoder::init - render event id: {0}",
+            m_render_event_id));
 
         m_decoder_state = DecoderState.INITIALIZED;
     }
@@ -561,16 +622,17 @@ public class OpenVolumetricDecoder : IDisposable
         {
             Debug.Log(String.Format(
                 "OpenVolumetricDecoder::Dispose - Closing External Console - id: {0}",
-                m_instance_id));
+                m_render_event_id));
             openvolumetric_close_external_console();
         }
-        if (m_instance_id >= 0)
+        if (m_player != IntPtr.Zero)
         {
             Debug.Log(String.Format(
-                "OpenVolumetricDecoder::Dispose - id: {0}",
-                m_instance_id));
-            openvolumetric_quit(m_instance_id);
-            m_instance_id = -1;
+                "OpenVolumetricDecoder::Dispose - render event id: {0}",
+                m_render_event_id));
+            openvolumetric_player_destroy(m_player);
+            m_player = IntPtr.Zero;
+            m_render_event_id = -1;
         }
 
         GC.SuppressFinalize(this);
@@ -635,7 +697,9 @@ public class OpenVolumetricDecoder : IDisposable
         IntPtr vertex_buffer    = m_mesh.GetNativeVertexBufferPtr(0);
 
         Debug.Log(String.Format("OpenVolumetricDecoder::init_mesh - {0} {1}", index_buffer, vertex_buffer));
-        if (openvolumetric_set_mesh_pointer(m_instance_id, index_buffer, index_count, vertex_buffer, vertex_count ) == -1)
+        if (openvolumetric_player_set_mesh_buffers(
+            m_player, index_buffer, index_count, vertex_buffer, vertex_count) !=
+            NativeResult.Ok)
         {
             m_decoder_state = DecoderState.INIT_FAIL;
             return false;
@@ -675,7 +739,7 @@ public class OpenVolumetricDecoder : IDisposable
             m_decoder_state = DecoderState.INIT_FAIL;
             return false;
         }
-        openvolumetric_seek(m_instance_id, 0.0);
+        openvolumetric_player_seek(m_player, 0.0);
         
         return true;
     }
@@ -689,28 +753,31 @@ public class OpenVolumetricDecoder : IDisposable
         ref double videoFps,
         ref double videoDuration)
     {
-        if (openvolumetric_load_video(m_instance_id, filepath) == -1)
+        NativeResult openResult = openvolumetric_player_open(m_player, filepath);
+        if (openResult != NativeResult.Ok)
         {
-            IntPtr errorPointer = openvolumetric_get_last_error(m_instance_id);
-            string detail = errorPointer == IntPtr.Zero
-                ? String.Empty
-                : Marshal.PtrToStringAnsi(errorPointer);
+            string detail = LastError;
             Debug.LogError("OpenVolumetricDecoder::init - failed to load video"
+                + " (" + openResult + ")"
                 + (String.IsNullOrEmpty(detail) ? String.Empty : ": " + detail));
             m_decoder_state = DecoderState.INIT_FAIL;
             return false;
         }
-        if(openvolumetric_get_video_details(
-            m_instance_id,
-            ref videoWidth,
-            ref videoHeight,
-            ref videoFps,
-            ref videoDuration) == -1)
+        NativeMediaInfo info = new NativeMediaInfo
+        {
+            StructSize = (uint)Marshal.SizeOf<NativeMediaInfo>()
+        };
+        if(openvolumetric_player_get_media_info(m_player, ref info) !=
+            NativeResult.Ok)
         {
             Debug.LogError("OpenVolumetricDecoder::init - failed to get video details");
             m_decoder_state = DecoderState.INIT_FAIL;
             return false;
         }
+        videoWidth = info.Width;
+        videoHeight = info.Height;
+        videoFps = info.FrameRate;
+        videoDuration = info.Duration;
         Debug.Log(String.Format(
             "OpenVolumetricDecoder::init - source: {0}",
             filepath.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
@@ -734,16 +801,24 @@ public class OpenVolumetricDecoder : IDisposable
     /// </summary>
     public bool InitializeAudio()
     {
-        int sampleRate = 0;
-        int channels = 0;
-        int result = openvolumetric_get_audio_details(
-            m_instance_id, ref sampleRate, ref channels);
-        if (result == 0)
+        NativeMediaInfo info = new NativeMediaInfo
+        {
+            StructSize = (uint)Marshal.SizeOf<NativeMediaInfo>()
+        };
+        if(openvolumetric_player_get_media_info(m_player, ref info) !=
+            NativeResult.Ok)
+        {
+            Debug.LogError("OpenVolumetricDecoder::init_audio - media info unavailable");
+            return false;
+        }
+        if (info.HasAudio == 0)
         {
             Debug.Log("OpenVolumetricDecoder::init_audio - no audio stream");
             return true;
         }
-        if (result < 0 || sampleRate <= 0 || channels <= 0)
+        int sampleRate = info.AudioSampleRate;
+        int channels = info.AudioChannels;
+        if (sampleRate <= 0 || channels <= 0)
         {
             Debug.LogError("OpenVolumetricDecoder::init_audio - invalid audio stream");
             return false;
@@ -773,16 +848,16 @@ public class OpenVolumetricDecoder : IDisposable
         ulong dspTick = (ulong)System.Math.Max(
             0.0,
             System.Math.Round(dspTime * sampleRate));
-        return openvolumetric_schedule_dsp_audio(
-            m_instance_id, dspTick, mediaStartTime) == 1;
+        return openvolumetric_player_schedule_dsp_audio(
+            m_player, dspTick, mediaStartTime) == NativeResult.Ok;
     }
 
     /// <summary>Stops native DSP consumption before a timeline mutation.</summary>
     public void StopDspAudio()
     {
-        if(HasAudio && m_instance_id >= 0)
+        if(HasAudio && m_player != IntPtr.Zero)
         {
-            openvolumetric_stop_dsp_audio(m_instance_id);
+            openvolumetric_player_stop_dsp_audio(m_player);
         }
     }
     /// <summary>
@@ -808,7 +883,8 @@ public class OpenVolumetricDecoder : IDisposable
         IntPtr Y = new IntPtr();
         IntPtr U = new IntPtr();
         IntPtr V = new IntPtr();
-        if(openvolumetric_get_texture_pointers(m_instance_id, ref Y, ref U, ref V) == -1)
+        if(openvolumetric_player_get_texture_pointers(
+            m_player, ref Y, ref U, ref V) != NativeResult.Ok)
         {
             Debug.LogError("OpenVolumetricDecoder::init_textures - Error Creating Textures");
             m_decoder_state = DecoderState.INIT_FAIL;
@@ -826,11 +902,11 @@ public class OpenVolumetricDecoder : IDisposable
 #if UNITY_ANDROID && !UNITY_EDITOR
         // Unity tracks Vulkan resource state using its own native handles.
         // Register those handles after wrapping the plugin-owned VkImages.
-        if (openvolumetric_register_texture_pointers(
-                m_instance_id,
+        if (openvolumetric_player_register_texture_pointers(
+                m_player,
                 m_YTexture.GetNativeTexturePtr(),
                 m_UTexture.GetNativeTexturePtr(),
-                m_VTexture.GetNativeTexturePtr()) == -1)
+                m_VTexture.GetNativeTexturePtr()) != NativeResult.Ok)
         {
             Debug.LogError("OpenVolumetricDecoder::init_textures - Error Registering Vulkan Textures");
             m_decoder_state = DecoderState.INIT_FAIL;
@@ -848,12 +924,12 @@ public class OpenVolumetricDecoder : IDisposable
     {
         if (m_decoder_state != DecoderState.INITIALIZED)
         {
-            Debug.LogError(String.Format("OpenVolumetricDecoder::start - Failed to start decoder for instance {0} - decoder not initialised", m_instance_id));
+            Debug.LogError(String.Format("OpenVolumetricDecoder::start - Failed to start decoder for render event {0} - decoder not initialised", m_render_event_id));
             return false;
         }
-        if (openvolumetric_start_decoding(m_instance_id) == -1)
+        if (openvolumetric_player_start(m_player) != NativeResult.Ok)
         {
-            Debug.LogError(String.Format("OpenVolumetricDecoder::start - Failed to start decoder for instance {0}",m_instance_id) );
+            Debug.LogError(String.Format("OpenVolumetricDecoder::start - Failed to start decoder for render event {0}", m_render_event_id));
             return false;
         }
         m_decoder_state = DecoderState.STARTED;
@@ -869,13 +945,13 @@ public class OpenVolumetricDecoder : IDisposable
         }
         if(m_decoder_state != DecoderState.STARTED)
         {
-            Debug.LogError(String.Format("OpenVolumetricDecoder::stop - Failed to stop decoder for instance {0} - Decoder status has not started", m_instance_id));
+            Debug.LogError(String.Format("OpenVolumetricDecoder::stop - Failed to stop decoder for render event {0} - Decoder status has not started", m_render_event_id));
             return false;
         }
 
-        if(openvolumetric_stop_decoding(m_instance_id) == -1)
+        if(openvolumetric_player_stop(m_player) != NativeResult.Ok)
         {
-            Debug.LogError(String.Format("OpenVolumetricDecoder::stop - Failed to start decoder for instance {0}",m_instance_id) );
+            Debug.LogError(String.Format("OpenVolumetricDecoder::stop - Failed to stop decoder for render event {0}", m_render_event_id));
             return false;
         }
 
@@ -895,7 +971,7 @@ public class OpenVolumetricDecoder : IDisposable
 
         double target = Math.Max(0.0, Math.Min(time, video_duration));
         StopDspAudio();
-        if (openvolumetric_seek(m_instance_id, target) == -1)
+        if (openvolumetric_player_seek(m_player, target) != NativeResult.Ok)
         {
             Debug.LogError(String.Format(
                 "OpenVolumetricDecoder::seek - Failed to seek to {0:F3}",
@@ -943,7 +1019,7 @@ public class OpenVolumetricDecoder : IDisposable
             {
                 m_loop = true;
                 StopDspAudio();
-                if(openvolumetric_seek(m_instance_id, 0.0) == -1)
+                if(openvolumetric_player_seek(m_player, 0.0) != NativeResult.Ok)
                 {
                     Debug.LogError("OpenVolumetricDecoder::update - failed to reset decoder at loop boundary");
                     return;
@@ -953,8 +1029,8 @@ public class OpenVolumetricDecoder : IDisposable
         }
 
         // Video, geometry, and audio all use the same presentation time.
-        openvolumetric_set_time(m_instance_id, presentation_time);
-        GL.IssuePluginEvent(GetRenderEventFunc(), m_instance_id);
+        openvolumetric_player_set_time(m_player, presentation_time);
+        GL.IssuePluginEvent(GetRenderEventFunc(), m_render_event_id);
         m_mesh.RecalculateBounds();
     }
 

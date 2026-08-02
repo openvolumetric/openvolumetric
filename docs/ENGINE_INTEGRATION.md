@@ -58,8 +58,6 @@ or headers in the native core.
 | `OpenVolumetricPlayer` | Owns media and geometry decoding, seeking, timestamp matching, and complete CPU-side presentations. |
 | `IAVDecoder` | Opens the combined MP4 and supplies timestamped YUV video, PCM audio, and compressed geometry. |
 | `IGeometryDecoder` | Converts generation-tagged Draco payloads into timestamped engine-neutral `Mesh` values. |
-| `ITexture` | Engine/platform implementation that owns Y, U, and V texture resources and uploads one selected frame. |
-| `IMeshBuffer` | Engine/platform implementation that uploads one engine-neutral mesh. |
 | `Mesh` | CPU-side indices, positions, normals, and UVs with no engine dependency. |
 
 The engine-neutral `OpenVolumetricPlayer` façade owns the concrete FFmpeg and
@@ -67,6 +65,19 @@ Draco implementation. Engine integrations use this façade rather than calling
 FFmpeg or Draco APIs themselves. Unity adds a thin `UnityOpenVolumetricPlayer`
 upload adapter behind the exported C ABI; the adapter contains no independent
 decode or synchronization policy.
+
+Unity's `ITexture` and `IMeshBuffer` contracts are integration details under
+`integrations/unity/src/rendering/common`. They describe Unity render-device
+resources and callbacks and are deliberately not public core interfaces.
+Unreal translates the same CPU presentation into Unreal-owned resources
+without depending on those Unity contracts.
+
+Production construction remains intentionally simple: the default
+`OpenVolumetricPlayer` selects the FFmpeg media and Draco geometry decoders.
+An internal constructor accepts owned `IAVDecoder` and `IGeometryDecoder`
+implementations so tests can provide deterministic substitutes. Containers
+similarly accept an owned `IByteSource`. These narrow seams do not expose
+concrete FFmpeg, Draco, MP4, local-file, or HTTP classes to an engine module.
 
 ## Lifecycle
 
@@ -134,7 +145,7 @@ synchronization key.
 | `OpenVolumetricPresentation` Y/U/V vectors and `Mesh` | Owned by the caller after `presentation()` returns `Ready`; valid independently of decoder queues and safe to translate immediately into engine resources. |
 | Output passed to coordinator `read_audio()` | Owned by the engine caller. The core fills available samples and writes silence for an underrun. |
 | Compressed geometry payload | Owned while moving between core queues; an engine adapter never retains or modifies it. |
-| Graphics handles passed to `ITexture`/`IMeshBuffer` | Owned by the engine. The platform uploader may use them only under the engine's render-thread rules. |
+| Unity graphics handles passed to its `ITexture`/`IMeshBuffer` adapters | Owned by Unity. The platform uploader may use them only under Unity's render-thread rules. |
 
 The lower-level decoder interfaces still expose borrowed video pointers
 internally, but engine integrations consume copied façade presentations and
@@ -154,8 +165,16 @@ must not bypass `OpenVolumetricPlayer` to retain those pointers.
 
 ## Errors and diagnostics
 
-Opening failures are available through `IAVDecoder::get_last_error()`. Engine
-adapters should attach this message to their normal logging and error UI.
+The Unity ABI returns a stable `OpenVolumetricResult` for every fallible
+runtime operation. Categories distinguish argument/handle errors, unsupported
+format, corruption, network failure, timeout, cancellation, decoder failure,
+not-ready state, and internal failure. `openvolumetric_player_get_error`
+copies the detailed UTF-8 message into a caller-owned buffer so logging does
+not depend on a borrowed or thread-local pointer. The complete ABI contract is
+documented in [NATIVE_API.md](NATIVE_API.md).
+
+Core opening failures remain available through `IAVDecoder::get_last_error()`.
+Engine adapters should attach this message to their normal logging and error UI.
 `SYNC` diagnostics currently report dropped, duplicated, late, or mismatched
 samples. An adapter must treat malformed input as a controlled playback
 failure rather than continuing with stale pointers.

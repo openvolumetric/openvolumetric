@@ -12,8 +12,20 @@ namespace openvolumetric
 class OpenVolumetricPlayer::Impl
 {
 public:
-	AVDecoderFFMPEG media;
-	GeometryDecoderDraco geometry;
+	Impl(
+		std::unique_ptr<IAVDecoder> media_decoder,
+		std::unique_ptr<IGeometryDecoder> geometry_decoder)
+		: media_owner(std::move(media_decoder)),
+		  geometry_owner(std::move(geometry_decoder)),
+		  media(*media_owner),
+		  geometry(*geometry_owner)
+	{
+	}
+
+	std::unique_ptr<IAVDecoder> media_owner;
+	std::unique_ptr<IGeometryDecoder> geometry_owner;
+	IAVDecoder& media;
+	IGeometryDecoder& geometry;
 	OpenVolumetricMediaInfo info;
 	std::string error;
 	std::uint64_t generation = 0;
@@ -23,7 +35,18 @@ public:
 	double pending_video_time = 0.0;
 };
 
-OpenVolumetricPlayer::OpenVolumetricPlayer() : m_impl(std::make_unique<Impl>())
+OpenVolumetricPlayer::OpenVolumetricPlayer()
+	: OpenVolumetricPlayer(
+		std::make_unique<AVDecoderFFMPEG>(),
+		std::make_unique<GeometryDecoderDraco>())
+{
+}
+
+OpenVolumetricPlayer::OpenVolumetricPlayer(
+	std::unique_ptr<IAVDecoder> media_decoder,
+	std::unique_ptr<IGeometryDecoder> geometry_decoder)
+	: m_impl(std::make_unique<Impl>(
+		std::move(media_decoder), std::move(geometry_decoder)))
 {
 }
 

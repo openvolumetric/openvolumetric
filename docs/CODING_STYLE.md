@@ -13,6 +13,9 @@ They apply to new code and to existing code when it is materially changed.
 - Put engine-independent code in `openvolumetric`, reusable authoring code in
   `openvolumetric::authoring`, and Unity-native code in
   `openvolumetric::unity`.
+- Public core headers must compile with core include paths alone. Do not expose
+  Unity, Unreal, FFmpeg, Draco, graphics-resource, or concrete transport types
+  through the core façade.
 - Keep exported `extern "C"` ABI names in the global namespace with the
   `openvolumetric_` prefix. Engine-mandated callbacks may retain the engine's
   naming convention.

@@ -2,6 +2,7 @@
 
 #include "AdaptiveSelection.h"
 #include "OpenVolumetricPlayerAdapter.h"
+#include "OpenVolumetricSourceResolver.h"
 #include "Components/AudioComponent.h"
 #include "Components/DynamicMeshComponent.h"
 #include "DynamicMesh/DynamicMesh3.h"
@@ -301,70 +302,6 @@ bool UOpenVolumetricComponent::Open()
 {
 	Close();
 
-	const FString TrimmedUrl = SourceUrl.TrimStartAndEnd();
-	const bool bUseRemoteSource = !TrimmedUrl.IsEmpty();
-	if (!bUseRemoteSource && SourceFile.FilePath.IsEmpty())
-	{
-		LastError = TEXT("No OpenVolumetric input has been selected.");
-		PlaybackState = EOpenVolumetricPlaybackState::Error;
-		UE_LOG(LogOpenVolumetricComponent, Error, TEXT("%s"), *LastError);
-		return false;
-	}
-
-	FString ResolvedPath = bUseRemoteSource
-		? TrimmedUrl
-		: SourceFile.FilePath;
-	if (bUseRemoteSource)
-	{
-		if (!ResolvedPath.StartsWith(
-				TEXT("http://"), ESearchCase::IgnoreCase) &&
-			!ResolvedPath.StartsWith(
-				TEXT("https://"), ESearchCase::IgnoreCase))
-		{
-			LastError = TEXT("SourceUrl must be an HTTP or HTTPS URL.");
-			PlaybackState = EOpenVolumetricPlaybackState::Error;
-			UE_LOG(LogOpenVolumetricComponent, Error, TEXT("%s"), *LastError);
-			return false;
-		}
-	}
-	else
-	{
-		FPaths::NormalizeFilename(ResolvedPath);
-		if (FPaths::IsRelative(ResolvedPath))
-		{
-			// FFilePath may serialize a picker result relative to the editor,
-			// project, or Content directory.
-			const TArray<FString> Candidates = {
-				FPaths::ConvertRelativePathToFull(ResolvedPath),
-				FPaths::ConvertRelativePathToFull(
-					FPaths::ProjectDir(), ResolvedPath),
-				FPaths::ConvertRelativePathToFull(
-					FPaths::ProjectContentDir(), ResolvedPath),
-				FPaths::ConvertRelativePathToFull(
-					FPaths::ProjectContentDir(),
-					FPaths::GetCleanFilename(ResolvedPath))
-			};
-			for (const FString& Candidate : Candidates)
-			{
-				if (FPaths::FileExists(Candidate))
-				{
-					ResolvedPath = Candidate;
-					break;
-				}
-			}
-		}
-		FPaths::NormalizeFilename(ResolvedPath);
-
-		if (!FPaths::FileExists(ResolvedPath))
-		{
-			LastError = FString::Printf(
-				TEXT("OpenVolumetric input does not exist: %s"), *ResolvedPath);
-			PlaybackState = EOpenVolumetricPlaybackState::Error;
-			UE_LOG(LogOpenVolumetricComponent, Error, TEXT("%s"), *LastError);
-			return false;
-		}
-	}
-
 	SelectedRepresentationId.Reset();
 	AdaptiveMeasuredThroughputMbps = 0.0;
 	AdaptiveDecisionReason.Reset();
@@ -372,57 +309,49 @@ bool UOpenVolumetricComponent::Open()
 	AdaptiveSwitchCount = 0;
 	AdaptiveRepresentations.Reset();
 	AdaptiveSegmentDuration = 0.0;
+	FOpenVolumetricSourceRequest SourceRequest;
+	SourceRequest.FilePath = SourceFile.FilePath;
+	SourceRequest.Url = SourceUrl;
+	SourceRequest.bUseAdaptiveManifest = bUseAdaptiveManifest;
+	SourceRequest.AdaptiveQuality =
+		static_cast<openvolumetric::AdaptiveQuality>(AdaptiveQuality);
+	SourceRequest.CapabilityLimits = GetAdaptiveCapabilityLimits(*this);
+	FOpenVolumetricResolvedSource ResolvedSource;
+	if (!FOpenVolumetricSourceResolver::Resolve(
+			SourceRequest, ResolvedSource))
+	{
+		LastError = ResolvedSource.Error;
+		PlaybackState = EOpenVolumetricPlaybackState::Error;
+		UE_LOG(LogOpenVolumetricComponent, Error, TEXT("%s"), *LastError);
+		return false;
+	}
+	bRemoteSource = ResolvedSource.bRemote;
 	if (bUseAdaptiveManifest)
 	{
-		openvolumetric::AdaptiveSelection Selection;
-		std::string NativeError;
-		const FTCHARToUTF8 Utf8Manifest(*ResolvedPath);
-		if (!openvolumetric::load_adaptive_representation(
-				Utf8Manifest.Get(),
-				static_cast<openvolumetric::AdaptiveQuality>(AdaptiveQuality),
-				GetAdaptiveCapabilityLimits(*this),
-				Selection,
-				NativeError))
-		{
-			LastError = UTF8_TO_TCHAR(NativeError.c_str());
-			PlaybackState = EOpenVolumetricPlaybackState::Error;
-			UE_LOG(LogOpenVolumetricComponent, Error, TEXT("%s"), *LastError);
-			return false;
-		}
-		ResolvedPath = UTF8_TO_TCHAR(Selection.resolved_resource.c_str());
-		SelectedRepresentationId = UTF8_TO_TCHAR(
-			Selection.representation.id.c_str());
+		SelectedRepresentationId = ResolvedSource.RepresentationId;
 		AdaptiveMeasuredThroughputMbps =
-			static_cast<double>(Selection.measured_throughput_bps) / 1000000.0;
-		AdaptiveDecisionReason = UTF8_TO_TCHAR(Selection.decision_reason.c_str());
-		AdaptiveSegmentDuration = Selection.manifest.segment_duration_seconds;
-		for (const openvolumetric::ResolvedAdaptiveRepresentation& Entry :
-			Selection.eligible_representations)
+			ResolvedSource.MeasuredThroughputMbps;
+		AdaptiveDecisionReason = ResolvedSource.DecisionReason;
+		AdaptiveSegmentDuration = ResolvedSource.SegmentDuration;
+		for (const FOpenVolumetricResolvedRepresentation& Entry :
+			ResolvedSource.Representations)
 		{
 			FAdaptiveRuntimeRepresentation RuntimeEntry;
-			RuntimeEntry.Id = UTF8_TO_TCHAR(Entry.representation.id.c_str());
-			RuntimeEntry.Resource = UTF8_TO_TCHAR(Entry.resolved_resource.c_str());
-			RuntimeEntry.Bandwidth = Entry.representation.bandwidth;
+			RuntimeEntry.Id = Entry.Id;
+			RuntimeEntry.Resource = Entry.Resource;
+			RuntimeEntry.Bandwidth = Entry.Bandwidth;
 			AdaptiveRepresentations.Add(MoveTemp(RuntimeEntry));
-		}
-		if (!bUseRemoteSource && !FPaths::FileExists(ResolvedPath))
-		{
-			LastError = FString::Printf(
-				TEXT("Adaptive representation does not exist: %s"), *ResolvedPath);
-			PlaybackState = EOpenVolumetricPlaybackState::Error;
-			UE_LOG(LogOpenVolumetricComponent, Error, TEXT("%s"), *LastError);
-			return false;
 		}
 		UE_LOG(
 			LogOpenVolumetricComponent,
 			Log,
 			TEXT("Selected adaptive representation '%s': %s"),
 			*SelectedRepresentationId,
-			*ResolvedPath);
+			*ResolvedSource.Resource);
 	}
 
 	PlaybackState = EOpenVolumetricPlaybackState::Opening;
-	if (!Player->Open(ResolvedPath, LastError))
+	if (!Player->Open(ResolvedSource.Resource, LastError))
 	{
 		PlaybackState = EOpenVolumetricPlaybackState::Error;
 		UE_LOG(LogOpenVolumetricComponent, Error, TEXT("%s"), *LastError);

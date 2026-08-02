@@ -50,3 +50,21 @@ target_link_libraries(OpenVolumetricCore
     draco::draco
     nlohmann_json::nlohmann_json
 )
+
+# Compile the public contracts without implementation or engine include paths.
+# This target catches accidental Unity, Unreal, FFmpeg, Draco, or concrete
+# transport dependencies at the engine-neutral boundary.
+add_library(OpenVolumetricCoreHeaderCheck OBJECT
+  "${PROJECT_SOURCE_DIR}/tests/CoreHeaderCheck.cpp"
+)
+target_include_directories(OpenVolumetricCoreHeaderCheck PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/decoding"
+  "${CMAKE_CURRENT_SOURCE_DIR}/adaptive"
+  "${CMAKE_CURRENT_SOURCE_DIR}/container"
+  "${CMAKE_CURRENT_SOURCE_DIR}/geometry"
+  "${CMAKE_CURRENT_SOURCE_DIR}/io"
+  "${CMAKE_CURRENT_SOURCE_DIR}/media"
+)
+target_link_libraries(OpenVolumetricCoreHeaderCheck PRIVATE
+  OpenVolumetricBuildOptions
+)

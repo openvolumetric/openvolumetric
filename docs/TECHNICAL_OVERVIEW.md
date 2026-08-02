@@ -1,6 +1,6 @@
 # OpenVolumetric: Technical Overview
 
-**Implementation snapshot:** 31 July 2026. Statements marked as implemented
+**Implementation snapshot:** 2 August 2026. Statements marked as implemented
 describe the repository at this date. Sections explicitly labelled proposed
 or future work describe the research and engineering roadmap and should not
 be reported as evaluated functionality in a paper.
@@ -122,8 +122,9 @@ The source tree separates the system into four primary layers:
 | `Unreal/Plugins/OpenVolumetric` | Unreal runtime component, core adapter, dynamic mesh/texture/audio output, and Editor authoring interface |
 
 The core deliberately contains no Unity or Unreal headers or types. Graphics
-operations are represented through engine-neutral presentations and, for the
-Unity native path, abstract interfaces such as `ITexture` and `IMeshBuffer`.
+operations are represented by caller-owned CPU presentations. Unity-specific
+`ITexture` and `IMeshBuffer` upload contracts live entirely inside the Unity
+rendering integration rather than in the core.
 `OpenVolumetricPlayer` owns media/geometry decoding, seek state, timestamp
 matching, and complete CPU-side presentations. An engine adapter supplies host
 resources and invokes this single common player.
@@ -677,8 +678,18 @@ Operations include:
 - Error reporting.
 - Render-event retrieval.
 
-Instances receive integer identifiers used by both managed calls and Unity
-render events. Each registry entry is a `UnityOpenVolumetricPlayer`, a thin
+ABI version 1.0.0 uses fixed-width integers, opaque player handles, explicit
+result categories, and size-versioned caller-owned value snapshots. No runtime
+entry point returns a borrowed metadata or error string. Manifest selection
+likewise fills one selection snapshot and a caller-provided representation
+array, eliminating the former thread-local snapshot/getter sequence. Detailed
+error text is copied alongside its stable machine-readable category. Ownership
+and compatibility rules are defined in [NATIVE_API.md](NATIVE_API.md).
+
+Managed code owns an opaque `OpenVolumetricPlayer*` handle. A separate integer
+render-event token is obtained explicitly because `GL.IssuePluginEvent`
+accepts integer routing data rather than native pointers. Each registry entry
+is a `UnityOpenVolumetricPlayer`, a thin
 adapter around `OpenVolumetricPlayer` that publishes the requested engine
 clock, uploads only complete matched presentations, and atomically publishes
 the most recently presented timestamp. Metal, D3D11, and Vulkan therefore
@@ -706,7 +717,7 @@ These are configured limits rather than constraints inherent to Draco or MP4.
 
 ### 8.3 Rendering
 
-Unity issues `GL.IssuePluginEvent` with the playback instance identifier.
+Unity issues `GL.IssuePluginEvent` with the dedicated render-event token.
 Unity then calls the native render callback on its render thread.
 
 Within one render event, the native backend:
@@ -1365,9 +1376,12 @@ an RHI-specific path behind the same boundary.
 - Platform-specific media stacks.
 - Test or synthetic decoders.
 
-The current FFmpeg and Draco implementations are still constructed directly by
-`OpenVolumetricPlayer`, so further dependency injection and public factory
-APIs would improve practical replaceability.
+The default `OpenVolumetricPlayer` constructs the FFmpeg and Draco
+implementations used in production. A narrow internal constructor accepts
+owned `IAVDecoder` and `IGeometryDecoder` substitutes for deterministic tests;
+containers likewise accept an owned `IByteSource`. This provides practical
+test seams without making a general dependency-injection framework part of
+the public engine API.
 
 ### 14.3 Container evolution
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IAVDecoder.h>
+#include <IGeometryDecoder.h>
 #include <Mesh.h>
 #include <TimedFrame.h>
 
@@ -77,6 +78,14 @@ class OpenVolumetricPlayer final
 public:
 	/// Constructs a closed player with no workers or codec resources.
 	OpenVolumetricPlayer();
+	/// Internal/test seam taking complete ownership of two non-null decoders.
+	///
+	/// Production integrations use the default constructor. This overload keeps
+	/// concrete FFmpeg, container, byte-source, and Draco types behind the
+	/// façade while allowing core tests to supply narrow interface substitutes.
+	OpenVolumetricPlayer(
+		std::unique_ptr<IAVDecoder> media_decoder,
+		std::unique_ptr<IGeometryDecoder> geometry_decoder);
 	/// Idempotently stops workers and releases all owned decoder state.
 	~OpenVolumetricPlayer();
 

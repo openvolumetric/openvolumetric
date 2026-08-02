@@ -1,8 +1,6 @@
 ﻿using System;
-using System.IO;
 using System.Collections;
 using System.Collections.Generic;
-using System.Runtime.InteropServices;
 using UnityEngine;
 using UnityEngine.Serialization;
 
@@ -18,62 +16,6 @@ namespace OpenVolumetric
 /// </summary>
 public class OpenVolumetric : MonoBehaviour
 {
-    private const string PluginName = "AudioPluginOpenVolumetricUnity";
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_select_adaptive_representation_with_capabilities")]
-    private static extern int SelectAdaptiveRepresentationWithCapabilities(
-        string manifestJson,
-        string manifestLocation,
-        int quality,
-        uint maximumTextureWidth,
-        uint maximumTextureHeight,
-        ulong maximumTextureBitrate,
-        ulong maximumGeometryBitrate,
-        ulong maximumBandwidth);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_load_adaptive_representation_with_capabilities")]
-    private static extern int LoadAdaptiveRepresentationWithCapabilities(
-        string manifestLocation,
-        int quality,
-        uint maximumTextureWidth,
-        uint maximumTextureHeight,
-        ulong maximumTextureBitrate,
-        ulong maximumGeometryBitrate,
-        ulong maximumBandwidth);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_resource_uri")]
-    private static extern IntPtr GetAdaptiveResourceUri();
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_resource")]
-    private static extern IntPtr GetAdaptiveResource();
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_representation_id")]
-    private static extern IntPtr GetAdaptiveRepresentationId();
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_throughput_bps")]
-    private static extern ulong GetAdaptiveThroughputBitsPerSecond();
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_decision_reason")]
-    private static extern IntPtr GetAdaptiveDecisionReason();
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_representation_count")]
-    private static extern ulong GetAdaptiveRepresentationCount();
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_representation_id_at")]
-    private static extern IntPtr GetAdaptiveRepresentationIdAt(ulong index);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_resource_at")]
-    private static extern IntPtr GetAdaptiveResourceAt(ulong index);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_bandwidth_at")]
-    private static extern ulong GetAdaptiveBandwidthAt(ulong index);
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_segment_duration")]
-    private static extern double GetAdaptiveSegmentDuration();
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_error")]
-    private static extern IntPtr GetAdaptiveError();
-
     /// <summary>Startup representation choice for adaptive manifests.</summary>
     public enum AdaptiveQuality
     {
@@ -154,14 +96,12 @@ public class OpenVolumetric : MonoBehaviour
     public float adaptiveMetricsInterval = 0.25F;
     private OpenVolumetricDecoder m_decoder;
     private AudioSource m_audio_source;
-    private double m_start_time;
+    private readonly OpenVolumetricPlaybackClock m_clock =
+        new OpenVolumetricPlaybackClock();
     private double m_audio_preroll_duration;
     private bool m_waiting_for_audio_preroll;
-    private bool m_has_scheduled_start;
-    private double m_last_dsp_time;
-    private bool m_has_last_dsp_time;
-    private double m_decoder_lag_started = -1.0;
-    private double m_last_decoder_recovery = -10.0;
+    private readonly OpenVolumetricRecoveryPolicy m_recovery_policy =
+        new OpenVolumetricRecoveryPolicy();
     private bool m_decoder_recovering;
     private double m_decoder_recovery_target;
     /// <summary>Managed playback states exposed to scripts and diagnostics.</summary>
@@ -178,7 +118,11 @@ public class OpenVolumetric : MonoBehaviour
         PLAYING,
     };
     private PlaybackState m_playback_state = PlaybackState.UNINITIALISED;
-    private double m_playback_position;
+    private double m_playback_position
+    {
+        get { return m_clock.Position; }
+        set { m_clock.Position = value; }
+    }
     private bool m_network_rebuffering;
     private bool m_resume_after_network_recovery;
     private double m_network_recovery_target;
@@ -189,40 +133,13 @@ public class OpenVolumetric : MonoBehaviour
     private string m_selected_representation_id = "";
     private ulong m_adaptive_throughput_bps;
     private string m_adaptive_decision_reason = "";
-    private readonly List<AdaptiveRuntimeRepresentation>
-        m_adaptive_representations = new List<AdaptiveRuntimeRepresentation>();
+    private readonly List<OpenVolumetricSourceResolver.Representation>
+        m_adaptive_representations =
+            new List<OpenVolumetricSourceResolver.Representation>();
     private double m_adaptive_segment_duration;
     private double m_adaptive_smoothed_throughput_bps;
-    private StreamWriter m_adaptive_metrics_writer;
-    private double m_adaptive_metrics_started;
-    private double m_adaptive_next_metric_time;
-    private double m_adaptive_switch_started = -1.0;
-    private double m_adaptive_last_switch_latency = -1.0;
-    private ulong m_adaptive_switch_failure_count;
-    private double m_adaptive_rebuffer_started = -1.0;
-    private double m_adaptive_total_rebuffer_time;
-    private ulong m_adaptive_rebuffer_count;
-    private OpenVolumetricDecoder.AdaptiveSwitchState
-        m_adaptive_previous_switch_state =
-            OpenVolumetricDecoder.AdaptiveSwitchState.Stable;
-    private OpenVolumetricDecoder.BufferState m_adaptive_previous_buffer_state =
-        OpenVolumetricDecoder.BufferState.Opening;
-
-    private sealed class AdaptiveRuntimeRepresentation
-    {
-        public string Id;
-        public string Resource;
-        public ulong Bandwidth;
-    }
-
-    private struct AdaptiveCapabilityLimits
-    {
-        public uint MaximumTextureWidth;
-        public uint MaximumTextureHeight;
-        public ulong MaximumTextureBitrate;
-        public ulong MaximumGeometryBitrate;
-        public ulong MaximumBandwidth;
-    }
+    private readonly OpenVolumetricAdaptiveMetrics m_adaptive_metrics =
+        new OpenVolumetricAdaptiveMetrics();
 
     /// <summary>Current managed playback state.</summary>
     public PlaybackState State { get { return m_playback_state; } }
@@ -283,65 +200,6 @@ public class OpenVolumetric : MonoBehaviour
         }
     }
 
-    /// <summary>Copies native adaptive diagnostics after a successful selection.</summary>
-    private void UpdateAdaptiveSelectionDiagnostics()
-    {
-        m_selected_representation_id =
-            Marshal.PtrToStringAnsi(GetAdaptiveRepresentationId()) ?? "";
-        m_adaptive_throughput_bps = GetAdaptiveThroughputBitsPerSecond();
-        m_adaptive_decision_reason =
-            Marshal.PtrToStringAnsi(GetAdaptiveDecisionReason()) ?? "";
-        m_adaptive_representations.Clear();
-        ulong count = GetAdaptiveRepresentationCount();
-        for(ulong index = 0; index < count; ++index)
-        {
-            m_adaptive_representations.Add(new AdaptiveRuntimeRepresentation
-            {
-                Id = Marshal.PtrToStringAnsi(
-                    GetAdaptiveRepresentationIdAt(index)) ?? "",
-                Resource = Marshal.PtrToStringAnsi(
-                    GetAdaptiveResourceAt(index)) ?? "",
-                Bandwidth = GetAdaptiveBandwidthAt(index)
-            });
-        }
-        m_adaptive_segment_duration = GetAdaptiveSegmentDuration();
-    }
-
-    /// <summary>
-    /// Returns conservative limits for the platform families validated by the
-    /// project. Manual Low and High choices intentionally override these caps.
-    /// </summary>
-    private static ulong ResolveBitrateLimit(float overrideMbps, ulong platformLimit)
-    {
-        return overrideMbps > 0.0F
-            ? (ulong)Math.Round(overrideMbps * 1000000.0)
-            : platformLimit;
-    }
-
-    private AdaptiveCapabilityLimits GetAdaptiveCapabilityLimits()
-    {
-        bool standaloneAndroid = Application.platform == RuntimePlatform.Android;
-        uint platformDimension = standaloneAndroid ? 4096U : 8192U;
-        uint reportedDimension = (uint)Math.Max(1, SystemInfo.maxTextureSize);
-        uint maximumDimension = adaptiveMaximumTextureDimension > 0
-            ? (uint)adaptiveMaximumTextureDimension
-            : Math.Min(platformDimension, reportedDimension);
-        return new AdaptiveCapabilityLimits
-        {
-            MaximumTextureWidth = maximumDimension,
-            MaximumTextureHeight = maximumDimension,
-            MaximumTextureBitrate = ResolveBitrateLimit(
-                adaptiveMaximumTextureBitrateMbps,
-                standaloneAndroid ? 20000000UL : 100000000UL),
-            MaximumGeometryBitrate = ResolveBitrateLimit(
-                adaptiveMaximumGeometryBitrateMbps,
-                standaloneAndroid ? 50000000UL : 250000000UL),
-            MaximumBandwidth = ResolveBitrateLimit(
-                adaptiveMaximumBandwidthMbps,
-                standaloneAndroid ? 70000000UL : 350000000UL)
-        };
-    }
-
     /// <summary>Returns the latest decoded geometry centroid in local space.</summary>
     public bool TryGetGeometryCentroid(out Vector3 centroid)
     {
@@ -372,88 +230,6 @@ public class OpenVolumetric : MonoBehaviour
     }
 
     /// <summary>
-    /// Loads manifest JSON, asks the native core to select a representation,
-    /// and prepares its resource using the same local/HTTP path as a direct MP4.
-    /// </summary>
-    private IEnumerator ResolveAdaptiveInput(Action<string> completed)
-    {
-        string manifestJson = null;
-        string manifestLocation = null;
-        bool remote = !string.IsNullOrWhiteSpace(videoUrl);
-        AdaptiveCapabilityLimits limits = GetAdaptiveCapabilityLimits();
-        if(remote)
-        {
-            Uri manifestUri;
-            if(!Uri.TryCreate(videoUrl.Trim(), UriKind.Absolute, out manifestUri) ||
-                (manifestUri.Scheme != Uri.UriSchemeHttp &&
-                 manifestUri.Scheme != Uri.UriSchemeHttps))
-            {
-                Debug.LogError(
-                    "OpenVolumetric - adaptive manifest URL must use HTTP or HTTPS");
-                completed(null);
-                yield break;
-            }
-            manifestLocation = manifestUri.AbsoluteUri;
-            if(LoadAdaptiveRepresentationWithCapabilities(
-                manifestLocation,
-                (int)adaptiveQuality,
-                limits.MaximumTextureWidth,
-                limits.MaximumTextureHeight,
-                limits.MaximumTextureBitrate,
-                limits.MaximumGeometryBitrate,
-                limits.MaximumBandwidth) != 1)
-            {
-                Debug.LogError(
-                    "OpenVolumetric - adaptive manifest selection failed: " +
-                    Marshal.PtrToStringAnsi(GetAdaptiveError()));
-                completed(null);
-                yield break;
-            }
-            UpdateAdaptiveSelectionDiagnostics();
-            completed(Marshal.PtrToStringAnsi(GetAdaptiveResource()));
-            yield break;
-        }
-        else
-        {
-            yield return StreamingAssetFile.PrepareReadablePath(
-                videoFilename,
-                path => manifestLocation = path);
-            if(string.IsNullOrEmpty(manifestLocation))
-            {
-                completed(null);
-                yield break;
-            }
-            manifestJson = File.ReadAllText(manifestLocation);
-        }
-
-        if(SelectAdaptiveRepresentationWithCapabilities(
-            manifestJson,
-            manifestLocation,
-            (int)adaptiveQuality,
-            limits.MaximumTextureWidth,
-            limits.MaximumTextureHeight,
-            limits.MaximumTextureBitrate,
-            limits.MaximumGeometryBitrate,
-            limits.MaximumBandwidth) != 1)
-        {
-            Debug.LogError(
-                "OpenVolumetric - adaptive manifest selection failed: " +
-                Marshal.PtrToStringAnsi(GetAdaptiveError()));
-            completed(null);
-            yield break;
-        }
-        UpdateAdaptiveSelectionDiagnostics();
-        string resourceUri =
-            Marshal.PtrToStringAnsi(GetAdaptiveResourceUri()) ?? "";
-        string manifestDirectory = Path.GetDirectoryName(videoFilename) ?? "";
-        string relativeResource = Path.Combine(manifestDirectory, resourceUri);
-        yield return StreamingAssetFile.PrepareReadablePath(
-            relativeResource,
-            completed);
-    }
-
-
-    /// <summary>
     /// Resolves the combined MP4, creates Unity render/audio resources, and
     /// starts the native decode workers.
     /// </summary>
@@ -463,40 +239,43 @@ public class OpenVolumetric : MonoBehaviour
         MeshRenderer mesh_renderer = gameObject.AddComponent<MeshRenderer>();
         m_decoder = new OpenVolumetricDecoder(debug);
              
-        // The MP4 contains texture, geometry, and optional audio.
-        string filepath = null;
-        if(useAdaptiveManifest)
-        {
-            yield return ResolveAdaptiveInput(path => filepath = path);
-        }
-        else if(!string.IsNullOrWhiteSpace(videoUrl))
-        {
-            Uri remoteUri;
-            if(!Uri.TryCreate(videoUrl.Trim(), UriKind.Absolute, out remoteUri) ||
-                (remoteUri.Scheme != Uri.UriSchemeHttp &&
-                 remoteUri.Scheme != Uri.UriSchemeHttps))
+        OpenVolumetricSourceResolver resolver =
+            new OpenVolumetricSourceResolver();
+        OpenVolumetricSourceResolver.Result source = null;
+        yield return resolver.Resolve(
+            new OpenVolumetricSourceResolver.Request
             {
-                Debug.LogError(
-                    "OpenVolumetric::Start - videoUrl must be an HTTP or HTTPS URL");
-                m_playback_state = PlaybackState.INIT_FAIL;
-                yield break;
-            }
-            filepath = remoteUri.AbsoluteUri;
-        }
-        else
-        {
-            yield return StreamingAssetFile.PrepareReadablePath(
-                videoFilename,
-                path => filepath = path);
-        }
-        if(string.IsNullOrEmpty(filepath))
+                Filename = videoFilename,
+                Url = videoUrl,
+                UseAdaptiveManifest = useAdaptiveManifest,
+                Quality = adaptiveQuality,
+                MaximumTextureDimension = adaptiveMaximumTextureDimension,
+                MaximumTextureBitrateMbps =
+                    adaptiveMaximumTextureBitrateMbps,
+                MaximumGeometryBitrateMbps =
+                    adaptiveMaximumGeometryBitrateMbps,
+                MaximumBandwidthMbps = adaptiveMaximumBandwidthMbps
+            },
+            result => source = result);
+        if(source == null || !source.Succeeded)
         {
             Debug.LogError(
-                "OpenVolumetric::Start - Failed to prepare volumetric video input");
+                "OpenVolumetric::Start - " +
+                (source != null ? source.Error : "Source resolution failed"));
             m_playback_state = PlaybackState.INIT_FAIL;
             yield break;
         }
-        if(!m_decoder.InitializeTexture(ref mesh_renderer, filepath))
+        m_selected_representation_id = source.RepresentationId;
+        m_adaptive_throughput_bps =
+            source.MeasuredThroughputBitsPerSecond;
+        m_adaptive_decision_reason = source.DecisionReason;
+        m_adaptive_segment_duration = source.SegmentDuration;
+        m_adaptive_representations.Clear();
+        m_adaptive_representations.AddRange(source.Representations);
+
+        if(!m_decoder.InitializeTexture(
+            ref mesh_renderer,
+            source.PlayableResource))
         {
             Debug.LogError("OpenVolumetric::Start - Failed to init OpenVolumetricDecoder");
             m_playback_state = PlaybackState.INIT_FAIL;
@@ -507,7 +286,7 @@ public class OpenVolumetric : MonoBehaviour
             m_decoder.ConfigureAdaptiveRepresentation(
                 m_selected_representation_id);
             m_decoder.ClearAdaptivePolicy();
-            foreach(AdaptiveRuntimeRepresentation representation in
+            foreach(OpenVolumetricSourceResolver.Representation representation in
                 m_adaptive_representations)
             {
                 m_decoder.AddAdaptivePolicyRepresentation(
@@ -606,7 +385,7 @@ public class OpenVolumetric : MonoBehaviour
         // render thread; otherwise the advancing clock continually discards
         // late startup frames and may never establish visual playback.
         m_play_after_initial_presentation =
-            !enableScriptedStart || m_has_scheduled_start;
+            !enableScriptedStart || m_clock.HasScheduledStart;
         m_waiting_for_initial_presentation = true;
         m_playback_position = 0.0;
         m_playback_state = PlaybackState.PREROLLING;
@@ -690,8 +469,8 @@ public class OpenVolumetric : MonoBehaviour
                     }
                     m_network_decoder_recovery = false;
                     m_network_settle_until = -1.0;
-                    m_last_decoder_recovery =
-                        AudioSettings.dspTime + 1.5;
+                    m_recovery_policy.SuppressAfterNetworkRecovery(
+                        AudioSettings.dspTime);
                 }
                 m_decoder_recovering = false;
                 m_playback_position = m_decoder_recovery_target;
@@ -725,29 +504,22 @@ public class OpenVolumetric : MonoBehaviour
             Debug.Log("OpenVolumetric - synchronized audio preroll ready");
             return;
         }
-        if (m_playback_state == PlaybackState.SCHEDULED && AudioSettings.dspTime >= m_start_time)
+        if (m_playback_state == PlaybackState.SCHEDULED &&
+            AudioSettings.dspTime >= m_clock.ScheduledDspTime)
         {
             m_playback_state = PlaybackState.PLAYING;
-            m_last_dsp_time = m_start_time;
-            m_has_last_dsp_time = true;
+            m_clock.BeginScheduledPlayback();
         }
         if (m_playback_state == PlaybackState.PLAYING)
         {
             double dspTime = AudioSettings.dspTime;
             // Accumulate the shared visual clock from the same Unity DSP
             // timeline used by the native audio effect.
-            if(!m_has_last_dsp_time)
-            {
-                m_last_dsp_time = dspTime;
-                m_has_last_dsp_time = true;
-            }
-            double delta = dspTime - m_last_dsp_time;
-            m_last_dsp_time = dspTime;
-            if(delta >= 0.0 && delta <= 0.5)
-            {
-                m_playback_position += delta;
-            }
-            else if(delta > 0.5)
+            double delta;
+            OpenVolumetricPlaybackClock.AdvanceResult advance =
+                m_clock.Advance(dspTime, out delta);
+            if(advance == OpenVolumetricPlaybackClock.AdvanceResult.Discontinuity &&
+                delta > 0.5)
             {
                 // Desktop minimization and mobile lifecycle transitions can
                 // suspend Update while Unity's audio graph keeps running.
@@ -848,7 +620,7 @@ public class OpenVolumetric : MonoBehaviour
     {
         m_playback_state = PlaybackState.STOPPED;
         m_playback_position = Duration;
-        m_has_last_dsp_time = false;
+        m_clock.ResetTick();
         m_waiting_for_audio_preroll = false;
         m_decoder_recovering = false;
         m_network_decoder_recovery = false;
@@ -891,7 +663,7 @@ public class OpenVolumetric : MonoBehaviour
                 m_decoder_recovering = false;
                 m_network_decoder_recovery = false;
                 m_network_settle_until = -1.0;
-                m_has_last_dsp_time = false;
+                m_clock.ResetTick();
                 if(m_audio_source != null)
                 {
                     m_audio_source.Stop();
@@ -968,68 +740,20 @@ public class OpenVolumetric : MonoBehaviour
     private bool TryRecoverDecoderLag(double dspTime)
     {
         double presented = m_decoder.LastPresentedTime;
-        if(presented < 0.0)
+        double target;
+        double lag;
+        if(!m_recovery_policy.ShouldRecover(
+            dspTime,
+            m_playback_position,
+            presented,
+            Duration,
+            m_decoder.FrameRate,
+            enableLoop,
+            out target,
+            out lag))
         {
             return false;
         }
-
-        double target = Duration > 0.0
-            ? m_playback_position % Duration
-            : m_playback_position;
-
-        // Do not enter catch-up recovery during the final few frames of a
-        // loop. The decoder may already be draining end-of-stream and cannot
-        // necessarily publish another frame at this target. Allowing the
-        // managed clock to cross the boundary lets UpdatePresentation perform
-        // its synchronized seek to zero instead of waiting indefinitely near
-        // the end of the previous pass.
-        double frameDuration = m_decoder.FrameRate > 0.0
-            ? 1.0 / m_decoder.FrameRate
-            : 1.0 / 30.0;
-        if(enableLoop &&
-            Duration > 0.0 &&
-            Duration - target <= 3.0 * frameDuration)
-        {
-            m_decoder_lag_started = -1.0;
-            return false;
-        }
-
-        double lag = target - presented;
-        if(lag < 0.0)
-        {
-            // A decoder is allowed to publish the nearest frame fractionally
-            // ahead of the requested timestamp. Treating that normal negative
-            // delta as a loop wrapped it into almost the full media duration
-            // and triggered a false recovery. Real loop transitions are
-            // handled explicitly by ContentLooped before this check.
-            m_decoder_lag_started = -1.0;
-            return false;
-        }
-        // Audio is driven by Unity's DSP clock while a complete visual frame
-        // may wait for both texture and geometry decoding. Keep their maximum
-        // separation near two video frames instead of allowing the previous
-        // half-second tolerance to become an audible lead.
-        double lagTolerance = m_decoder.FrameRate > 0.0
-            ? System.Math.Max(2.0 / m_decoder.FrameRate, 0.075)
-            : 0.075;
-        if(lag <= lagTolerance)
-        {
-            m_decoder_lag_started = -1.0;
-            return false;
-        }
-        if(m_decoder_lag_started < 0.0)
-        {
-            m_decoder_lag_started = dspTime;
-            return false;
-        }
-        if(dspTime - m_decoder_lag_started < 0.1 ||
-            dspTime - m_last_decoder_recovery < 0.5)
-        {
-            return false;
-        }
-
-        m_last_decoder_recovery = dspTime;
-        m_decoder_lag_started = -1.0;
         Debug.LogWarning(string.Format(
             "OpenVolumetric - decoder lagged by {0:F3}s; " +
             "pausing all streams to catch up at {1:F3}s",
@@ -1092,142 +816,28 @@ public class OpenVolumetric : MonoBehaviour
         {
             return;
         }
-        double now = Time.realtimeSinceStartupAsDouble;
-        if(m_adaptive_metrics_writer == null)
+        m_adaptive_metrics.Record(
+            adaptiveMetricsFileName,
+            adaptiveMetricsInterval,
+            new OpenVolumetricAdaptiveMetrics.Sample
         {
-            string filename = string.IsNullOrWhiteSpace(adaptiveMetricsFileName)
-                ? "openvolumetric-adaptive-metrics.csv"
-                : Path.GetFileName(adaptiveMetricsFileName);
-            string path = Path.Combine(Application.persistentDataPath, filename);
-            m_adaptive_metrics_writer = new StreamWriter(path, false);
-            m_adaptive_metrics_writer.AutoFlush = true;
-            m_adaptive_metrics_writer.WriteLine(
-                "wall_seconds,media_seconds,playback_state,input_state," +
-                "active_representation,pending_representation,switch_state," +
-                "throughput_mbps,downloaded_bytes,cached_bytes,http_requests," +
-                "network_recoveries,active_fragment,cached_fragments," +
-                "rebuffer_count,rebuffer_seconds,switch_count," +
-                "switch_failures,last_switch_latency_seconds,presented_seconds," +
-                "av_error_seconds,frame_ms,engine_memory_bytes,error");
-            m_adaptive_metrics_started = now;
-            m_adaptive_next_metric_time = now;
-            Debug.Log("OpenVolumetric - recording adaptive metrics: " + path);
-        }
-
-        OpenVolumetricDecoder.BufferInfo buffer = m_decoder.InputBufferInfo;
-        OpenVolumetricDecoder.AdaptiveSwitchInfo switching =
-            m_decoder.CurrentAdaptiveSwitchInfo;
-        if(buffer.State == OpenVolumetricDecoder.BufferState.Rebuffering &&
-            m_adaptive_previous_buffer_state !=
-                OpenVolumetricDecoder.BufferState.Rebuffering)
-        {
-            ++m_adaptive_rebuffer_count;
-            m_adaptive_rebuffer_started = now;
-        }
-        else if(buffer.State != OpenVolumetricDecoder.BufferState.Rebuffering &&
-            m_adaptive_previous_buffer_state ==
-                OpenVolumetricDecoder.BufferState.Rebuffering &&
-            m_adaptive_rebuffer_started >= 0.0)
-        {
-            m_adaptive_total_rebuffer_time +=
-                now - m_adaptive_rebuffer_started;
-            m_adaptive_rebuffer_started = -1.0;
-        }
-        m_adaptive_previous_buffer_state = buffer.State;
-
-        if(switching.State == OpenVolumetricDecoder.AdaptiveSwitchState.Preparing &&
-            m_adaptive_previous_switch_state !=
-                OpenVolumetricDecoder.AdaptiveSwitchState.Preparing)
-        {
-            m_adaptive_switch_started = now;
-        }
-        if(switching.State == OpenVolumetricDecoder.AdaptiveSwitchState.Failed &&
-            m_adaptive_previous_switch_state !=
-                OpenVolumetricDecoder.AdaptiveSwitchState.Failed)
-        {
-            ++m_adaptive_switch_failure_count;
-            if(m_adaptive_switch_started >= 0.0)
-            {
-                m_adaptive_last_switch_latency = now - m_adaptive_switch_started;
-                m_adaptive_switch_started = -1.0;
-            }
-        }
-        if(switching.State == OpenVolumetricDecoder.AdaptiveSwitchState.Stable &&
-            switching.SwitchCount > 0 &&
-            m_adaptive_previous_switch_state !=
-                OpenVolumetricDecoder.AdaptiveSwitchState.Stable &&
-            m_adaptive_switch_started >= 0.0)
-        {
-            m_adaptive_last_switch_latency = now - m_adaptive_switch_started;
-            m_adaptive_switch_started = -1.0;
-        }
-        m_adaptive_previous_switch_state = switching.State;
-
-        if(now < m_adaptive_next_metric_time)
-        {
-            return;
-        }
-        m_adaptive_next_metric_time = now +
-            Math.Max(0.05, adaptiveMetricsInterval);
-        double rebufferSeconds = m_adaptive_total_rebuffer_time;
-        if(m_adaptive_rebuffer_started >= 0.0)
-        {
-            rebufferSeconds += now - m_adaptive_rebuffer_started;
-        }
-        m_adaptive_metrics_writer.WriteLine(string.Join(",", new string[]
-        {
-            (now - m_adaptive_metrics_started).ToString("F6",
-                System.Globalization.CultureInfo.InvariantCulture),
-            CurrentTime.ToString("F6",
-                System.Globalization.CultureInfo.InvariantCulture),
-            Csv(m_playback_state.ToString()),
-            Csv(buffer.State.ToString()),
-            Csv(switching.ActiveRepresentation),
-            Csv(switching.PendingRepresentation),
-            Csv(switching.State.ToString()),
-            (m_adaptive_smoothed_throughput_bps / 1000000.0).ToString(
-                "F6", System.Globalization.CultureInfo.InvariantCulture),
-            buffer.DownloadedBytes.ToString(),
-            buffer.CachedBytes.ToString(),
-            buffer.RequestCount.ToString(),
-            buffer.RecoveryCount.ToString(),
-            buffer.ActiveFragment.ToString(),
-            buffer.CachedFragmentCount.ToString(),
-            m_adaptive_rebuffer_count.ToString(),
-            rebufferSeconds.ToString("F6",
-                System.Globalization.CultureInfo.InvariantCulture),
-            switching.SwitchCount.ToString(),
-            m_adaptive_switch_failure_count.ToString(),
-            m_adaptive_last_switch_latency.ToString("F6",
-                System.Globalization.CultureInfo.InvariantCulture),
-            m_decoder.LastPresentedTime.ToString("F6",
-                System.Globalization.CultureInfo.InvariantCulture),
-            (CurrentTime - m_decoder.LastPresentedTime).ToString("F6",
-                System.Globalization.CultureInfo.InvariantCulture),
-            (Time.unscaledDeltaTime * 1000.0F).ToString("F6",
-                System.Globalization.CultureInfo.InvariantCulture),
-            UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong().ToString(),
-            Csv(m_decoder.LastError)
-        }));
-    }
-
-    /// <summary>Escapes one value for an RFC 4180-compatible CSV field.</summary>
-    private static string Csv(string value)
-    {
-        string safe = value ?? string.Empty;
-        return "\"" + safe.Replace("\"", "\"\"") + "\"";
+            WallTime = Time.realtimeSinceStartupAsDouble,
+            MediaTime = CurrentTime,
+            PlaybackState = m_playback_state.ToString(),
+            Buffer = m_decoder.InputBufferInfo,
+            Switching = m_decoder.CurrentAdaptiveSwitchInfo,
+            SmoothedThroughputBitsPerSecond =
+                m_adaptive_smoothed_throughput_bps,
+            PresentedTime = m_decoder.LastPresentedTime,
+            FrameMilliseconds = Time.unscaledDeltaTime * 1000.0F,
+            Error = m_decoder.LastError
+        });
     }
 
     /// <summary>Flushes and closes the optional adaptive metrics output.</summary>
     private void CloseAdaptiveMetrics()
     {
-        if(m_adaptive_metrics_writer == null)
-        {
-            return;
-        }
-        m_adaptive_metrics_writer.Flush();
-        m_adaptive_metrics_writer.Dispose();
-        m_adaptive_metrics_writer = null;
+        m_adaptive_metrics.Dispose();
     }
 
     /// <summary>
@@ -1236,7 +846,6 @@ public class OpenVolumetric : MonoBehaviour
     public void SetScheduledStart(double dspTime)
     {
         m_playback_position = 0.0;
-        m_has_scheduled_start = true;
         SchedulePlayback(dspTime);
     }
 
@@ -1245,10 +854,7 @@ public class OpenVolumetric : MonoBehaviour
     /// </summary>
     private void SchedulePlayback(double dspTime)
     {
-        m_start_time = System.Math.Max(
-            AudioSettings.dspTime + 0.05, dspTime);
-        m_last_dsp_time = m_start_time;
-        m_has_last_dsp_time = true;
+        m_clock.Schedule(dspTime, AudioSettings.dspTime);
         m_playback_state = PlaybackState.SCHEDULED;
         ScheduleAudio();
     }
@@ -1271,7 +877,7 @@ public class OpenVolumetric : MonoBehaviour
         {
             m_audio_source.time = (float)m_playback_position;
             if(!m_decoder.ScheduleDspAudio(
-                m_start_time,
+                m_clock.ScheduledDspTime,
                 m_playback_position))
             {
                 Debug.LogError(
@@ -1279,7 +885,7 @@ public class OpenVolumetric : MonoBehaviour
                 m_playback_state = PlaybackState.INIT_FAIL;
                 return;
             }
-            m_audio_source.PlayScheduled(m_start_time);
+            m_audio_source.PlayScheduled(m_clock.ScheduledDspTime);
         }
     }
 
@@ -1333,7 +939,7 @@ public class OpenVolumetric : MonoBehaviour
             }
             m_playback_position = 0.0;
             m_decoder.MeshRenderer.enabled = true;
-            m_has_last_dsp_time = false;
+            m_clock.ResetTick();
             m_waiting_for_audio_preroll = false;
             m_decoder_recovery_target = 0.0;
             m_decoder_recovering = true;
@@ -1353,7 +959,7 @@ public class OpenVolumetric : MonoBehaviour
             m_decoder_recovering = true;
             m_network_decoder_recovery = false;
             m_network_settle_until = -1.0;
-            m_has_last_dsp_time = false;
+            m_clock.ResetTick();
             m_waiting_for_audio_preroll = false;
             m_playback_state = PlaybackState.PREROLLING;
             return;
@@ -1366,7 +972,7 @@ public class OpenVolumetric : MonoBehaviour
         if(!HasRequiredAudioPreroll())
         {
             m_waiting_for_audio_preroll = true;
-            m_has_last_dsp_time = false;
+            m_clock.ResetTick();
             m_playback_state = PlaybackState.PREROLLING;
             return;
         }
@@ -1386,7 +992,7 @@ public class OpenVolumetric : MonoBehaviour
         }
 
         m_playback_position = System.Math.Min(CurrentTime, Duration);
-        m_has_last_dsp_time = false;
+        m_clock.ResetTick();
         m_waiting_for_audio_preroll = false;
         m_playback_state = PlaybackState.PAUSED;
         if(m_audio_source != null)
