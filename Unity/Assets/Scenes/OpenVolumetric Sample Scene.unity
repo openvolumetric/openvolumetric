@@ -150,7 +150,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::OpenVolumetric.OpenVolumetric
   videoFilename: 
-  videoUrl: http://192.168.0.34:8000/Adaptive/bbc_rachel/manifest.json
+  videoUrl: http://192.168.0.34:8000/manifest.json
   useAdaptiveManifest: 1
   adaptiveQuality: 2
   adaptiveMaximumTextureDimension: 0

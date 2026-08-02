@@ -318,10 +318,6 @@ private:
 	void UpdateAdaptivePolicy();
 	void RecordAdaptiveMetrics();
 	void CloseAdaptiveMetrics();
-	void RequestAdaptiveRepresentation(
-		int32 TargetIndex,
-		const FString& Reason,
-		bool bIgnoreRetryBackoff = false);
 	bool HandleNetworkRecovery();
 
 	bool bNetworkRebuffering = false;
@@ -339,13 +335,7 @@ private:
 	};
 	TArray<FAdaptiveRuntimeRepresentation> AdaptiveRepresentations;
 	double AdaptiveSegmentDuration = 0.0;
-	double AdaptiveLastSampleTime = 0.0;
-	uint64 AdaptiveLastDownloadedBytes = 0;
 	double AdaptiveSmoothedThroughputBps = 0.0;
-	double AdaptiveDowngradeStarted = -1.0;
-	double AdaptiveUpgradeHeadroomStarted = -1.0;
-	double AdaptiveRetryAfter = -1.0;
-	int32 AdaptiveConsecutiveSwitchFailures = 0;
 	class FArchive* AdaptiveMetricsArchive = nullptr;
 	double AdaptiveMetricsStarted = 0.0;
 	double AdaptiveNextMetricTime = 0.0;

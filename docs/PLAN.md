@@ -523,24 +523,33 @@ build. GitHub Actions owns clean Linux, Windows, macOS, Linux sanitizer, and
 Android ARM64 validation on pushed changes; engine/device acceptance remains
 the documented manual gate.
 
-### Phase 2: One engine-neutral adaptive policy
+### Phase 2: One engine-neutral adaptive policy (complete)
 
-- [ ] Introduce a core `AdaptivePolicy` that consumes representation metadata,
+- [x] Introduce a core `AdaptivePolicy` that consumes representation metadata,
       transport/buffer observations, monotonic time, and switch outcomes.
-- [ ] Make the policy return explicit stay, switch, or retry-later decisions;
+- [x] Make the policy return explicit stay, switch, or retry-later decisions;
       keep resource opening and boundary-safe commits in
       `AdaptivePlayerCoordinator`.
-- [ ] Move throughput smoothing, safety factors, downgrade/upgrade dwell
+- [x] Move throughput smoothing, safety factors, downgrade/upgrade dwell
       times, failure backoff, and recovery state out of Unity and Unreal.
-- [ ] Generalize decisions from the current lowest/highest pair to adjacent
+- [x] Generalize decisions from the current lowest/highest pair to adjacent
       movement through an arbitrary capability-compatible representation
       ladder.
-- [ ] Preserve manual representation selection as a deterministic override of
+- [x] Preserve manual representation selection as a deterministic override of
       automatic policy.
-- [ ] Feed identical scripted observations through the core policy and verify
+- [x] Feed identical scripted observations through the core policy and verify
       identical decisions when called through Unity and Unreal.
-- [ ] Remove the temporary adaptive-policy exception from
+- [x] Remove the temporary adaptive-policy exception from
       `CODING_STYLE.md` after both engines become policy consumers only.
+
+Phase 2 centralizes all live representation decisions in the core. Unity and
+Unreal now translate their runtime diagnostics into the same immutable policy
+observation and execute only the returned coordinator request. Native tests
+cover arbitrary ladders, adjacent movement, rebuffer downgrade, exponential
+failure backoff, manual override, commit recovery, and deterministic parity
+between independent engine consumers. Local validation completed with 21
+native cases and 233 assertions, the controlled HTTP suite, macOS and Android
+ARM64 native plug-in builds, and an Unreal Editor macOS build.
 
 ### Phase 3: Stable native API and error model
 

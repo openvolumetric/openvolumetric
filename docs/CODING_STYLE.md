@@ -38,9 +38,7 @@ They apply to new code and to existing code when it is materially changed.
   `PascalCase` member/function convention.
 - Keep Unreal types inside the plug-in modules. The adapter may translate
   data, clocks, and ownership, but must not duplicate core decoding,
-  synchronization, or authoring policy. The currently mirrored live-adaptive
-  thresholds are a documented temporary exception and should move into the
-  core before the representation ladder expands.
+  synchronization, authoring, or adaptive-selection policy.
 
 ## Documentation
 

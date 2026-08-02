@@ -3,11 +3,13 @@
 #include <IMeshBuffer.h>
 #include <ITexture.h>
 #include <AdaptivePlayerCoordinator.h>
+#include <AdaptivePolicy.h>
 
 #include <atomic>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace openvolumetric::unity
 {
@@ -42,18 +44,22 @@ public:
 	bool stop();
 	/// Seeks every media modality to seconds on the shared timeline.
 	bool seek(double time);
-	/// Begins generation-safe preparation for an aligned representation switch.
-	bool request_adaptive_switch(
-		const char* resource,
-		const char* representation_id,
-		double boundary_time,
-		const char* reason);
 	/// Associates the initially opened resource with its manifest identifier.
 	void set_active_representation_id(const char* representation_id);
 	/// Returns a thread-safe adaptive transition snapshot.
 	AdaptiveSwitchInfo adaptive_switch_info() const;
-	/// Cancels pending representation preparation without stopping active media.
-	void cancel_adaptive_switch();
+	/// Replaces the policy ladder; call once for each manifest load.
+	void clear_adaptive_policy();
+	void add_adaptive_policy_representation(
+		const char* id, const char* resource, std::uint64_t bandwidth);
+	/// Evaluates shared automatic policy and starts any returned transition.
+	AdaptivePolicyDecision update_adaptive_policy(
+		const AdaptivePolicyObservation& observation);
+	/// Requests a deterministic ladder entry while bypassing failure backoff.
+	AdaptivePolicyDecision request_adaptive_policy(
+		std::size_t target_index,
+		const AdaptivePolicyObservation& observation);
+	double adaptive_policy_throughput() const;
 	/// Idempotently stops workers and releases opened native media state.
 	void close();
 
@@ -85,6 +91,8 @@ public:
 private:
 	int m_id;
 	AdaptivePlayerCoordinator m_player;
+	AdaptivePolicy m_adaptive_policy;
+	std::vector<AdaptivePolicyRepresentation> m_policy_representations;
 	std::unique_ptr<ITexture> m_texture;
 	std::unique_ptr<IMeshBuffer> m_mesh_buffer;
 	std::atomic<double> m_presentation_time{0.0};

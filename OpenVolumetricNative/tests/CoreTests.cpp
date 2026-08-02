@@ -2,6 +2,7 @@
 #include <doctest/doctest.h>
 
 #include <AdaptiveManifest.h>
+#include <AdaptivePolicy.h>
 #include <AdaptiveSelection.h>
 #include <FragmentedMp4Index.h>
 #include <GeometryPacket.h>
@@ -368,6 +369,135 @@ TEST_CASE("local adaptive selection honors quality and capability limits")
 	CHECK(selection.representation.id == "low");
 	CHECK(selection.capability_limited);
 	CHECK(selection.eligible_representations.size() == 1);
+}
+
+TEST_CASE("adaptive policy moves through an arbitrary ladder one step at a time")
+{
+	AdaptivePolicy policy;
+	policy.configure({
+		{"high", "high.mp4", 4000000},
+		{"low", "low.mp4", 1000000},
+		{"medium", "medium.mp4", 2000000}});
+	AdaptivePolicyObservation observation;
+	observation.duration = 60.0;
+	observation.segment_duration = 2.0;
+	observation.presentation_time = 5.0;
+	observation.input_state = AdaptivePolicyInputState::Ready;
+	observation.active_representation = "low";
+	observation.transfer_throughput_bps = 8000000;
+
+	observation.now = 1.0;
+	CHECK(policy.update(observation).action == AdaptivePolicyAction::Stay);
+	observation.now = 11.1;
+	const AdaptivePolicyDecision upgrade = policy.update(observation);
+	CHECK(upgrade.action == AdaptivePolicyAction::Switch);
+	CHECK(upgrade.target_representation == "medium");
+	CHECK(upgrade.boundary_time == doctest::Approx(14.0));
+
+	policy.reset();
+	observation.active_representation = "high";
+	observation.transfer_throughput_bps = 3000000;
+	observation.now = 20.0;
+	CHECK(policy.update(observation).action == AdaptivePolicyAction::Stay);
+	observation.now = 22.1;
+	const AdaptivePolicyDecision downgrade = policy.update(observation);
+	CHECK(downgrade.action == AdaptivePolicyAction::Switch);
+	CHECK(downgrade.target_representation == "medium");
+}
+
+TEST_CASE("adaptive policy handles rebuffering failures and manual override")
+{
+	AdaptivePolicy policy;
+	policy.configure({
+		{"low", "low.mp4", 1000000},
+		{"high", "high.mp4", 4000000}});
+	AdaptivePolicyObservation observation;
+	observation.now = 5.0;
+	observation.presentation_time = 4.0;
+	observation.duration = 60.0;
+	observation.segment_duration = 2.0;
+	observation.input_state = AdaptivePolicyInputState::Rebuffering;
+	observation.active_representation = "high";
+	AdaptivePolicyDecision decision = policy.update(observation);
+	CHECK(decision.action == AdaptivePolicyAction::Switch);
+	CHECK(decision.target_representation == "low");
+
+	observation.switch_state = AdaptivePolicySwitchState::Failed;
+	observation.switch_generation = 7;
+	decision = policy.update(observation);
+	CHECK(decision.action == AdaptivePolicyAction::RetryLater);
+	CHECK(decision.cancel_failed_switch);
+	CHECK(decision.retry_time == doctest::Approx(10.0));
+	decision = policy.update(observation);
+	CHECK_FALSE(decision.cancel_failed_switch);
+
+	observation.switch_state = AdaptivePolicySwitchState::Stable;
+	observation.input_state = AdaptivePolicyInputState::Ready;
+	observation.active_representation = "low";
+	observation.now = 6.0;
+	CHECK(policy.update(observation).action == AdaptivePolicyAction::RetryLater);
+	const AdaptivePolicyDecision manual = policy.request(1, observation);
+	CHECK(manual.action == AdaptivePolicyAction::Switch);
+	CHECK(manual.target_representation == "high");
+}
+
+TEST_CASE("adaptive policy resets failure backoff after a committed switch")
+{
+	AdaptivePolicy policy;
+	policy.configure({
+		{"low", "low.mp4", 1000000},
+		{"high", "high.mp4", 4000000}});
+	AdaptivePolicyObservation observation;
+	observation.now = 1.0;
+	observation.duration = 60.0;
+	observation.segment_duration = 2.0;
+	observation.switch_state = AdaptivePolicySwitchState::Failed;
+	observation.switch_generation = 1;
+	policy.update(observation);
+	CHECK(policy.retry_after() == doctest::Approx(6.0));
+
+	observation.now = 2.0;
+	observation.switch_state = AdaptivePolicySwitchState::Stable;
+	observation.switch_count = 1;
+	observation.active_representation = "low";
+	CHECK(policy.update(observation).action == AdaptivePolicyAction::Stay);
+	CHECK(policy.retry_after() < 0.0);
+}
+
+TEST_CASE("adaptive policy consumers make identical scripted decisions")
+{
+	const std::vector<AdaptivePolicyRepresentation> ladder = {
+		{"low", "low.mp4", 1'000'000},
+		{"medium", "medium.mp4", 2'000'000},
+		{"high", "high.mp4", 4'000'000}};
+	AdaptivePolicy unity_policy;
+	AdaptivePolicy unreal_policy;
+	unity_policy.configure(ladder);
+	unreal_policy.configure(ladder);
+
+	AdaptivePolicyObservation observation;
+	observation.duration = 120.0;
+	observation.segment_duration = 2.0;
+	observation.input_state = AdaptivePolicyInputState::Ready;
+	observation.switch_state = AdaptivePolicySwitchState::Stable;
+	observation.active_representation = "medium";
+	observation.transfer_throughput_bps = 1'500'000;
+
+	for (const double now : {0.0, 1.0, 2.0, 3.0})
+	{
+		observation.now = now;
+		observation.presentation_time = 20.0 + now;
+		const auto unity_decision = unity_policy.update(observation);
+		const auto unreal_decision = unreal_policy.update(observation);
+		CHECK(unity_decision.action == unreal_decision.action);
+		CHECK(unity_decision.target_index == unreal_decision.target_index);
+		CHECK(unity_decision.boundary_time == unreal_decision.boundary_time);
+		CHECK(unity_decision.retry_time == unreal_decision.retry_time);
+		CHECK(unity_decision.cancel_failed_switch ==
+			unreal_decision.cancel_failed_switch);
+		CHECK(unity_decision.target_representation ==
+			unreal_decision.target_representation);
+	}
 }
 
 TEST_CASE("fragmented MP4 index produces bounded media ranges")

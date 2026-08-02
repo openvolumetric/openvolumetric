@@ -53,6 +53,7 @@ or headers in the native core.
 
 | Interface | Responsibility |
 | --- | --- |
+| `AdaptivePolicy` | Converts representation metadata and runtime observations into deterministic stay, adjacent-switch, or retry-later decisions. |
 | `AdaptivePlayerCoordinator` | Retains active playback while a generation-safe candidate session opens, seeks, primes, and commits atomically at an aligned boundary. |
 | `OpenVolumetricPlayer` | Owns media and geometry decoding, seeking, timestamp matching, and complete CPU-side presentations. |
 | `IAVDecoder` | Opens the combined MP4 and supplies timestamped YUV video, PCM audio, and compressed geometry. |
@@ -78,7 +79,9 @@ An adapter follows this order:
 5. Call `start()` to launch the core media and geometry workers.
 6. Poll owned `OpenVolumetricPresentation` values from one monotonic engine
    playback clock and pull PCM through `read_audio()`.
-7. Request adaptive candidates only at manifest-declared aligned boundaries.
+7. Feed byte-source and switch observations to `AdaptivePolicy`, then pass any
+   returned switch request to `AdaptivePlayerCoordinator`; do not reproduce
+   thresholds, timers, or retry state in the engine component.
 8. On shutdown, call `close()` before releasing engine graphics/audio objects;
    it cancels input, joins preparation and decode workers, and is idempotent.
 

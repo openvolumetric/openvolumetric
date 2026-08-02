@@ -192,14 +192,7 @@ public class OpenVolumetric : MonoBehaviour
     private readonly List<AdaptiveRuntimeRepresentation>
         m_adaptive_representations = new List<AdaptiveRuntimeRepresentation>();
     private double m_adaptive_segment_duration;
-    private double m_adaptive_last_sample_time;
-    private ulong m_adaptive_last_downloaded_bytes;
     private double m_adaptive_smoothed_throughput_bps;
-    private double m_adaptive_downgrade_started = -1.0;
-    private double m_adaptive_upgrade_headroom_started = -1.0;
-    private double m_adaptive_retry_after = -1.0;
-    private int m_adaptive_consecutive_switch_failures;
-    private ulong m_adaptive_observed_switch_count;
     private StreamWriter m_adaptive_metrics_writer;
     private double m_adaptive_metrics_started;
     private double m_adaptive_next_metric_time;
@@ -312,8 +305,6 @@ public class OpenVolumetric : MonoBehaviour
             });
         }
         m_adaptive_segment_duration = GetAdaptiveSegmentDuration();
-        m_adaptive_retry_after = -1.0;
-        m_adaptive_consecutive_switch_failures = 0;
     }
 
     /// <summary>
@@ -515,6 +506,15 @@ public class OpenVolumetric : MonoBehaviour
         {
             m_decoder.ConfigureAdaptiveRepresentation(
                 m_selected_representation_id);
+            m_decoder.ClearAdaptivePolicy();
+            foreach(AdaptiveRuntimeRepresentation representation in
+                m_adaptive_representations)
+            {
+                m_decoder.AddAdaptivePolicyRepresentation(
+                    representation.Id,
+                    representation.Resource,
+                    representation.Bandwidth);
+            }
         }
 
         if(!m_decoder.InitializeMesh())
@@ -809,168 +809,16 @@ public class OpenVolumetric : MonoBehaviour
             return;
         }
 
+        m_decoder.UpdateAdaptivePolicy(
+            Time.realtimeSinceStartupAsDouble,
+            CurrentTime,
+            Duration,
+            m_adaptive_segment_duration);
+        m_adaptive_smoothed_throughput_bps =
+            m_decoder.AdaptivePolicyThroughputBitsPerSecond;
         OpenVolumetricDecoder.AdaptiveSwitchInfo switchInfo =
             m_decoder.CurrentAdaptiveSwitchInfo;
-        if(switchInfo.SwitchCount != m_adaptive_observed_switch_count)
-        {
-            m_adaptive_observed_switch_count = switchInfo.SwitchCount;
-            m_selected_representation_id = switchInfo.ActiveRepresentation;
-            m_adaptive_last_sample_time = Time.realtimeSinceStartupAsDouble;
-            m_adaptive_last_downloaded_bytes =
-                m_decoder.InputBufferInfo.DownloadedBytes;
-            m_adaptive_downgrade_started = -1.0;
-            m_adaptive_upgrade_headroom_started = -1.0;
-            m_adaptive_retry_after = -1.0;
-            m_adaptive_consecutive_switch_failures = 0;
-            Debug.Log(string.Format(
-                "OpenVolumetric - adaptive switch committed: {0}",
-                m_selected_representation_id));
-        }
-        if(switchInfo.State == OpenVolumetricDecoder.AdaptiveSwitchState.Failed)
-        {
-            Debug.LogWarning(
-                "OpenVolumetric - adaptive preparation failed; retrying at a later boundary: " +
-                m_decoder.LastError);
-            m_decoder.CancelAdaptiveSwitch();
-            ++m_adaptive_consecutive_switch_failures;
-            double retryDelay = Math.Min(
-                30.0,
-                5.0 * Math.Pow(
-                    2.0,
-                    Math.Min(m_adaptive_consecutive_switch_failures - 1, 3)));
-            m_adaptive_retry_after =
-                Time.realtimeSinceStartupAsDouble + retryDelay;
-            m_adaptive_downgrade_started = -1.0;
-            m_adaptive_upgrade_headroom_started = -1.0;
-            return;
-        }
-        if(switchInfo.State != OpenVolumetricDecoder.AdaptiveSwitchState.Stable)
-        {
-            return;
-        }
-
-        OpenVolumetricDecoder.BufferInfo buffer = m_decoder.InputBufferInfo;
-        double now = Time.realtimeSinceStartupAsDouble;
-        // Range-transfer throughput reflects available capacity. Download-byte
-        // deltas only reflect the active representation's consumption rate and
-        // therefore cannot establish that Low has enough headroom for High.
-        if(buffer.TransferThroughputBitsPerSecond > 0)
-        {
-            m_adaptive_smoothed_throughput_bps =
-                buffer.TransferThroughputBitsPerSecond;
-        }
-        if(m_adaptive_last_sample_time <= 0.0)
-        {
-            m_adaptive_last_sample_time = now;
-            m_adaptive_last_downloaded_bytes = buffer.DownloadedBytes;
-        }
-        double elapsed = now - m_adaptive_last_sample_time;
-        if(elapsed >= 1.0)
-        {
-            if(buffer.DownloadedBytes >= m_adaptive_last_downloaded_bytes)
-            {
-                ulong downloaded = buffer.DownloadedBytes -
-                    m_adaptive_last_downloaded_bytes;
-                if(downloaded > 0 &&
-                    buffer.TransferThroughputBitsPerSecond == 0)
-                {
-                    double measured = downloaded * 8.0 / elapsed;
-                    m_adaptive_smoothed_throughput_bps =
-                        m_adaptive_smoothed_throughput_bps <= 0.0
-                        ? measured
-                        : 0.75 * m_adaptive_smoothed_throughput_bps +
-                          0.25 * measured;
-                }
-            }
-            m_adaptive_last_downloaded_bytes = buffer.DownloadedBytes;
-            m_adaptive_last_sample_time = now;
-        }
-
-        AdaptiveRuntimeRepresentation low = m_adaptive_representations[0];
-        AdaptiveRuntimeRepresentation high =
-            m_adaptive_representations[m_adaptive_representations.Count - 1];
-        bool usingHigh = switchInfo.ActiveRepresentation == high.Id;
-        bool usingLow = switchInfo.ActiveRepresentation == low.Id;
-        if(now < m_adaptive_retry_after)
-        {
-            return;
-        }
-        bool insufficient = buffer.State == OpenVolumetricDecoder.BufferState.Rebuffering ||
-            (m_adaptive_smoothed_throughput_bps > 0.0 &&
-             m_adaptive_smoothed_throughput_bps < high.Bandwidth * 1.2);
-        if(usingHigh && insufficient)
-        {
-            if(m_adaptive_downgrade_started < 0.0)
-            {
-                m_adaptive_downgrade_started = now;
-            }
-            if(buffer.State == OpenVolumetricDecoder.BufferState.Rebuffering ||
-                now - m_adaptive_downgrade_started >= 2.0)
-            {
-                RequestAdaptiveRepresentation(
-                    low,
-                    buffer.State == OpenVolumetricDecoder.BufferState.Rebuffering
-                        ? "Active input rebuffered; preparing Low."
-                        : "Sustained throughput lacked High headroom.");
-            }
-            return;
-        }
-        m_adaptive_downgrade_started = -1.0;
-
-        bool upgradeHeadroom = usingLow &&
-            buffer.State == OpenVolumetricDecoder.BufferState.Ready &&
-            m_adaptive_smoothed_throughput_bps >= high.Bandwidth * 1.75;
-        if(upgradeHeadroom)
-        {
-            if(m_adaptive_upgrade_headroom_started < 0.0)
-            {
-                m_adaptive_upgrade_headroom_started = now;
-            }
-            if(now - m_adaptive_upgrade_headroom_started >= 10.0)
-            {
-                RequestAdaptiveRepresentation(
-                    high,
-                    "Sustained throughput and input stability permit High.");
-            }
-        }
-        else
-        {
-            m_adaptive_upgrade_headroom_started = -1.0;
-        }
-    }
-
-    private void RequestAdaptiveRepresentation(
-        AdaptiveRuntimeRepresentation target,
-        string reason,
-        bool ignoreRetryBackoff = false)
-    {
-        if(!ignoreRetryBackoff &&
-            Time.realtimeSinceStartupAsDouble < m_adaptive_retry_after)
-        {
-            return;
-        }
-        // Opening an indexed remote candidate still requires its header,
-        // terminal duration fragment, and target fragment. Four boundaries
-        // keeps both upgrade and downgrade preparation ahead of the DSP clock.
-        double lead = m_adaptive_segment_duration * 4.0;
-        double boundary = Math.Ceiling(
-            (CurrentTime + lead) / m_adaptive_segment_duration) *
-            m_adaptive_segment_duration;
-        if(boundary >= Duration)
-        {
-            return;
-        }
-        if(m_decoder.RequestAdaptiveSwitch(
-            target.Resource, target.Id, boundary, reason))
-        {
-            m_adaptive_downgrade_started = -1.0;
-            m_adaptive_upgrade_headroom_started = -1.0;
-            Debug.Log(string.Format(
-                "OpenVolumetric - preparing {0} for {1:F3}s: {2}",
-                target.Id,
-                boundary,
-                reason));
-        }
+        m_selected_representation_id = switchInfo.ActiveRepresentation;
     }
 
     /// <summary>Requests Low or High at the next safe boundary for testing.</summary>
@@ -981,18 +829,15 @@ public class OpenVolumetric : MonoBehaviour
         {
             return false;
         }
-        AdaptiveRuntimeRepresentation target = high
-            ? m_adaptive_representations[m_adaptive_representations.Count - 1]
-            : m_adaptive_representations[0];
-        if(target.Id == m_selected_representation_id)
-        {
-            return true;
-        }
-        RequestAdaptiveRepresentation(
-            target,
-            "Developer requested a manual adaptive transition.",
-            true);
-        return true;
+        ulong targetIndex = high
+            ? (ulong)(m_adaptive_representations.Count - 1)
+            : 0;
+        return m_decoder.RequestAdaptivePolicyIndex(
+            targetIndex,
+            Time.realtimeSinceStartupAsDouble,
+            CurrentTime,
+            Duration,
+            m_adaptive_segment_duration) >= 0;
     }
 
     /// <summary>
@@ -1054,9 +899,6 @@ public class OpenVolumetric : MonoBehaviour
                 m_decoder.StopDspAudio();
                 Debug.LogWarning(
                     "OpenVolumetric - network interrupted; rebuffering");
-                m_adaptive_smoothed_throughput_bps = 1.0;
-                m_adaptive_downgrade_started =
-                    Time.realtimeSinceStartupAsDouble - 2.0;
             }
             return true;
         }

@@ -300,19 +300,22 @@ the new session. Texture and geometry wait at the boundary until this audio
 commit and then publish the already matched pending presentation. Content
 without audio commits from the presentation path at the same media timestamp.
 
-Unity and Unreal estimate available network capacity from the elapsed duration
-of completed HTTP range transfers. This deliberately excludes idle cache time:
+The engine-neutral `AdaptivePolicy` estimates available network capacity from
+the elapsed duration of completed HTTP range transfers. Unity and Unreal only
+translate their runtime snapshots into the common observation contract. The
+measurement deliberately excludes idle cache time:
 download-byte deltas over wall time describe how quickly the active
 representation consumes data, not how quickly the connection can deliver it,
 and therefore cannot reliably establish upgrade headroom while Low is active.
-High downgrades after two seconds without 1.2x headroom or after a recovered
-rebuffer; Low upgrades only after ten seconds of Ready input with 1.75x
+Each representation downgrades to its adjacent lower rung after two seconds
+without 1.2x headroom or after a recovered rebuffer. It upgrades to its
+adjacent higher rung only after ten seconds of Ready input with 1.75x
 headroom. Both directions prepare four fragments ahead to cover bounded remote
 metadata, final-fragment duration discovery, and coupled preroll work without
 racing the audio boundary.
 Developer controls can force a transition for repeatable validation: **Q** in
-Unity and **P** in Unreal. Automatic and forced platform-matrix validation is
-still required before Milestone 13 is complete.
+Unity and **P** in Unreal. Manual selection goes through the same policy but
+deterministically overrides automatic failure backoff.
 
 A deterministic range server now drives repeatable bandwidth, latency, jitter,
 outage, and failed-request phases. Unity and Unreal can record the same CSV

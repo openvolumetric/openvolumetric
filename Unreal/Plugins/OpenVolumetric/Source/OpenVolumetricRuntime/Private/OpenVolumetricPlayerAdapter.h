@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AdaptivePlayerCoordinator.h"
+#include "AdaptivePolicy.h"
 
 namespace UE::Geometry
 {
@@ -26,17 +27,18 @@ public:
 	bool Seek(double TimeSeconds, FString& OutError);
 	/// Labels the initially opened resource with its manifest identifier.
 	void SetActiveRepresentationId(const FString& RepresentationId);
-	/// Begins asynchronous candidate preparation for an aligned boundary.
-	bool RequestAdaptiveSwitch(
-		const FString& Resource,
-		const FString& RepresentationId,
-		double BoundaryTime,
-		const FString& Reason,
-		FString& OutError);
 	/// Returns a thread-safe representation-transition snapshot.
 	openvolumetric::AdaptiveSwitchInfo GetAdaptiveSwitchInfo() const;
-	/// Cancels candidate preparation without interrupting the active session.
-	void CancelAdaptiveSwitch();
+	void ClearAdaptivePolicy();
+	void AddAdaptivePolicyRepresentation(
+		const FString& Id, const FString& Resource, uint64 Bandwidth);
+	openvolumetric::AdaptivePolicyDecision UpdateAdaptivePolicy(
+		double Now, double PresentationTime, double Duration,
+		double SegmentDuration);
+	openvolumetric::AdaptivePolicyDecision RequestAdaptivePolicy(
+		int32 TargetIndex, double Now, double PresentationTime,
+		double Duration, double SegmentDuration);
+	double GetAdaptivePolicyThroughput() const;
 	/// Returns the most recent core/coordinator failure.
 	FString GetError() const;
 	/// Idempotently releases all native playback resources.
@@ -65,5 +67,8 @@ public:
 
 private:
 	openvolumetric::AdaptivePlayerCoordinator Player;
+	openvolumetric::AdaptivePolicy Policy;
+	std::vector<openvolumetric::AdaptivePolicyRepresentation>
+		PolicyRepresentations;
 	TArray<float> AudioFloatBuffer;
 };

@@ -51,6 +51,14 @@ coordinator exchanges complete sessions at an aligned fragment boundary; an
 audio-bearing switch is committed inside the PCM read so the old and new
 sessions divide one DSP block at the exact boundary sample.
 
+`AdaptivePolicy` owns the engine-neutral live selection algorithm. It consumes
+the compatible representation ladder, byte-source/buffer observations,
+monotonic time, and coordinator switch outcomes. Its only outputs are stay,
+switch, or retry-later decisions. Throughput smoothing, headroom factors,
+dwell timers, failure backoff, and adjacent ladder movement therefore behave
+identically in Unity and Unreal; opening and committing a candidate remain the
+coordinator's responsibility.
+
 ## Timestamp synchronization
 
 - Video and geometry retain their MP4 presentation timestamps through

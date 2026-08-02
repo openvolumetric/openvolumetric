@@ -1171,6 +1171,16 @@ is complete, so failed upgrades do not interrupt playback. Candidate seeking
 occurs before its decoder workers start to avoid downloading from timestamp
 zero, and failed automatic preparations use capped exponential retry backoff.
 
+Live selection is implemented once by the core `AdaptivePolicy`. It consumes
+an arbitrary capability-compatible representation ladder plus a deterministic
+snapshot of monotonic time, presentation time, input/buffer state, measured
+range-transfer throughput, downloaded bytes, and coordinator switch outcome.
+It returns an explicit stay, adjacent switch, or retry-later decision. The
+policy owns throughput smoothing, safety margins, dwell timing, and capped
+failure backoff; Unity and Unreal are policy consumers that resolve the
+decision through `AdaptivePlayerCoordinator`. A manual request uses the same
+boundary calculation while deliberately overriding automatic backoff.
+
 Audio-bearing presentations commit inside the native interleaved PCM read. A
 DSP block crossing the boundary is divided at the exact sample: its prefix is
 read from the old session and its suffix from the new one. The active session
@@ -1512,11 +1522,8 @@ The most significant limitations of the current system are:
   replacement rather than a direct RHI upload path.
 - Unreal packaged builds and platforms beyond the macOS Editor are not yet
   validated.
-- Live downgrade/upgrade thresholds and timers are intentionally equivalent
-  but currently mirrored in the Unity and Unreal components. Moving this last
-  decision layer into the engine-neutral core is required before expanding to
-  larger quality ladders; startup selection, candidate preparation, and atomic
-  switching are already shared.
+- The engine-neutral adaptive policy supports arbitrary compatible ladders,
+  but current authoring presets still emit only Low and High representations.
 - A Nuke integration remains planned.
 - Error recovery generally stops or seeks the pipeline; damaged-sample
   concealment is limited.

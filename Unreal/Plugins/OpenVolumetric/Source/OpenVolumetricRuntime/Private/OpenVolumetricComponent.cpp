@@ -431,6 +431,15 @@ bool UOpenVolumetricComponent::Open()
 	if (bUseAdaptiveManifest)
 	{
 		Player->SetActiveRepresentationId(SelectedRepresentationId);
+		Player->ClearAdaptivePolicy();
+		for (const FAdaptiveRuntimeRepresentation& Representation :
+			AdaptiveRepresentations)
+		{
+			Player->AddAdaptivePolicyRepresentation(
+				Representation.Id,
+				Representation.Resource,
+				Representation.Bandwidth);
+		}
 	}
 
 	const openvolumetric::OpenVolumetricMediaInfo& Info = Player->GetMediaInfo();
@@ -556,13 +565,7 @@ void UOpenVolumetricComponent::Close()
 	LastPresentationTime = -1.0;
 	AdaptiveRepresentations.Reset();
 	AdaptiveSegmentDuration = 0.0;
-	AdaptiveLastSampleTime = 0.0;
-	AdaptiveLastDownloadedBytes = 0;
 	AdaptiveSmoothedThroughputBps = 0.0;
-	AdaptiveDowngradeStarted = -1.0;
-	AdaptiveUpgradeHeadroomStarted = -1.0;
-	AdaptiveRetryAfter = -1.0;
-	AdaptiveConsecutiveSwitchFailures = 0;
 	AdaptiveMetricsStarted = 0.0;
 	AdaptiveNextMetricTime = 0.0;
 	AdaptiveSwitchStarted = -1.0;
@@ -747,183 +750,19 @@ void UOpenVolumetricComponent::UpdateAdaptivePolicy()
 		return;
 	}
 
+	Player->UpdateAdaptivePolicy(
+		FPlatformTime::Seconds(),
+		CurrentTimeSeconds,
+		DurationSeconds,
+		AdaptiveSegmentDuration);
+	AdaptiveSmoothedThroughputBps = Player->GetAdaptivePolicyThroughput();
 	const openvolumetric::AdaptiveSwitchInfo SwitchInfo =
 		Player->GetAdaptiveSwitchInfo();
+	SelectedRepresentationId = UTF8_TO_TCHAR(
+		SwitchInfo.active_representation.c_str());
 	PendingRepresentationId = UTF8_TO_TCHAR(
 		SwitchInfo.pending_representation.c_str());
-	if (static_cast<int64>(SwitchInfo.switch_count) != AdaptiveSwitchCount)
-	{
-		AdaptiveSwitchCount = static_cast<int64>(SwitchInfo.switch_count);
-		SelectedRepresentationId = UTF8_TO_TCHAR(
-			SwitchInfo.active_representation.c_str());
-		AdaptiveLastSampleTime = FPlatformTime::Seconds();
-		AdaptiveLastDownloadedBytes = DownloadedBytes > 0
-			? static_cast<uint64>(DownloadedBytes)
-			: 0;
-		AdaptiveDowngradeStarted = -1.0;
-		AdaptiveUpgradeHeadroomStarted = -1.0;
-		AdaptiveRetryAfter = -1.0;
-		AdaptiveConsecutiveSwitchFailures = 0;
-		UE_LOG(
-			LogOpenVolumetricComponent,
-			Log,
-			TEXT("Adaptive switch committed: %s"),
-			*SelectedRepresentationId);
-	}
-	if (SwitchInfo.state == openvolumetric::AdaptiveSwitchState::Failed)
-	{
-		LastError = Player->GetError();
-		UE_LOG(
-			LogOpenVolumetricComponent,
-			Warning,
-			TEXT("Adaptive preparation failed; retrying at a later boundary: %s"),
-			*LastError);
-		Player->CancelAdaptiveSwitch();
-		LastError.Reset();
-		++AdaptiveConsecutiveSwitchFailures;
-		const double RetryDelay = FMath::Min(
-			30.0,
-			5.0 * FMath::Pow(
-				2.0,
-				FMath::Min(AdaptiveConsecutiveSwitchFailures - 1, 3)));
-		AdaptiveRetryAfter = FPlatformTime::Seconds() + RetryDelay;
-		AdaptiveDowngradeStarted = -1.0;
-		AdaptiveUpgradeHeadroomStarted = -1.0;
-		return;
-	}
-	if (SwitchInfo.state != openvolumetric::AdaptiveSwitchState::Stable)
-	{
-		return;
-	}
-
-	const double Now = FPlatformTime::Seconds();
-	// Actual range-transfer rate measures network capacity; byte deltas measure
-	// only representation consumption and cannot reliably trigger an upgrade.
-	if (TransferThroughputBitsPerSecond > 0)
-	{
-		AdaptiveSmoothedThroughputBps =
-			static_cast<double>(TransferThroughputBitsPerSecond);
-	}
-	const uint64 CurrentDownloaded = DownloadedBytes > 0
-		? static_cast<uint64>(DownloadedBytes)
-		: 0;
-	if (AdaptiveLastSampleTime <= 0.0)
-	{
-		AdaptiveLastSampleTime = Now;
-		AdaptiveLastDownloadedBytes = CurrentDownloaded;
-	}
-	const double Elapsed = Now - AdaptiveLastSampleTime;
-	if (Elapsed >= 1.0)
-	{
-		if (CurrentDownloaded >= AdaptiveLastDownloadedBytes)
-		{
-			const uint64 Downloaded =
-				CurrentDownloaded - AdaptiveLastDownloadedBytes;
-			if (Downloaded > 0 && TransferThroughputBitsPerSecond <= 0)
-			{
-				const double Measured =
-					static_cast<double>(Downloaded) * 8.0 / Elapsed;
-				AdaptiveSmoothedThroughputBps =
-					AdaptiveSmoothedThroughputBps <= 0.0
-						? Measured
-						: 0.75 * AdaptiveSmoothedThroughputBps +
-							0.25 * Measured;
-			}
-		}
-		AdaptiveLastDownloadedBytes = CurrentDownloaded;
-		AdaptiveLastSampleTime = Now;
-	}
-
-	const FAdaptiveRuntimeRepresentation& Low = AdaptiveRepresentations[0];
-	const int32 HighIndex = AdaptiveRepresentations.Num() - 1;
-	const FAdaptiveRuntimeRepresentation& High =
-		AdaptiveRepresentations[HighIndex];
-	const bool bUsingHigh = SelectedRepresentationId == High.Id;
-	const bool bUsingLow = SelectedRepresentationId == Low.Id;
-	if (Now < AdaptiveRetryAfter)
-		return;
-	const bool bInsufficient =
-		InputState == EOpenVolumetricInputState::Rebuffering ||
-		(AdaptiveSmoothedThroughputBps > 0.0 &&
-		 AdaptiveSmoothedThroughputBps <
-			static_cast<double>(High.Bandwidth) * 1.2);
-	if (bUsingHigh && bInsufficient)
-	{
-		if (AdaptiveDowngradeStarted < 0.0)
-			AdaptiveDowngradeStarted = Now;
-		if (InputState == EOpenVolumetricInputState::Rebuffering ||
-			Now - AdaptiveDowngradeStarted >= 2.0)
-		{
-			RequestAdaptiveRepresentation(
-				0,
-				InputState == EOpenVolumetricInputState::Rebuffering
-					? TEXT("Active input rebuffered; preparing Low.")
-					: TEXT("Sustained throughput lacked High headroom."));
-		}
-		return;
-	}
-	AdaptiveDowngradeStarted = -1.0;
-
-	const bool bUpgradeHeadroom = bUsingLow &&
-		InputState == EOpenVolumetricInputState::Ready &&
-		AdaptiveSmoothedThroughputBps >=
-			static_cast<double>(High.Bandwidth) * 1.75;
-	if (bUpgradeHeadroom)
-	{
-		if (AdaptiveUpgradeHeadroomStarted < 0.0)
-			AdaptiveUpgradeHeadroomStarted = Now;
-		if (Now - AdaptiveUpgradeHeadroomStarted >= 10.0)
-		{
-			RequestAdaptiveRepresentation(
-				HighIndex,
-				TEXT("Sustained throughput and input stability permit High."));
-		}
-	}
-	else
-	{
-		AdaptiveUpgradeHeadroomStarted = -1.0;
-	}
-}
-
-void UOpenVolumetricComponent::RequestAdaptiveRepresentation(
-	int32 TargetIndex,
-	const FString& Reason,
-	bool bIgnoreRetryBackoff)
-{
-	// Automatic retries respect the failure backoff; explicit developer
-	// requests remain available for deterministic indexed-switch testing.
-	if (!AdaptiveRepresentations.IsValidIndex(TargetIndex))
-		return;
-	if (!bIgnoreRetryBackoff && FPlatformTime::Seconds() < AdaptiveRetryAfter)
-		return;
-	// Both directions need time to read indexed metadata and preroll a complete
-	// coupled presentation without racing the authoritative audio boundary.
-	const double Lead = AdaptiveSegmentDuration * 4.0;
-	const double Boundary = FMath::CeilToDouble(
-		(CurrentTimeSeconds + Lead) / AdaptiveSegmentDuration) *
-		AdaptiveSegmentDuration;
-	if (Boundary >= DurationSeconds)
-		return;
-	const FAdaptiveRuntimeRepresentation& Target =
-		AdaptiveRepresentations[TargetIndex];
-	if (Player->RequestAdaptiveSwitch(
-			Target.Resource,
-			Target.Id,
-			Boundary,
-			Reason,
-			LastError))
-	{
-		AdaptiveDowngradeStarted = -1.0;
-		AdaptiveUpgradeHeadroomStarted = -1.0;
-		PendingRepresentationId = Target.Id;
-		UE_LOG(
-			LogOpenVolumetricComponent,
-			Log,
-			TEXT("Preparing %s for %.3fs: %s"),
-			*Target.Id,
-			Boundary,
-			*Reason);
-	}
+	AdaptiveSwitchCount = static_cast<int64>(SwitchInfo.switch_count);
 }
 
 bool UOpenVolumetricComponent::RequestAdaptiveHigh(bool bHigh)
@@ -936,13 +775,14 @@ bool UOpenVolumetricComponent::RequestAdaptiveHigh(bool bHigh)
 	const int32 TargetIndex = bHigh
 		? AdaptiveRepresentations.Num() - 1
 		: 0;
-	if (AdaptiveRepresentations[TargetIndex].Id == SelectedRepresentationId)
-		return true;
-	RequestAdaptiveRepresentation(
+	const openvolumetric::AdaptivePolicyDecision Decision =
+		Player->RequestAdaptivePolicy(
 		TargetIndex,
-		TEXT("Developer requested a manual adaptive transition."),
-		true);
-	return true;
+		FPlatformTime::Seconds(),
+		CurrentTimeSeconds,
+		DurationSeconds,
+		AdaptiveSegmentDuration);
+	return Decision.action != openvolumetric::AdaptivePolicyAction::RetryLater;
 }
 
 bool UOpenVolumetricComponent::HandleNetworkRecovery()
@@ -968,8 +808,6 @@ bool UOpenVolumetricComponent::HandleNetworkRecovery()
 				LogOpenVolumetricComponent,
 				Warning,
 				TEXT("HTTP input interrupted; rebuffering."));
-			AdaptiveSmoothedThroughputBps = 1.0;
-			AdaptiveDowngradeStarted = FPlatformTime::Seconds() - 2.0;
 		}
 		return true;
 	}

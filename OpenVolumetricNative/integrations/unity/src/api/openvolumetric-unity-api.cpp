@@ -595,25 +595,68 @@ OPENVOLUMETRIC_API int openvolumetric_configure_adaptive_instance(
 	return 1;
 }
 
-OPENVOLUMETRIC_API int openvolumetric_request_adaptive_switch(
-	int id,
-	const char* resource,
-	const char* representation_id,
-	double boundary_time,
-	const char* reason)
-{
-	InstanceAccess instance(id);
-	return instance && instance->request_adaptive_switch(
-		resource, representation_id, boundary_time, reason)
-		? 1
-		: -1;
-}
-
-OPENVOLUMETRIC_API void openvolumetric_cancel_adaptive_switch(int id)
+OPENVOLUMETRIC_API void openvolumetric_clear_adaptive_policy(int id)
 {
 	InstanceAccess instance(id);
 	if (instance)
-		instance->cancel_adaptive_switch();
+		instance->clear_adaptive_policy();
+}
+
+OPENVOLUMETRIC_API void openvolumetric_add_adaptive_policy_representation(
+	int id,
+	const char* representation_id,
+	const char* resource,
+	unsigned long long bandwidth)
+{
+	InstanceAccess instance(id);
+	if (instance)
+		instance->add_adaptive_policy_representation(
+			representation_id, resource, bandwidth);
+}
+
+OPENVOLUMETRIC_API int openvolumetric_update_adaptive_policy(
+	int id,
+	double now,
+	double presentation_time,
+	double duration,
+	double segment_duration)
+{
+	InstanceAccess instance(id);
+	if (!instance)
+		return -1;
+	openvolumetric::AdaptivePolicyObservation observation;
+	observation.now = now;
+	observation.presentation_time = presentation_time;
+	observation.duration = duration;
+	observation.segment_duration = segment_duration;
+	return static_cast<int>(
+		instance->update_adaptive_policy(observation).action);
+}
+
+OPENVOLUMETRIC_API int openvolumetric_request_adaptive_policy_index(
+	int id,
+	unsigned long long target_index,
+	double now,
+	double presentation_time,
+	double duration,
+	double segment_duration)
+{
+	InstanceAccess instance(id);
+	if (!instance)
+		return -1;
+	openvolumetric::AdaptivePolicyObservation observation;
+	observation.now = now;
+	observation.presentation_time = presentation_time;
+	observation.duration = duration;
+	observation.segment_duration = segment_duration;
+	return static_cast<int>(instance->request_adaptive_policy(
+		static_cast<std::size_t>(target_index), observation).action);
+}
+
+OPENVOLUMETRIC_API double openvolumetric_get_adaptive_policy_throughput(int id)
+{
+	InstanceAccess instance(id);
+	return instance ? instance->adaptive_policy_throughput() : 0.0;
 }
 
 OPENVOLUMETRIC_API int openvolumetric_get_adaptive_switch_details(

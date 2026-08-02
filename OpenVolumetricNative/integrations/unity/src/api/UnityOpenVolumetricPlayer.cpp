@@ -48,20 +48,6 @@ bool UnityOpenVolumetricPlayer::seek(double time)
 	return true;
 }
 
-bool UnityOpenVolumetricPlayer::request_adaptive_switch(
-	const char* resource,
-	const char* representation_id,
-	double boundary_time,
-	const char* reason)
-{
-	return resource != nullptr && representation_id != nullptr &&
-		m_player.request_switch(
-			resource,
-			representation_id,
-			boundary_time,
-			reason != nullptr ? reason : "Adaptive policy requested a switch.");
-}
-
 void UnityOpenVolumetricPlayer::set_active_representation_id(
 	const char* representation_id)
 {
@@ -74,9 +60,96 @@ AdaptiveSwitchInfo UnityOpenVolumetricPlayer::adaptive_switch_info() const
 	return m_player.switch_info();
 }
 
-void UnityOpenVolumetricPlayer::cancel_adaptive_switch()
+void UnityOpenVolumetricPlayer::clear_adaptive_policy()
 {
-	m_player.cancel_pending_switch();
+	m_policy_representations.clear();
+	m_adaptive_policy.configure({});
+}
+
+void UnityOpenVolumetricPlayer::add_adaptive_policy_representation(
+	const char* id,
+	const char* resource,
+	std::uint64_t bandwidth)
+{
+	if (id == nullptr || resource == nullptr)
+		return;
+	m_policy_representations.push_back({id, resource, bandwidth});
+	m_adaptive_policy.configure(m_policy_representations);
+}
+
+namespace
+{
+
+AdaptivePolicySwitchState policy_switch_state(AdaptiveSwitchState state)
+{
+	return static_cast<AdaptivePolicySwitchState>(state);
+}
+
+AdaptivePolicyInputState policy_input_state(ByteSourceState state)
+{
+	if (state == ByteSourceState::Ready || state == ByteSourceState::Ended)
+		return AdaptivePolicyInputState::Ready;
+	return static_cast<AdaptivePolicyInputState>(state);
+}
+
+} // namespace
+
+AdaptivePolicyDecision UnityOpenVolumetricPlayer::update_adaptive_policy(
+	const AdaptivePolicyObservation& supplied)
+{
+	AdaptivePolicyObservation observation = supplied;
+	const AdaptiveSwitchInfo switch_info = m_player.switch_info();
+	const OpenVolumetricBufferInfo buffer = m_player.buffer_info();
+	observation.input_state = policy_input_state(buffer.state);
+	observation.transfer_throughput_bps =
+		buffer.transfer_throughput_bits_per_second;
+	observation.downloaded_bytes = buffer.downloaded_bytes;
+	observation.switch_state = policy_switch_state(switch_info.state);
+	observation.switch_generation = switch_info.generation;
+	observation.switch_count = switch_info.switch_count;
+	observation.active_representation = switch_info.active_representation;
+	AdaptivePolicyDecision decision = m_adaptive_policy.update(observation);
+	if (decision.cancel_failed_switch)
+		m_player.cancel_pending_switch();
+	if (decision.action == AdaptivePolicyAction::Switch &&
+		!m_player.request_switch(
+			decision.target_resource,
+			decision.target_representation,
+			decision.boundary_time,
+			decision.reason))
+	{
+		decision.action = AdaptivePolicyAction::RetryLater;
+	}
+	return decision;
+}
+
+AdaptivePolicyDecision UnityOpenVolumetricPlayer::request_adaptive_policy(
+	std::size_t target_index,
+	const AdaptivePolicyObservation& supplied)
+{
+	AdaptivePolicyObservation observation = supplied;
+	const AdaptiveSwitchInfo switch_info = m_player.switch_info();
+	observation.switch_state = policy_switch_state(switch_info.state);
+	observation.switch_generation = switch_info.generation;
+	observation.switch_count = switch_info.switch_count;
+	observation.active_representation = switch_info.active_representation;
+	AdaptivePolicyDecision decision =
+		m_adaptive_policy.request(target_index, observation);
+	if (decision.action == AdaptivePolicyAction::Switch &&
+		!m_player.request_switch(
+			decision.target_resource,
+			decision.target_representation,
+			decision.boundary_time,
+			decision.reason))
+	{
+		decision.action = AdaptivePolicyAction::RetryLater;
+	}
+	return decision;
+}
+
+double UnityOpenVolumetricPlayer::adaptive_policy_throughput() const
+{
+	return m_adaptive_policy.smoothed_throughput_bps();
 }
 
 void UnityOpenVolumetricPlayer::close()

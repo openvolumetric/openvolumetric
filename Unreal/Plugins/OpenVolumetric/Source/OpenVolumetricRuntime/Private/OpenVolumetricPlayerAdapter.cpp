@@ -63,38 +63,124 @@ void FOpenVolumetricPlayerAdapter::SetActiveRepresentationId(
 	Player.set_active_representation_id(Utf8Representation.Get());
 }
 
-bool FOpenVolumetricPlayerAdapter::RequestAdaptiveSwitch(
-	const FString& Resource,
-	const FString& RepresentationId,
-	double BoundaryTime,
-	const FString& Reason,
-	FString& OutError)
-{
-	const FTCHARToUTF8 Utf8Resource(*Resource);
-	const FTCHARToUTF8 Utf8Representation(*RepresentationId);
-	const FTCHARToUTF8 Utf8Reason(*Reason);
-	if (!Player.request_switch(
-			Utf8Resource.Get(),
-			Utf8Representation.Get(),
-			BoundaryTime,
-			Utf8Reason.Get()))
-	{
-		OutError = UTF8_TO_TCHAR(Player.error().c_str());
-		return false;
-	}
-	OutError.Reset();
-	return true;
-}
-
 openvolumetric::AdaptiveSwitchInfo
 FOpenVolumetricPlayerAdapter::GetAdaptiveSwitchInfo() const
 {
 	return Player.switch_info();
 }
 
-void FOpenVolumetricPlayerAdapter::CancelAdaptiveSwitch()
+void FOpenVolumetricPlayerAdapter::ClearAdaptivePolicy()
 {
-	Player.cancel_pending_switch();
+	PolicyRepresentations.clear();
+	Policy.configure({});
+}
+
+void FOpenVolumetricPlayerAdapter::AddAdaptivePolicyRepresentation(
+	const FString& Id,
+	const FString& Resource,
+	uint64 Bandwidth)
+{
+	const FTCHARToUTF8 Utf8Id(*Id);
+	const FTCHARToUTF8 Utf8Resource(*Resource);
+	PolicyRepresentations.push_back(
+		{Utf8Id.Get(), Utf8Resource.Get(), Bandwidth});
+	Policy.configure(PolicyRepresentations);
+}
+
+namespace
+{
+
+openvolumetric::AdaptivePolicySwitchState ToPolicySwitchState(
+	openvolumetric::AdaptiveSwitchState State)
+{
+	return static_cast<openvolumetric::AdaptivePolicySwitchState>(State);
+}
+
+openvolumetric::AdaptivePolicyInputState ToPolicyInputState(
+	openvolumetric::ByteSourceState State)
+{
+	if (State == openvolumetric::ByteSourceState::Ready ||
+		State == openvolumetric::ByteSourceState::Ended)
+	{
+		return openvolumetric::AdaptivePolicyInputState::Ready;
+	}
+	return static_cast<openvolumetric::AdaptivePolicyInputState>(State);
+}
+
+} // namespace
+
+openvolumetric::AdaptivePolicyDecision
+FOpenVolumetricPlayerAdapter::UpdateAdaptivePolicy(
+	double Now,
+	double PresentationTime,
+	double Duration,
+	double SegmentDuration)
+{
+	const openvolumetric::AdaptiveSwitchInfo Switch = Player.switch_info();
+	const openvolumetric::OpenVolumetricBufferInfo Buffer = Player.buffer_info();
+	openvolumetric::AdaptivePolicyObservation Observation;
+	Observation.now = Now;
+	Observation.presentation_time = PresentationTime;
+	Observation.duration = Duration;
+	Observation.segment_duration = SegmentDuration;
+	Observation.input_state = ToPolicyInputState(Buffer.state);
+	Observation.transfer_throughput_bps =
+		Buffer.transfer_throughput_bits_per_second;
+	Observation.downloaded_bytes = Buffer.downloaded_bytes;
+	Observation.switch_state = ToPolicySwitchState(Switch.state);
+	Observation.switch_generation = Switch.generation;
+	Observation.switch_count = Switch.switch_count;
+	Observation.active_representation = Switch.active_representation;
+	openvolumetric::AdaptivePolicyDecision Decision = Policy.update(Observation);
+	if (Decision.cancel_failed_switch)
+		Player.cancel_pending_switch();
+	if (Decision.action == openvolumetric::AdaptivePolicyAction::Switch &&
+		!Player.request_switch(
+			Decision.target_resource,
+			Decision.target_representation,
+			Decision.boundary_time,
+			Decision.reason))
+	{
+		Decision.action = openvolumetric::AdaptivePolicyAction::RetryLater;
+	}
+	return Decision;
+}
+
+openvolumetric::AdaptivePolicyDecision
+FOpenVolumetricPlayerAdapter::RequestAdaptivePolicy(
+	int32 TargetIndex,
+	double Now,
+	double PresentationTime,
+	double Duration,
+	double SegmentDuration)
+{
+	const openvolumetric::AdaptiveSwitchInfo Switch = Player.switch_info();
+	openvolumetric::AdaptivePolicyObservation Observation;
+	Observation.now = Now;
+	Observation.presentation_time = PresentationTime;
+	Observation.duration = Duration;
+	Observation.segment_duration = SegmentDuration;
+	Observation.switch_state = ToPolicySwitchState(Switch.state);
+	Observation.switch_generation = Switch.generation;
+	Observation.switch_count = Switch.switch_count;
+	Observation.active_representation = Switch.active_representation;
+	openvolumetric::AdaptivePolicyDecision Decision = Policy.request(
+		static_cast<std::size_t>(TargetIndex), Observation);
+	if (Decision.action == openvolumetric::AdaptivePolicyAction::Switch &&
+		!Player.request_switch(
+			Decision.target_resource,
+			Decision.target_representation,
+			Decision.boundary_time,
+			Decision.reason))
+	{
+		Decision.action = openvolumetric::AdaptivePolicyAction::RetryLater;
+	}
+	return Decision;
+}
+
+double FOpenVolumetricPlayerAdapter::GetAdaptivePolicyThroughput() const
+{
+	return Policy.smoothed_throughput_bps();
 }
 
 FString FOpenVolumetricPlayerAdapter::GetError() const

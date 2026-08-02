@@ -92,16 +92,25 @@ public class OpenVolumetricDecoder : IDisposable
         int id,
         string representationId);
 
-    [DllImport(PluginName, EntryPoint = "openvolumetric_request_adaptive_switch")]
-    private static extern int openvolumetric_request_adaptive_switch(
-        int id,
-        string resource,
-        string representationId,
-        double boundaryTime,
-        string reason);
+    [DllImport(PluginName, EntryPoint = "openvolumetric_clear_adaptive_policy")]
+    private static extern void openvolumetric_clear_adaptive_policy(int id);
 
-    [DllImport(PluginName, EntryPoint = "openvolumetric_cancel_adaptive_switch")]
-    private static extern void openvolumetric_cancel_adaptive_switch(int id);
+    [DllImport(PluginName, EntryPoint = "openvolumetric_add_adaptive_policy_representation")]
+    private static extern void openvolumetric_add_adaptive_policy_representation(
+        int id, string representationId, string resource, ulong bandwidth);
+
+    [DllImport(PluginName, EntryPoint = "openvolumetric_update_adaptive_policy")]
+    private static extern int openvolumetric_update_adaptive_policy(
+        int id, double now, double presentationTime, double duration,
+        double segmentDuration);
+
+    [DllImport(PluginName, EntryPoint = "openvolumetric_request_adaptive_policy_index")]
+    private static extern int openvolumetric_request_adaptive_policy_index(
+        int id, ulong targetIndex, double now, double presentationTime,
+        double duration, double segmentDuration);
+
+    [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_policy_throughput")]
+    private static extern double openvolumetric_get_adaptive_policy_throughput(int id);
 
     [DllImport(PluginName, EntryPoint = "openvolumetric_get_adaptive_switch_details")]
     private static extern int openvolumetric_get_adaptive_switch_details(
@@ -388,28 +397,56 @@ public class OpenVolumetricDecoder : IDisposable
                 m_instance_id, representationId) == 1;
     }
 
-    /// <summary>Begins warming a representation for an atomic boundary switch.</summary>
-    public bool RequestAdaptiveSwitch(
-        string resource,
-        string representationId,
-        double boundaryTime,
-        string reason)
-    {
-        return m_instance_id >= 0 &&
-            openvolumetric_request_adaptive_switch(
-                m_instance_id,
-                resource,
-                representationId,
-                boundaryTime,
-                reason) == 1;
-    }
-
-    /// <summary>Cancels candidate preparation while retaining active playback.</summary>
-    public void CancelAdaptiveSwitch()
+    /// <summary>Clears the shared native adaptive-policy ladder.</summary>
+    public void ClearAdaptivePolicy()
     {
         if(m_instance_id >= 0)
         {
-            openvolumetric_cancel_adaptive_switch(m_instance_id);
+            openvolumetric_clear_adaptive_policy(m_instance_id);
+        }
+    }
+
+    /// <summary>Adds one capability-compatible representation to the policy.</summary>
+    public void AddAdaptivePolicyRepresentation(
+        string id, string resource, ulong bandwidth)
+    {
+        if(m_instance_id >= 0)
+        {
+            openvolumetric_add_adaptive_policy_representation(
+                m_instance_id, id, resource, bandwidth);
+        }
+    }
+
+    /// <summary>Evaluates the engine-neutral policy using native diagnostics.</summary>
+    public int UpdateAdaptivePolicy(
+        double now, double presentationTime, double duration,
+        double segmentDuration)
+    {
+        return m_instance_id >= 0
+            ? openvolumetric_update_adaptive_policy(
+                m_instance_id, now, presentationTime, duration, segmentDuration)
+            : -1;
+    }
+
+    /// <summary>Requests a ladder entry while bypassing automatic backoff.</summary>
+    public int RequestAdaptivePolicyIndex(
+        ulong index, double now, double presentationTime, double duration,
+        double segmentDuration)
+    {
+        return m_instance_id >= 0
+            ? openvolumetric_request_adaptive_policy_index(
+                m_instance_id, index, now, presentationTime, duration,
+                segmentDuration)
+            : -1;
+    }
+
+    public double AdaptivePolicyThroughputBitsPerSecond
+    {
+        get
+        {
+            return m_instance_id >= 0
+                ? openvolumetric_get_adaptive_policy_throughput(m_instance_id)
+                : 0.0;
         }
     }
 
