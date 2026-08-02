@@ -162,9 +162,8 @@ MonoBehaviour:
   blueProjectionCorrection: 0
   redProjectionCorrection: 0
   enableLoop: 1
-  enableScriptedStart: 0
+  playOnStart: 1
   enableDeveloperOverlay: 1
-  debug: 0
   recordAdaptiveMetrics: 0
   adaptiveMetricsFileName: openvolumetric-adaptive-metrics.csv
   adaptiveMetricsInterval: 0.25
@@ -239,9 +238,8 @@ MonoBehaviour:
   blueProjectionCorrection: 0
   redProjectionCorrection: 0
   enableLoop: 1
-  enableScriptedStart: 0
+  playOnStart: 1
   enableDeveloperOverlay: 1
-  debug: 0
   recordAdaptiveMetrics: 0
   adaptiveMetricsFileName: openvolumetric-adaptive-metrics.csv
   adaptiveMetricsInterval: 0.25
@@ -608,9 +606,8 @@ MonoBehaviour:
   blueProjectionCorrection: 0
   redProjectionCorrection: 0
   enableLoop: 1
-  enableScriptedStart: 0
+  playOnStart: 1
   enableDeveloperOverlay: 1
-  debug: 0
   recordAdaptiveMetrics: 0
   adaptiveMetricsFileName: openvolumetric-adaptive-metrics.csv
   adaptiveMetricsInterval: 0.25
@@ -672,9 +669,8 @@ MonoBehaviour:
   blueProjectionCorrection: 0
   redProjectionCorrection: 0
   enableLoop: 1
-  enableScriptedStart: 0
+  playOnStart: 1
   enableDeveloperOverlay: 1
-  debug: 0
   recordAdaptiveMetrics: 0
   adaptiveMetricsFileName: openvolumetric-adaptive-metrics.csv
   adaptiveMetricsInterval: 0.25

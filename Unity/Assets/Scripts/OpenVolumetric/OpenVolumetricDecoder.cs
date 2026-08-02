@@ -28,12 +28,6 @@ public class OpenVolumetricDecoder : IDisposable
     [DllImport(PluginName, EntryPoint = "GetRenderEventFunc")]
     private static extern IntPtr GetRenderEventFunc();
 
-    [DllImport(PluginName, EntryPoint = "openvolumetric_open_external_console")]
-    private static extern void openvolumetric_open_external_console();
-
-    [DllImport(PluginName, EntryPoint = "openvolumetric_close_external_console")]
-    private static extern void openvolumetric_close_external_console();
-
     private enum NativeResult
     {
         Ok,
@@ -282,7 +276,6 @@ public class OpenVolumetricDecoder : IDisposable
     // Used only to detect a genuine transition across the loop boundary.
     private int m_previous_frame;
 
-    private bool m_debug;
     private bool m_disposed;
 
     /// <summary>Managed lifecycle state for the corresponding native player.</summary>
@@ -564,18 +557,12 @@ public class OpenVolumetricDecoder : IDisposable
     }
 
     /// <summary>
-    /// Creates one native decoder instance and optionally opens its diagnostic
-    /// console. Graphics and media resources are initialized separately.
+    /// Creates one native decoder instance. Graphics and media resources are
+    /// initialized separately.
     /// </summary>
-    public OpenVolumetricDecoder(bool debug)
+    public OpenVolumetricDecoder()
     {
         m_decoder_state = DecoderState.UNINITIALIZED;
-        m_debug = debug;
-        if (m_debug)
-        {
-            Debug.Log("OpenVolumetricDecoder - Opening External Console");
-            openvolumetric_open_external_console();
-        }
         NativeApiVersion version = new NativeApiVersion
         {
             StructSize = (uint)Marshal.SizeOf<NativeApiVersion>()
@@ -618,13 +605,6 @@ public class OpenVolumetricDecoder : IDisposable
         m_UTexture = null;
         m_VTexture = null;
         m_audio_clip = null;
-        if(m_debug)
-        {
-            Debug.Log(String.Format(
-                "OpenVolumetricDecoder::Dispose - Closing External Console - id: {0}",
-                m_render_event_id));
-            openvolumetric_close_external_console();
-        }
         if (m_player != IntPtr.Zero)
         {
             Debug.Log(String.Format(

@@ -2,7 +2,6 @@
 #if defined(_WIN32)
 #include <Windows.h>
 #endif
-
 #if defined(__ANDROID__)
 #include <android/log.h>
 #endif
@@ -40,31 +39,27 @@ Logger* Logger::instance()
 
 void Logger::open_external_console()
 {
-	if (!Logger::instance()->console_active)
+	if (!console_active)
 	{
 #if defined(_WIN32)
 		FILE* console;
 		AllocConsole();
 		freopen_s(&console, "CONOUT$", "wb", stdout);
 #endif
-		Logger::instance()->console_active = true;
-
-		LOG("Logger::open_external_console");
+		console_active = true;
 	}
 }
 
 void Logger::close_external_console()
 {
-	if (Logger::instance()->console_active)
+	if (console_active)
 	{
-		LOG("Logger::close_external_console");
 #if defined(_WIN32)
 		FreeConsole();
 #endif
-		Logger::instance()->console_active = false;
+		console_active = false;
 	}
 }
-
 
 void Logger::log(const char* str, ...) 
 {

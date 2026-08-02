@@ -75,16 +75,12 @@ public class OpenVolumetric : MonoBehaviour
     [Header("Playback Settings")]
     [Tooltip("When enabled the content will loop")]
     public bool enableLoop = false;
-    /// <summary>Whether a caller must schedule playback explicitly.</summary>
-    [Tooltip("Enables playback to be started via a script ")]
-    public bool enableScriptedStart;
+    /// <summary>Start automatically after synchronized preroll completes.</summary>
+    [Tooltip("Start playback automatically once texture, geometry, and audio are ready.")]
+    public bool playOnStart = true;
     /// <summary>Whether runtime diagnostics and controls are attached.</summary>
     [Tooltip("Show the keyboard/controller developer overlay")]
     public bool enableDeveloperOverlay = true;
-    /// <summary>Whether native diagnostic console output is enabled.</summary>
-    [Header("Debug Settings")]
-    [Tooltip("Enable debug, will launch an external console")]
-    public bool debug = false;
     /// <summary>Write periodic adaptive playback measurements as CSV.</summary>
     [Header("Adaptive Evaluation")]
     [Tooltip("Record transport, buffering, and quality-switch metrics in Application.persistentDataPath.")]
@@ -237,7 +233,7 @@ public class OpenVolumetric : MonoBehaviour
     {
         MeshFilter mesh_filter = gameObject.AddComponent<MeshFilter>();
         MeshRenderer mesh_renderer = gameObject.AddComponent<MeshRenderer>();
-        m_decoder = new OpenVolumetricDecoder(debug);
+        m_decoder = new OpenVolumetricDecoder();
              
         OpenVolumetricSourceResolver resolver =
             new OpenVolumetricSourceResolver();
@@ -385,7 +381,7 @@ public class OpenVolumetric : MonoBehaviour
         // render thread; otherwise the advancing clock continually discards
         // late startup frames and may never establish visual playback.
         m_play_after_initial_presentation =
-            !enableScriptedStart || m_clock.HasScheduledStart;
+            playOnStart || m_clock.HasScheduledStart;
         m_waiting_for_initial_presentation = true;
         m_playback_position = 0.0;
         m_playback_state = PlaybackState.PREROLLING;

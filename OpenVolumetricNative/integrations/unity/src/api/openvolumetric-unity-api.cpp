@@ -260,11 +260,11 @@ extern "C" UnityRenderingEvent UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API GetRen
 {
 	return OnRenderEvent;
 }
-OPENVOLUMETRIC_API void	openvolumetric_open_external_console()
+OPENVOLUMETRIC_API void openvolumetric_open_external_console()
 {
 	Logger::instance()->open_external_console();
 }
-OPENVOLUMETRIC_API void	openvolumetric_close_external_console()
+OPENVOLUMETRIC_API void openvolumetric_close_external_console()
 {
 	Logger::instance()->close_external_console();
 }
