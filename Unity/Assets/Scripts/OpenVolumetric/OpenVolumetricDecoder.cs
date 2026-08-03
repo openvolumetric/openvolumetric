@@ -574,11 +574,26 @@ public class OpenVolumetricDecoder : IDisposable
             m_decoder_state = DecoderState.INIT_FAIL;
             return;
         }
-        if (openvolumetric_player_create(ref m_player) != NativeResult.Ok ||
-            openvolumetric_player_get_render_event_id(
-                m_player, ref m_render_event_id) != NativeResult.Ok)
+        NativeResult createResult = openvolumetric_player_create(ref m_player);
+        if (createResult != NativeResult.Ok)
         {
-            Debug.LogError("OpenVolumetricDecoder::init - failed to init");
+            Debug.LogError(String.Format(
+                "OpenVolumetricDecoder::init - native player creation failed " +
+                "({0}); unsupported graphics API: {1}.",
+                createResult,
+                SystemInfo.graphicsDeviceType));
+            m_decoder_state = DecoderState.INIT_FAIL;
+            return;
+        }
+        NativeResult eventResult = openvolumetric_player_get_render_event_id(
+            m_player, ref m_render_event_id);
+        if (eventResult != NativeResult.Ok)
+        {
+            Debug.LogError(String.Format(
+                "OpenVolumetricDecoder::init - render event creation failed ({0})",
+                eventResult));
+            openvolumetric_player_destroy(m_player);
+            m_player = IntPtr.Zero;
             m_decoder_state = DecoderState.INIT_FAIL;
             return;
         }

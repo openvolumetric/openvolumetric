@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 #if defined(_WIN32)
-#define OPENVOLUMETRIC_API __declspec(dllexport) __stdcall
+#define OPENVOLUMETRIC_API __declspec(dllexport)
 #else
 #define OPENVOLUMETRIC_API __attribute__((visibility("default")))
 #endif

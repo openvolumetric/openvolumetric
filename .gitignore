@@ -26,8 +26,13 @@ Desktop.ini
 # tracked so importer settings remain stable after rebuilding.
 *.dylib
 *.so
+*.dll
+*.dylib.meta
+*.so.meta
+*.dll.meta
 .tmp*
 .utmp*
+
 
 # Local datasets are generated or too large to version. Keep reproducible
 # sync-test instructions while ignoring its generated image, mesh, and audio
@@ -38,6 +43,7 @@ Desktop.ini
 !/data/sync-test/generate.py
 !/data/sync-test/README.md
 /tmp/
+/UnityWindows*.log
 
 # Unity packages generate editor-specific preferences beneath Assets even
 # though they are not reproducible project inputs.

@@ -113,10 +113,9 @@ UnityGetAudioEffectDefinitions(UnityAudioEffectDefinition*** definitions)
 		g_definition.numparameters = 0;
 		g_definition.flags =
 			UnityAudioEffectDefinitionFlags_IsSpatializer;
-		std::strncpy(
-			g_definition.name,
-			"OpenVolumetric Audio",
-			sizeof(g_definition.name) - 1);
+		constexpr char effect_name[] = "OpenVolumetric Audio";
+		static_assert(sizeof(effect_name) <= sizeof(g_definition.name));
+		std::memcpy(g_definition.name, effect_name, sizeof(effect_name));
 		g_definition.create = create_effect;
 		g_definition.release = release_effect;
 		g_definition.reset = reset_effect;

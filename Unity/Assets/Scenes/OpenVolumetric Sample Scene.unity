@@ -149,9 +149,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0f19b987d80146544bbfbba8a5206081, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::OpenVolumetric.OpenVolumetric
-  videoFilename: 
-  videoUrl: http://10.78.0.213:8000/manifest.json
-  useAdaptiveManifest: 1
+  videoFilename: quest_stream.mp4
+  videoUrl: 
+  useAdaptiveManifest: 0
   adaptiveQuality: 0
   adaptiveMaximumTextureDimension: 0
   adaptiveMaximumTextureBitrateMbps: 0
@@ -656,9 +656,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0f19b987d80146544bbfbba8a5206081, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::OpenVolumetric.OpenVolumetric
-  videoFilename: Adaptive/bbc_rachel/manifest.json
+  videoFilename: quest_stream.mp4
   videoUrl: 
-  useAdaptiveManifest: 1
+  useAdaptiveManifest: 0
   adaptiveQuality: 2
   adaptiveMaximumTextureDimension: 0
   adaptiveMaximumTextureBitrateMbps: 0

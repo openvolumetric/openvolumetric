@@ -86,6 +86,12 @@ elseif(APPLE)
     LIBRARY_OUTPUT_DIRECTORY
       "${PROJECT_SOURCE_DIR}/../Unity/Assets/Plugins/OpenVolumetric/macOS"
   )
+
+  configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/AudioPluginOpenVolumetricUnity.dylib.meta"
+    "${PROJECT_SOURCE_DIR}/../Unity/Assets/Plugins/OpenVolumetric/macOS/AudioPluginOpenVolumetricUnity.dylib.meta"
+    COPYONLY
+  )
 elseif(ANDROID)
   find_library(VULKAN_LIBRARY vulkan REQUIRED)
   find_library(LOG_LIBRARY log REQUIRED)

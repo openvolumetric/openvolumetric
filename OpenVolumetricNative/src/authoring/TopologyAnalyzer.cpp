@@ -185,10 +185,11 @@ bool load_canonical_obj(
 				positions->mapped_index(point);
 			const draco::AttributeValueIndex texcoord_index =
 				texcoords == nullptr
-					? draco::AttributeValueIndex(-1)
+					? draco::kInvalidAttributeValueIndex
 					: texcoords->mapped_index(point);
-			if (position_index.value() < 0 ||
-				(texcoords != nullptr && texcoord_index.value() < 0))
+			if (position_index == draco::kInvalidAttributeValueIndex ||
+				(texcoords != nullptr &&
+					texcoord_index == draco::kInvalidAttributeValueIndex))
 			{
 				error = "OBJ contains an invalid corner attribute mapping: " +
 					input_path.string();

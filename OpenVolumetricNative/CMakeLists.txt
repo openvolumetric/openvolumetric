@@ -18,6 +18,10 @@ option(OPENVOLUMETRIC_ENABLE_SANITIZERS
   "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 
 add_library(OpenVolumetricBuildOptions INTERFACE)
+if(WIN32)
+  # Prevent Windows SDK min/max macros from breaking std::min/std::max calls.
+  target_compile_definitions(OpenVolumetricBuildOptions INTERFACE NOMINMAX)
+endif()
 if(MSVC)
   target_compile_options(OpenVolumetricBuildOptions INTERFACE /W4)
   if(OPENVOLUMETRIC_WARNINGS_AS_ERRORS)

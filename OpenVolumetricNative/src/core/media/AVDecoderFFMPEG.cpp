@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 namespace openvolumetric
@@ -275,7 +276,10 @@ bool AVDecoderFFMPEG::init_video_context()
 			std::isfinite(average_fps) && average_fps > 0.0
 				? average_fps
 				: nominal_fps;
-		m_video_info.frame_count		= m_video_stream->nb_frames;
+		m_video_info.frame_count = static_cast<int>(std::clamp<std::int64_t>(
+			m_video_stream->nb_frames,
+			0,
+			std::numeric_limits<int>::max()));
 
 		// Calculate video duration
 		double duration				= m_container->duration_seconds();
@@ -291,7 +295,7 @@ bool AVDecoderFFMPEG::init_video_context()
 		LOG("AVDecoderFFMPEG::init_video_context - FPS:           %f",		m_video_info.fps);
 		LOG("AVDecoderFFMPEG::init_video_context - Nominal FPS:   %f",		nominal_fps);
 		LOG("AVDecoderFFMPEG::init_video_context - Duration:      %f",		m_video_info.total_time);
-		LOG("AVDecoderFFMPEG::init_video_context - Frame Count:   %f",		m_video_info.frame_count);
+		LOG("AVDecoderFFMPEG::init_video_context - Frame Count:   %d",		m_video_info.frame_count);
 		LOG(
 			"AVDecoderFFMPEG::init_video_context - Decoder Threads: %d "
 			"(active type: %d)",

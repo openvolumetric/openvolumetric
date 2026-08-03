@@ -436,7 +436,8 @@ TEST_CASE("local adaptive selection honors quality and capability limits")
 		selection,
 		error));
 	CHECK(selection.representation.id == "low");
-	CHECK(selection.resolved_resource == "/tmp/openvolumetric/low.mp4");
+	CHECK(std::filesystem::path(selection.resolved_resource) ==
+		std::filesystem::path("/tmp/openvolumetric/low.mp4"));
 
 	REQUIRE(select_adaptive_representation(
 		kValidManifest,
