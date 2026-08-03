@@ -13,10 +13,28 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import mimetypes
 from pathlib import Path
+import socket
 from urllib.parse import unquote, urlsplit
 
 
 COPY_CHUNK_BYTES = 1024 * 1024
+
+
+def resolve_display_host(bind_address: str) -> str:
+    """Return the address clients should use to reach this host.
+
+    A wildcard bind accepts traffic on every interface but is not itself a
+    usable client destination. A UDP route lookup obtains the address of the
+    currently preferred interface without sending any network traffic.
+    """
+    if bind_address not in ("", "0.0.0.0"):
+        return bind_address
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as route_socket:
+            route_socket.connect(("192.0.2.1", 9))
+            return str(route_socket.getsockname()[0])
+    except OSError:
+        return "<host-address>"
 
 
 class PackageRequestHandler(BaseHTTPRequestHandler):
@@ -174,18 +192,21 @@ def main() -> None:
 
     server = PackageServer(
         (arguments.bind, arguments.port), root, arguments.verbose, single_file)
+    display_host = resolve_display_host(arguments.bind)
     if single_file is not None:
         print(
             f"Serving file {single_file} at "
-            f"http://{arguments.bind}:{arguments.port}/{single_file.name}"
+            f"http://{display_host}:{arguments.port}/{single_file.name}"
         )
-        print(f"Root URL: http://<host-address>:{arguments.port}/")
+        print(f"Root URL: http://{display_host}:{arguments.port}/")
     else:
         print(
-            f"Serving package {root} at http://{arguments.bind}:{arguments.port}/"
+            f"Serving package {root} at "
+            f"http://{display_host}:{arguments.port}/"
         )
         print(
-            f"Manifest URL: http://<host-address>:{arguments.port}/manifest.json"
+            f"Manifest URL: "
+            f"http://{display_host}:{arguments.port}/manifest.json"
         )
     try:
         server.serve_forever()

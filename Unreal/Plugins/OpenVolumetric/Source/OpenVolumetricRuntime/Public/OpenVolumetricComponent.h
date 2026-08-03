@@ -305,6 +305,8 @@ protected:
 
 private:
 	class FOpenVolumetricPlayerAdapter* Player = nullptr;
+	class FOpenVolumetricPlaybackClock* PlaybackClock = nullptr;
+	class FOpenVolumetricNetworkRecovery* NetworkRecovery = nullptr;
 	void CreateDynamicMeshComponent();
 	void UpdatePresentationTexture(
 		const TArray<FColor>& Pixels,
@@ -320,9 +322,6 @@ private:
 	void CloseAdaptiveMetrics();
 	bool HandleNetworkRecovery();
 
-	bool bNetworkRebuffering = false;
-	bool bResumeAfterNetworkRecovery = false;
-	double NetworkRecoveryTarget = 0.0;
 	double LastPresentationTime = -1.0;
 	FVector SmoothedAudioCentroid = FVector::ZeroVector;
 	bool bHasAudioCentroid = false;
@@ -336,18 +335,7 @@ private:
 	TArray<FAdaptiveRuntimeRepresentation> AdaptiveRepresentations;
 	double AdaptiveSegmentDuration = 0.0;
 	double AdaptiveSmoothedThroughputBps = 0.0;
-	class FArchive* AdaptiveMetricsArchive = nullptr;
-	double AdaptiveMetricsStarted = 0.0;
-	double AdaptiveNextMetricTime = 0.0;
-	double AdaptiveSwitchStarted = -1.0;
-	double AdaptiveLastSwitchLatency = -1.0;
-	uint64 AdaptiveSwitchFailureCount = 0;
-	double AdaptiveRebufferStarted = -1.0;
-	double AdaptiveTotalRebufferTime = 0.0;
-	uint64 AdaptiveRebufferCount = 0;
-	int32 AdaptivePreviousSwitchState = 0;
-	EOpenVolumetricInputState AdaptivePreviousInputState =
-		EOpenVolumetricInputState::Opening;
+	class FOpenVolumetricAdaptiveMetrics* AdaptiveMetrics = nullptr;
 	double AdaptiveMetricFrameMilliseconds = 0.0;
 
 	UPROPERTY(Transient)

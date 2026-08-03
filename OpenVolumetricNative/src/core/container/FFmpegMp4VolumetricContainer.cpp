@@ -143,15 +143,8 @@ bool FFmpegMp4VolumetricContainer::open(
 	m_context->pb = m_io_context;
 	m_context->flags |= AVFMT_FLAG_CUSTOM_IO;
 
-	// Fragmented OpenVolumetric files carry a terminal mfra/tfra index. FFmpeg's
-	// MOV demuxer leaves use_mfra_for=auto dormant during its initial root-atom
-	// walk and otherwise scans every moof to build the same index. Selecting PTS
-	// explicitly makes the first moof trigger the bounded tail-index lookup.
-	AVDictionary* input_options = nullptr;
-	av_dict_set(&input_options, "use_mfra_for", "pts", 0);
-	const int result = avformat_open_input(
-		&m_context, nullptr, nullptr, &input_options);
-	av_dict_free(&input_options);
+	const int result =
+		avformat_open_input(&m_context, nullptr, nullptr, nullptr);
 	if (result < 0)
 	{
 		const std::string source_error = m_source->error();
@@ -166,24 +159,23 @@ bool FFmpegMp4VolumetricContainer::open(
 
 bool FFmpegMp4VolumetricContainer::finish_open()
 {
-	// OpenVolumetric accepts authored MP4 input, whose moov sample tables and
-	// codec parameters are complete after avformat_open_input(). The generic
-	// stream-info probe is intended for formats that require packet inspection;
-	// with a custom geometry data track it scans every fragment looking for
-	// additional codec information. On HTTP that downloaded the complete file
-	// before startup or adaptive candidate preparation could finish.
+	// Probe the complete authored stream layout before playback. In particular,
+	// this lets FFmpeg build internally consistent fragmented-MP4 seek state for
+	// all three synchronized tracks. Forcing the terminal mfra index during open
+	// caused backward seeks to terminate at a later fragment boundary.
+	const int result = avformat_find_stream_info(m_context, nullptr);
+	if (result < 0)
+	{
+		set_error("Could not read MP4 stream information: " +
+			ffmpeg_error(result));
+		close();
+		return false;
+	}
 	if (!discover_streams())
 	{
 		const std::string discovery_error = m_error;
 		close();
 		m_error = discovery_error;
-		return false;
-	}
-	if (!discover_indexed_duration())
-	{
-		const std::string duration_error = m_error;
-		close();
-		m_error = duration_error;
 		return false;
 	}
 	if (auto* remote = dynamic_cast<HttpRangeByteSource*>(m_source.get()))
@@ -435,25 +427,14 @@ bool FFmpegMp4VolumetricContainer::seek(double seconds)
 		set_error("Seek requires an open container and a non-negative time.");
 		return false;
 	}
-	// Anchor seeks to the video track. With the global (-1) timeline FFmpeg may
-	// select the continuously keyed audio track in a fragmented file and fall
-	// back to its first sample, forcing adaptive preparation to decode from
-	// timestamp zero. Authoring aligns video and independent geometry access
-	// points, so the preceding video keyframe is the coupled random-access point.
-	const int video_index = m_stream_indices[kind_slot(StreamKind::Video)];
-	if (video_index < 0)
-	{
-		set_error("Seek requires a discovered video stream.");
-		return false;
-	}
-	const std::int64_t media_timestamp = static_cast<std::int64_t>(
+	// Seek on the MP4 presentation timeline. FFmpeg then resolves the aligned
+	// video, audio, and geometry tracks as one fragmented-container operation.
+	// Seeking an individual stream can leave the MOV demuxer's continuation
+	// cursor at the end of only that fragment after a backwards seek.
+	const std::int64_t timestamp = static_cast<std::int64_t>(
 		std::llround(seconds * static_cast<double>(AV_TIME_BASE)));
-	const std::int64_t timestamp = av_rescale_q(
-		media_timestamp,
-		AV_TIME_BASE_Q,
-		m_context->streams[video_index]->time_base);
 	const int result = av_seek_frame(
-		m_context, video_index, timestamp, AVSEEK_FLAG_BACKWARD);
+		m_context, -1, timestamp, AVSEEK_FLAG_BACKWARD);
 	if (result < 0)
 	{
 		set_error("MP4 seek failed: " + ffmpeg_error(result));

@@ -609,36 +609,37 @@ ARM64 builds, and the Unreal Editor macOS build.
 
 ### Phase 5: Decompose engine orchestration (in progress)
 
-- [ ] Reduce the Unity `OpenVolumetric` component to serialized configuration,
+- [x] Reduce the Unity `OpenVolumetric` component to serialized configuration,
       public controls, and lifecycle orchestration. Extract source resolution,
       playback/DSP clock coordination, recovery, and metrics into private
       single-purpose managed classes.
-- [ ] Keep `OpenVolumetricDecoder` as the disposable managed wrapper around the
+- [x] Keep `OpenVolumetricDecoder` as the disposable managed wrapper around the
       stable native API; keep Unity objects and graphics work on their required
       engine threads.
-- [ ] Reduce Unreal `UOpenVolumetricComponent` to the public Blueprint/component
+- [x] Reduce Unreal `UOpenVolumetricComponent` to the public Blueprint/component
       surface and lifecycle. Extract source resolution, playback clock,
       recovery, metrics, and presentation upload into private plain C++
       helpers where Unreal ownership permits it.
-- [ ] Keep adaptive decisions in the core rather than recreating policy in an
+- [x] Keep adaptive decisions in the core rather than recreating policy in an
       extracted Unity or Unreal helper.
 - [ ] Split the Unity and Unreal authoring windows into UI state, validation,
       job/process execution, and progress reporting while continuing to use
       shared native presets, validation, FFmpeg argument construction, Draco
       encoding, packaging, and verification.
-- [ ] Preserve serialized Unity fields and Unreal reflected properties through
+- [x] Preserve serialized Unity fields and Unreal reflected properties through
       the refactor so existing scenes, prefabs, assets, and Blueprints load
       unchanged.
 
-The first Phase 5 checkpoint extracts Unity source resolution, adaptive
+The runtime Phase 5 checkpoints extract Unity source resolution, adaptive
 manifest interop, DSP/media clock calculation, lag-recovery policy, and CSV
 metrics into private managed collaborators. The serialized component and
 `OpenVolumetricDecoder` public surfaces are unchanged. Unreal local/HTTP and
-adaptive source resolution now lives in a private plain-C++ resolver which
-delegates manifest selection to the core. Unity managed compilation and an
-Unreal Editor macOS build pass at this checkpoint. Unreal clock, recovery,
-metrics/presentation extraction and both authoring-window decompositions remain
-before the phase is complete.
+adaptive source resolution, playback clock policy, network recovery state,
+metrics ownership, and texture presentation now live in private plain-C++
+helpers. Manifest and live adaptive decisions still delegate to the core.
+Unity managed compilation and Unreal Editor macOS builds pass at these
+checkpoints. Both authoring-window decompositions remain before the phase is
+complete.
 
 ### Phase 6: Rendering and allocation cleanup
 

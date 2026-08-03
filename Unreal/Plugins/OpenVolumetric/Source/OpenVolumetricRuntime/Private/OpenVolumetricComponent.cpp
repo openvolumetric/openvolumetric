@@ -1,7 +1,9 @@
 #include "OpenVolumetricComponent.h"
 
 #include "AdaptiveSelection.h"
+#include "OpenVolumetricAdaptiveMetrics.h"
 #include "OpenVolumetricPlayerAdapter.h"
+#include "OpenVolumetricRuntimeServices.h"
 #include "OpenVolumetricSourceResolver.h"
 #include "Components/AudioComponent.h"
 #include "Components/DynamicMeshComponent.h"
@@ -63,19 +65,6 @@ openvolumetric::AdaptiveCapabilityLimits GetAdaptiveCapabilityLimits(
 	return Limits;
 }
 
-FString Csv(const FString& Value)
-{
-	return TEXT("\"") + Value.Replace(TEXT("\""), TEXT("\"\"")) + TEXT("\"");
-}
-
-void WriteUtf8Line(FArchive& Archive, const FString& Line)
-{
-	FTCHARToUTF8 Utf8(*(Line + LINE_TERMINATOR));
-	Archive.Serialize(
-		const_cast<ANSICHAR*>(Utf8.Get()),
-		Utf8.Length());
-}
-
 } // namespace
 
 UOpenVolumetricComponent::UOpenVolumetricComponent()
@@ -83,6 +72,9 @@ UOpenVolumetricComponent::UOpenVolumetricComponent()
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = true;
 	Player = new FOpenVolumetricPlayerAdapter();
+	PlaybackClock = new FOpenVolumetricPlaybackClock();
+	NetworkRecovery = new FOpenVolumetricNetworkRecovery();
+	AdaptiveMetrics = new FOpenVolumetricAdaptiveMetrics();
 
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> Material(
 		TEXT("/OpenVolumetric/Materials/M_OpenVolumetricTexture.M_OpenVolumetricTexture"));
@@ -97,6 +89,12 @@ UOpenVolumetricComponent::~UOpenVolumetricComponent()
 	CloseAdaptiveMetrics();
 	delete Player;
 	Player = nullptr;
+	delete PlaybackClock;
+	PlaybackClock = nullptr;
+	delete NetworkRecovery;
+	NetworkRecovery = nullptr;
+	delete AdaptiveMetrics;
+	AdaptiveMetrics = nullptr;
 }
 
 void UOpenVolumetricComponent::BeginPlay()
@@ -158,14 +156,17 @@ void UOpenVolumetricComponent::TickComponent(
 	{
 		return;
 	}
-	CurrentTimeSeconds += static_cast<double>(DeltaTime);
+	const EOpenVolumetricClockAction ClockAction = PlaybackClock->Advance(
+		static_cast<double>(DeltaTime),
+		DurationSeconds,
+		bLoop,
+		CurrentTimeSeconds);
 	// Feeding Unreal also drains the native PCM ring so audio backpressure
 	// cannot stall the shared video/geometry demuxer.
 	PumpAudio();
-	if (DurationSeconds > 0.0 &&
-		CurrentTimeSeconds >= DurationSeconds)
+	if (ClockAction != EOpenVolumetricClockAction::Continue)
 	{
-		if (bLoop)
+		if (ClockAction == EOpenVolumetricClockAction::Loop)
 		{
 			if (!Player->Seek(0.0, LastError))
 			{
@@ -243,49 +244,19 @@ void UOpenVolumetricComponent::UpdatePresentationTexture(
 	int32 Width,
 	int32 Height)
 {
-	if (Pixels.Num() != Width * Height || Width <= 0 || Height <= 0)
-	{
-		return;
-	}
-
-	if (PresentationTexture == nullptr ||
-		PresentationTexture->GetSizeX() != Width ||
-		PresentationTexture->GetSizeY() != Height)
-	{
-		PresentationTexture = UTexture2D::CreateTransient(
-			Width, Height, PF_B8G8R8A8);
-		PresentationTexture->SRGB = true;
-		PresentationTexture->Filter = TF_Bilinear;
-		PresentationTexture->UpdateResource();
-
-		if (TextureMaterial != nullptr)
-		{
-			DynamicMaterial = UMaterialInstanceDynamic::Create(
-				TextureMaterial, this);
-			DynamicMaterial->SetTextureParameterValue(
-				TEXT("OpenVolumetricTexture"), PresentationTexture);
-			DynamicMeshComponent->SetMaterial(0, DynamicMaterial);
-		}
-	}
-
-	const SIZE_T ByteCount =
-		static_cast<SIZE_T>(Pixels.Num()) * sizeof(FColor);
-	uint8* Upload = static_cast<uint8*>(FMemory::Malloc(ByteCount));
-	FMemory::Memcpy(Upload, Pixels.GetData(), ByteCount);
-	FUpdateTextureRegion2D* Region =
-		new FUpdateTextureRegion2D(0, 0, 0, 0, Width, Height);
-	PresentationTexture->UpdateTextureRegions(
-		0,
-		1,
-		Region,
-		Width * sizeof(FColor),
-		sizeof(FColor),
-		Upload,
-		[](uint8* Data, const FUpdateTextureRegion2D* Regions)
-		{
-			FMemory::Free(Data);
-			delete Regions;
-		});
+	UTexture2D* Texture = PresentationTexture.Get();
+	UMaterialInstanceDynamic* Material = DynamicMaterial.Get();
+	FOpenVolumetricPresentationUploader::UpdateTexture(
+		this,
+		DynamicMeshComponent.Get(),
+		TextureMaterial.Get(),
+		Pixels,
+		Width,
+		Height,
+		Texture,
+		Material);
+	PresentationTexture = Texture;
+	DynamicMaterial = Material;
 }
 
 void UOpenVolumetricComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -488,23 +459,11 @@ void UOpenVolumetricComponent::Close()
 	FragmentCount = 0;
 	CachedFragmentCount = 0;
 	InputState = EOpenVolumetricInputState::Opening;
-	bNetworkRebuffering = false;
-	bResumeAfterNetworkRecovery = false;
-	NetworkRecoveryTarget = 0.0;
+	NetworkRecovery->Reset();
 	LastPresentationTime = -1.0;
 	AdaptiveRepresentations.Reset();
 	AdaptiveSegmentDuration = 0.0;
 	AdaptiveSmoothedThroughputBps = 0.0;
-	AdaptiveMetricsStarted = 0.0;
-	AdaptiveNextMetricTime = 0.0;
-	AdaptiveSwitchStarted = -1.0;
-	AdaptiveLastSwitchLatency = -1.0;
-	AdaptiveSwitchFailureCount = 0;
-	AdaptiveRebufferStarted = -1.0;
-	AdaptiveTotalRebufferTime = 0.0;
-	AdaptiveRebufferCount = 0;
-	AdaptivePreviousSwitchState = 0;
-	AdaptivePreviousInputState = EOpenVolumetricInputState::Opening;
 	PendingRepresentationId.Reset();
 	AdaptiveSwitchCount = 0;
 }
@@ -514,135 +473,39 @@ void UOpenVolumetricComponent::RecordAdaptiveMetrics()
 	if (!bRecordAdaptiveMetrics || !bUseAdaptiveManifest || Player == nullptr)
 		return;
 	const double Now = FPlatformTime::Seconds();
-	if (AdaptiveMetricsArchive == nullptr)
-	{
-		const FString SafeName = FPaths::GetCleanFilename(
-			AdaptiveMetricsFileName.IsEmpty()
-				? TEXT("openvolumetric-adaptive-metrics.csv")
-				: AdaptiveMetricsFileName);
-		const FString Path = FPaths::Combine(FPaths::ProjectSavedDir(), SafeName);
-		AdaptiveMetricsArchive = IFileManager::Get().CreateFileWriter(*Path);
-		if (AdaptiveMetricsArchive == nullptr)
-		{
-			UE_LOG(
-				LogOpenVolumetricComponent,
-				Error,
-				TEXT("Could not create adaptive metrics file: %s"),
-				*Path);
-			bRecordAdaptiveMetrics = false;
-			return;
-		}
-		WriteUtf8Line(
-			*AdaptiveMetricsArchive,
-			TEXT("wall_seconds,media_seconds,playback_state,input_state,")
-			TEXT("active_representation,pending_representation,switch_state,")
-			TEXT("throughput_mbps,downloaded_bytes,cached_bytes,http_requests,")
-			TEXT("network_recoveries,active_fragment,cached_fragments,")
-			TEXT("rebuffer_count,rebuffer_seconds,switch_count,")
-			TEXT("switch_failures,last_switch_latency_seconds,presented_seconds,")
-			TEXT("av_error_seconds,frame_ms,engine_memory_bytes,error"));
-		AdaptiveMetricsStarted = Now;
-		AdaptiveNextMetricTime = Now;
-		UE_LOG(
-			LogOpenVolumetricComponent,
-			Log,
-			TEXT("Recording adaptive metrics: %s"),
-			*Path);
-	}
-
-	const openvolumetric::AdaptiveSwitchInfo SwitchInfo =
-		Player->GetAdaptiveSwitchInfo();
-	const int32 SwitchState = static_cast<int32>(SwitchInfo.state);
-	if (InputState == EOpenVolumetricInputState::Rebuffering &&
-		AdaptivePreviousInputState != EOpenVolumetricInputState::Rebuffering)
-	{
-		++AdaptiveRebufferCount;
-		AdaptiveRebufferStarted = Now;
-	}
-	else if (InputState != EOpenVolumetricInputState::Rebuffering &&
-		AdaptivePreviousInputState == EOpenVolumetricInputState::Rebuffering &&
-		AdaptiveRebufferStarted >= 0.0)
-	{
-		AdaptiveTotalRebufferTime += Now - AdaptiveRebufferStarted;
-		AdaptiveRebufferStarted = -1.0;
-	}
-	AdaptivePreviousInputState = InputState;
-
-	if (SwitchInfo.state == openvolumetric::AdaptiveSwitchState::Preparing &&
-		AdaptivePreviousSwitchState != SwitchState)
-	{
-		AdaptiveSwitchStarted = Now;
-	}
-	if (SwitchInfo.state == openvolumetric::AdaptiveSwitchState::Failed &&
-		AdaptivePreviousSwitchState != SwitchState)
-	{
-		++AdaptiveSwitchFailureCount;
-		if (AdaptiveSwitchStarted >= 0.0)
-		{
-			AdaptiveLastSwitchLatency = Now - AdaptiveSwitchStarted;
-			AdaptiveSwitchStarted = -1.0;
-		}
-	}
-	if (SwitchInfo.state == openvolumetric::AdaptiveSwitchState::Stable &&
-		SwitchInfo.switch_count > 0 && AdaptivePreviousSwitchState != SwitchState &&
-		AdaptiveSwitchStarted >= 0.0)
-	{
-		AdaptiveLastSwitchLatency = Now - AdaptiveSwitchStarted;
-		AdaptiveSwitchStarted = -1.0;
-	}
-	AdaptivePreviousSwitchState = SwitchState;
-	if (Now < AdaptiveNextMetricTime)
-		return;
-	AdaptiveNextMetricTime = Now + FMath::Max(0.05, AdaptiveMetricsIntervalSeconds);
-
-	double RebufferSeconds = AdaptiveTotalRebufferTime;
-	if (AdaptiveRebufferStarted >= 0.0)
-		RebufferSeconds += Now - AdaptiveRebufferStarted;
 	const UEnum* PlaybackEnum = StaticEnum<EOpenVolumetricPlaybackState>();
 	const UEnum* InputEnum = StaticEnum<EOpenVolumetricInputState>();
-	const FString SwitchStateText = SwitchInfo.state ==
-		openvolumetric::AdaptiveSwitchState::Stable ? TEXT("Stable") :
-		SwitchInfo.state == openvolumetric::AdaptiveSwitchState::Preparing ? TEXT("Preparing") :
-		SwitchInfo.state == openvolumetric::AdaptiveSwitchState::Ready ? TEXT("Ready") :
-		TEXT("Failed");
-	const FString Line = FString::Printf(
-		TEXT("%.6f,%.6f,%s,%s,%s,%s,%s,%.6f,%lld,%lld,%lld,%lld,%lld,%lld,%llu,%.6f,%llu,%llu,%.6f,%.6f,%.6f,%.6f,%llu,%s"),
-		Now - AdaptiveMetricsStarted,
-		CurrentTimeSeconds,
-		*Csv(PlaybackEnum->GetNameStringByValue(static_cast<int64>(PlaybackState))),
-		*Csv(InputEnum->GetNameStringByValue(static_cast<int64>(InputState))),
-		*Csv(UTF8_TO_TCHAR(SwitchInfo.active_representation.c_str())),
-		*Csv(UTF8_TO_TCHAR(SwitchInfo.pending_representation.c_str())),
-		*Csv(SwitchStateText),
-		AdaptiveSmoothedThroughputBps / 1000000.0,
-		DownloadedBytes,
-		CachedBytes,
-		HttpRequestCount,
-		NetworkRecoveryCount,
-		ActiveFragment,
-		CachedFragmentCount,
-		AdaptiveRebufferCount,
-		RebufferSeconds,
-		SwitchInfo.switch_count,
-		AdaptiveSwitchFailureCount,
-		AdaptiveLastSwitchLatency,
-		LastPresentationTime,
-		CurrentTimeSeconds - LastPresentationTime,
-		AdaptiveMetricFrameMilliseconds,
-		static_cast<uint64>(FPlatformMemory::GetStats().UsedPhysical),
-		*Csv(LastError));
-	WriteUtf8Line(*AdaptiveMetricsArchive, Line);
-	AdaptiveMetricsArchive->Flush();
+	FOpenVolumetricMetricSample Sample;
+	Sample.WallSeconds = Now;
+	Sample.MediaSeconds = CurrentTimeSeconds;
+	Sample.PlaybackState = PlaybackEnum->GetNameStringByValue(
+		static_cast<int64>(PlaybackState));
+	Sample.InputState = InputEnum->GetNameStringByValue(
+		static_cast<int64>(InputState));
+	Sample.bRebuffering = InputState == EOpenVolumetricInputState::Rebuffering;
+	Sample.SwitchInfo = Player->GetAdaptiveSwitchInfo();
+	Sample.ThroughputBitsPerSecond = AdaptiveSmoothedThroughputBps;
+	Sample.DownloadedBytes = DownloadedBytes;
+	Sample.CachedBytes = CachedBytes;
+	Sample.HttpRequests = HttpRequestCount;
+	Sample.NetworkRecoveries = NetworkRecoveryCount;
+	Sample.ActiveFragment = ActiveFragment;
+	Sample.CachedFragments = CachedFragmentCount;
+	Sample.PresentedSeconds = LastPresentationTime;
+	Sample.FrameMilliseconds = AdaptiveMetricFrameMilliseconds;
+	Sample.EngineMemoryBytes = FPlatformMemory::GetStats().UsedPhysical;
+	Sample.Error = LastError;
+	if (!AdaptiveMetrics->Record(AdaptiveMetricsFileName,
+		AdaptiveMetricsIntervalSeconds, Sample, LastError))
+	{
+		bRecordAdaptiveMetrics = false;
+		UE_LOG(LogOpenVolumetricComponent, Error, TEXT("%s"), *LastError);
+	}
 }
 
 void UOpenVolumetricComponent::CloseAdaptiveMetrics()
 {
-	if (AdaptiveMetricsArchive == nullptr)
-		return;
-	AdaptiveMetricsArchive->Flush();
-	AdaptiveMetricsArchive->Close();
-	delete AdaptiveMetricsArchive;
-	AdaptiveMetricsArchive = nullptr;
+	AdaptiveMetrics->Close();
 }
 
 void UOpenVolumetricComponent::UpdateBufferDiagnostics()
@@ -716,63 +579,40 @@ bool UOpenVolumetricComponent::RequestAdaptiveHigh(bool bHigh)
 
 bool UOpenVolumetricComponent::HandleNetworkRecovery()
 {
-	if (!bRemoteSource)
-	{
+	const EOpenVolumetricRecoveryAction Action = NetworkRecovery->Update(
+		bRemoteSource,
+		static_cast<int32>(InputState),
+		PlaybackState == EOpenVolumetricPlaybackState::Playing,
+		LastPresentationTime,
+		CurrentTimeSeconds);
+	if (Action == EOpenVolumetricRecoveryAction::None)
 		return false;
-	}
-	if (InputState == EOpenVolumetricInputState::Rebuffering)
+	if (Action == EOpenVolumetricRecoveryAction::Wait)
+		return true;
+	if (Action == EOpenVolumetricRecoveryAction::BeginRebuffer)
 	{
-		if (!bNetworkRebuffering)
-		{
-			bNetworkRebuffering = true;
-			bResumeAfterNetworkRecovery =
-				PlaybackState == EOpenVolumetricPlaybackState::Playing;
-			NetworkRecoveryTarget = LastPresentationTime >= 0.0
-				? LastPresentationTime
-				: CurrentTimeSeconds;
-			CurrentTimeSeconds = NetworkRecoveryTarget;
-			PlaybackState = EOpenVolumetricPlaybackState::Paused;
-			ResetAudio();
-			UE_LOG(
-				LogOpenVolumetricComponent,
-				Warning,
-				TEXT("HTTP input interrupted; rebuffering."));
-		}
+		CurrentTimeSeconds = NetworkRecovery->Target();
+		PlaybackState = EOpenVolumetricPlaybackState::Paused;
+		ResetAudio();
+		UE_LOG(LogOpenVolumetricComponent, Warning,
+			TEXT("HTTP input interrupted; rebuffering."));
 		return true;
 	}
-	if (!bNetworkRebuffering)
+	if (Action == EOpenVolumetricRecoveryAction::Fail)
 	{
-		if (InputState == EOpenVolumetricInputState::Error)
-		{
-			PlaybackState = EOpenVolumetricPlaybackState::Error;
-			LastError = TEXT("HTTP input failed after recovery retries.");
-			ResetAudio();
-			return true;
-		}
-		return false;
-	}
-	if (InputState == EOpenVolumetricInputState::Error ||
-		InputState == EOpenVolumetricInputState::Cancelled)
-	{
-		bNetworkRebuffering = false;
 		PlaybackState = EOpenVolumetricPlaybackState::Error;
 		LastError = TEXT("HTTP input failed after recovery retries.");
+		ResetAudio();
 		return true;
 	}
-	if (InputState != EOpenVolumetricInputState::Ready)
-	{
-		return true;
-	}
-
-	bNetworkRebuffering = false;
-	if (!Player->Seek(NetworkRecoveryTarget, LastError))
+	if (!Player->Seek(NetworkRecovery->Target(), LastError))
 	{
 		PlaybackState = EOpenVolumetricPlaybackState::Error;
 		return true;
 	}
-	CurrentTimeSeconds = NetworkRecoveryTarget;
+	CurrentTimeSeconds = NetworkRecovery->Target();
 	ResetAudio();
-	PlaybackState = bResumeAfterNetworkRecovery
+	PlaybackState = NetworkRecovery->ShouldResume()
 		? EOpenVolumetricPlaybackState::Playing
 		: EOpenVolumetricPlaybackState::Paused;
 	UE_LOG(
