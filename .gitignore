@@ -45,3 +45,6 @@ Desktop.ini
 /Unity/Assets/XR/Temp/
 /Unity/Assets/XR/UserSimulationSettings/
 OpenVolumetricNative/tests/fixtures/*
+
+
+/Unity/Assets/Plugins/OpenVolumetric/*
