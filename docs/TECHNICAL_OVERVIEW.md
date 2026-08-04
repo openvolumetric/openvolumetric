@@ -342,6 +342,10 @@ with the corresponding integral frame count, disables scene-cut keyframes,
 and forces an independent geometry packet at every matching boundary.
 Conventional fast-start output remains the default.
 
+Authoring progress and errors use the same bounded native diagnostic service
+as playback. The engine supplies a callback carrying severity, message, and
+opaque context; the core contains no Unity or Unreal logging dependency.
+
 ### 4.5 Packaging
 
 Once the media MP4 and Draco sequence exist, `OpenVolumetricAuthoringCore`:
@@ -444,6 +448,15 @@ current packet and pauses until capacity becomes available.
 
 Audio staging is drained first to reduce the chance that geometry or video
 backpressure starves the audio callback.
+
+Packet routing, pending-queue draining, codec submission, audio conversion,
+and geometry hand-off are separate internal operations, but
+`AVDecoderFFMPEG` remains the only owner of the mutable demuxer and codec
+contexts. This keeps seek/flush ordering serialized rather than distributing
+FFmpeg state across workers. Audio conversion reuses decoder-thread scratch
+storage after warm-up; recurring decode paths do not format or forward log
+messages. Ownership transfers at queue boundaries use retained `AVFrame`
+references or owning packet byte arrays.
 
 ### 5.3 Video decoding
 

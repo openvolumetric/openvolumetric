@@ -1,44 +1,71 @@
 #pragma once
-#include <stdio.h>
-#include <stdarg.h>
 
-#define ENABLE_LOG
-#ifdef ENABLE_LOG
-#define LOG(...) Logger::instance()->log(__VA_ARGS__)
-#else
-#define LOG(...)
-#endif
-
-#include <string>
+#include <cstdarg>
+#include <mutex>
 
 namespace openvolumetric
 {
 
-/// Minimal process-wide logger shared by the native core and engine adapters.
-///
-/// Android messages are forwarded to logcat. Desktop builds can optionally
-/// attach a console for diagnostics requested by a host.
-class Logger
+/** Stable severity values passed to engine and test log sinks. */
+enum class LogLevel : int
+{
+	Debug = 0,
+	Info = 1,
+	Warning = 2,
+	Error = 3
+};
+
+/**
+ * Host log callback.
+ *
+ * The message is borrowed and valid only for the callback. The callback may
+ * run on decoder, transport, or render threads and must not retain the pointer.
+ */
+using LogCallback = void (*)(LogLevel level, const char* message, void* user);
+
+/** Thread-safe native diagnostic router with a platform fallback sink. */
+class Logger final
 {
 public:
-	/// Returns the lazily constructed process-wide logger.
-	static Logger* instance();
-	void open_external_console();
-	void close_external_console();
+	/** Returns the function-local process service; no manual lifetime exists. */
+	static Logger& instance();
 
-	/// Writes one printf-style diagnostic message to the platform sink.
-	void log(const char* str, ...);
-	   
+	/** Atomically replaces the optional host callback and its opaque context. */
+	void set_callback(LogCallback callback, void* user);
+	/** Removes the callback only when both values still identify its owner. */
+	void clear_callback(LogCallback callback, void* user);
+
+	/** Formats into bounded stack storage, then publishes one complete message. */
+	void write(LogLevel level, const char* format, ...);
+	void write_v(LogLevel level, const char* format, std::va_list arguments);
+
 private:
-	/// Constructs the default platform logger.
-	Logger();
+	Logger() = default;
+	void fallback(LogLevel level, const char* message);
 
-	/// Constructs a desktop logger that appends stdout to filename.
-	Logger(std::string filename);
-	
-	/// Backing pointer for instance().
-	static Logger* _instance;
-	bool console_active;
+	std::mutex m_mutex;
+	LogCallback m_callback = nullptr;
+	void* m_user = nullptr;
 };
 
 } // namespace openvolumetric
+
+#if !defined(OPENVOLUMETRIC_DISABLE_LOGGING)
+#define LOG(...) \
+	::openvolumetric::Logger::instance().write( \
+		::openvolumetric::LogLevel::Info, __VA_ARGS__)
+#define LOG_WARNING(...) \
+	::openvolumetric::Logger::instance().write( \
+		::openvolumetric::LogLevel::Warning, __VA_ARGS__)
+#define LOG_ERROR(...) \
+	::openvolumetric::Logger::instance().write( \
+		::openvolumetric::LogLevel::Error, __VA_ARGS__)
+#define LOG_DEBUG(...) \
+	::openvolumetric::Logger::instance().write( \
+		::openvolumetric::LogLevel::Debug, __VA_ARGS__)
+#else
+#define LOG(...)
+#define LOG_WARNING(...)
+#define LOG_ERROR(...)
+#define LOG_DEBUG(...)
+#endif

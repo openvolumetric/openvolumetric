@@ -78,6 +78,32 @@ constexpr std::uint64_t kPlayerHandleMagic = 0x4f564f4c504c4159ULL;
 std::unordered_map<int, std::unique_ptr<UnityOpenVolumetricPlayer>> g_instances;
 std::shared_mutex g_instances_mutex;
 
+struct UnityLogSink
+{
+	std::mutex mutex;
+	OpenVolumetricLogCallback callback = nullptr;
+	void* user = nullptr;
+};
+
+UnityLogSink g_log_sink;
+
+void forward_log(
+	openvolumetric::LogLevel level,
+	const char* message,
+	void* context)
+{
+	auto* sink = static_cast<UnityLogSink*>(context);
+	OpenVolumetricLogCallback callback = nullptr;
+	void* user = nullptr;
+	{
+		std::lock_guard<std::mutex> lock(sink->mutex);
+		callback = sink->callback;
+		user = sink->user;
+	}
+	if (callback != nullptr)
+		callback(static_cast<int32_t>(level), message, user);
+}
+
 class InstanceAccess
 {
 public:
@@ -170,6 +196,12 @@ extern "C" void	UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API UnityPluginLoad(IUnit
 }
 extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API UnityPluginUnload()
 {
+	Logger::instance().clear_callback(forward_log, &g_log_sink);
+	{
+		std::lock_guard<std::mutex> lock(g_log_sink.mutex);
+		g_log_sink.callback = nullptr;
+		g_log_sink.user = nullptr;
+	}
 	g_unity_graphics->UnregisterDeviceEventCallback(OnGraphicsDeviceEvent);
 }
 static UnityGfxRenderer g_device_type = kUnityGfxRendererNull;
@@ -292,13 +324,19 @@ extern "C" UnityRenderingEvent UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API GetRen
 {
 	return OnRenderEvent;
 }
-OPENVOLUMETRIC_API void openvolumetric_open_external_console()
+OPENVOLUMETRIC_API void openvolumetric_set_log_callback(
+	OpenVolumetricLogCallback callback,
+	void* user)
 {
-	Logger::instance()->open_external_console();
-}
-OPENVOLUMETRIC_API void openvolumetric_close_external_console()
-{
-	Logger::instance()->close_external_console();
+	{
+		std::lock_guard<std::mutex> lock(g_log_sink.mutex);
+		g_log_sink.callback = callback;
+		g_log_sink.user = user;
+	}
+	if (callback != nullptr)
+		Logger::instance().set_callback(forward_log, &g_log_sink);
+	else
+		Logger::instance().clear_callback(forward_log, &g_log_sink);
 }
 OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_get_api_version(
 	OpenVolumetricApiVersionV1* version)

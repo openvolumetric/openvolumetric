@@ -659,14 +659,6 @@ bool AVDecoderFFMPEG::queue_geometry_packet()
 	frame.presentation_time =
 		static_cast<double>(m_packet.pts) *
 		av_q2d(m_geometry_stream->time_base);
-	if (std::abs(frame.presentation_time - m_last_geometry_packet_time) <
-		1e-9)
-	{
-		LOG(
-			"SYNC duplicate geometry timestamp pts=%f",
-			frame.presentation_time);
-	}
-	m_last_geometry_packet_time = frame.presentation_time;
 	frame.source_frame_number = packet.frame_number;
 	frame.packet = std::move(packet);
 
@@ -747,11 +739,12 @@ bool AVDecoderFFMPEG::decode_audio_frame()
 				m_audio_info.sample_rate,
 				m_audio_codec_ctx->sample_rate,
 				AV_ROUND_UP));
-			std::vector<float> converted(
-				static_cast<size_t>(output_capacity) *
-				static_cast<size_t>(m_audio_info.channels));
+			const std::size_t conversion_capacity =
+				static_cast<std::size_t>(output_capacity) *
+				static_cast<std::size_t>(m_audio_info.channels);
+			m_audio_conversion_buffer.resize(conversion_capacity);
 			uint8_t* output =
-				reinterpret_cast<uint8_t*>(converted.data());
+				reinterpret_cast<uint8_t*>(m_audio_conversion_buffer.data());
 			const int output_samples = swr_convert(
 				m_audio_resampler,
 				&output,
@@ -802,7 +795,7 @@ bool AVDecoderFFMPEG::decode_audio_frame()
 					static_cast<std::size_t>(output_samples) *
 					static_cast<std::size_t>(m_audio_info.channels);
 				if (!push_audio(
-					converted.data() + sample_offset,
+					m_audio_conversion_buffer.data() + sample_offset,
 					converted_count - sample_offset))
 				{
 					m_video_frames.set_error(
@@ -942,7 +935,6 @@ bool AVDecoderFFMPEG::decode_video_frame()
 	{
 		// FFmpeg still owns output from an earlier packet. Drain that output,
 		// then retry this exact packet instead of silently dropping it.
-		LOG("AVDecoderFFMPEG::decode_video_frame - recovering send EAGAIN");
 		if (!receive_video_frames())
 			return false;
 		send_result = avcodec_send_packet(m_video_codec_ctx, &m_packet);
@@ -1000,15 +992,6 @@ bool AVDecoderFFMPEG::receive_video_frames()
 		framedata.frame_time =
 			av_q2d(m_video_stream->time_base) *
 			static_cast<double>(frame->best_effort_timestamp);
-		if (std::abs(
-			framedata.frame_time - m_last_video_packet_time) < 1e-9)
-		{
-			LOG(
-				"SYNC duplicate video timestamp pts=%f",
-				framedata.frame_time);
-		}
-		m_last_video_packet_time = framedata.frame_time;
-
 		if (!m_video_frames.try_push(std::move(framedata)))
 		{
 			av_frame_free(&frame);
@@ -1150,8 +1133,6 @@ bool AVDecoderFFMPEG::perform_seek(double time)
 	m_audio_underrun_count.store(0, std::memory_order_release);
 	m_audio_discard_before = time;
 	m_playback_generation.fetch_add(1, std::memory_order_acq_rel);
-	m_last_video_packet_time = -1.0;
-	m_last_geometry_packet_time = -1.0;
 	m_video_decoder_drained = false;
 	m_decoder_state = DECODING;
 

@@ -22,6 +22,10 @@ They apply to new code and to existing code when it is materially changed.
 - Express ownership with values and smart pointers. Document every borrowed
   pointer or graphics handle with its owner, validity period, and permitted
   thread.
+- Publish native diagnostics through `Logger` with an appropriate severity.
+  Do not write directly to stdout/stderr outside the platform fallback. Keep
+  real-time audio and recurring frame paths free of logging, allocation, and
+  unbounded formatting.
 
 ## C# and Unity
 

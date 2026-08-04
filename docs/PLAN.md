@@ -675,21 +675,30 @@ See [RENDERING.md](RENDERING.md).
 
 ### Phase 7: Logging, diagnostics, and internal maintainability
 
-- [ ] Replace the manually allocated logger singleton and process-wide stdout
+- [x] Replace the manually allocated logger singleton and process-wide stdout
       redirection with a thread-safe function-local service and optional host
       callback carrying level, message, and user context.
-- [ ] Route native messages through Unity, Unreal, Android, or a test sink
+- [x] Route native messages through Unity, Unreal, Android, or a test sink
       without adding engine dependencies to the core.
-- [ ] Keep high-frequency decode and audio paths free of unbounded formatting,
+- [x] Keep high-frequency decode and audio paths free of unbounded formatting,
       allocation, or engine callbacks.
-- [ ] Internally separate FFmpeg packet routing, audio conversion, and queue
+- [x] Internally separate FFmpeg packet routing, audio conversion, and queue
       management where doing so clarifies invariants, while retaining one
       owner for mutable demux and codec state.
-- [ ] Replace narrative or statement-repeating legacy comments with API,
+- [x] Replace narrative or statement-repeating legacy comments with API,
       ownership, threading, invariant, and non-obvious-decision documentation.
-- [ ] Apply the documented C++, C#, and Unreal style rules to every file
+- [x] Apply the documented C++, C#, and Unreal style rules to every file
       materially changed by this milestone; avoid a behavior-changing global
       formatting rewrite.
+
+The runtime now uses a function-local logger with a bounded stack formatter,
+severity, and an ownership-safe host callback. Unity and Unreal install thin
+engine sinks, Android falls back to logcat, and native tests exercise callback
+replacement and removal. Authoring diagnostics use the same service instead
+of process stdout/stderr redirection. Recurring video, geometry, and audio
+paths do not log, and audio conversion reuses worker-owned scratch storage.
+The existing single FFmpeg owner is retained while packet routing, staging,
+conversion, and queue publication remain explicit internal operations.
 
 ### Phase 8: Packaging and SDK consumption
 

@@ -7,6 +7,7 @@
 #include <FragmentedMp4Index.h>
 #include <GeometryPacket.h>
 #include <LocalFileByteSource.h>
+#include <Logger.h>
 #include <OpenVolumetricPlayer.h>
 #include <TopologyAnalyzer.h>
 
@@ -58,6 +59,21 @@ public:
 private:
 	std::filesystem::path m_path;
 };
+
+struct LogCapture
+{
+	LogLevel level = LogLevel::Debug;
+	std::string message;
+	int calls = 0;
+};
+
+void capture_log(LogLevel level, const char* message, void* user)
+{
+	auto& capture = *static_cast<LogCapture*>(user);
+	capture.level = level;
+	capture.message = message != nullptr ? message : "";
+	++capture.calls;
+}
 
 class StubMediaDecoder final : public IAVDecoder
 {
@@ -283,6 +299,21 @@ FrameMatchResult wait_for_terminal_presentation_result(
 }
 
 } // namespace
+
+TEST_CASE("logger routes bounded leveled messages to an owned callback")
+{
+	LogCapture capture;
+	Logger::instance().set_callback(capture_log, &capture);
+	Logger::instance().write(LogLevel::Warning, "frame %d", 42);
+	CHECK(capture.calls == 1);
+	CHECK(capture.level == LogLevel::Warning);
+	CHECK(capture.message == "frame 42");
+
+	Logger::instance().clear_callback(capture_log, nullptr);
+	Logger::instance().write(LogLevel::Error, "still captured");
+	CHECK(capture.calls == 2);
+	Logger::instance().clear_callback(capture_log, &capture);
+}
 
 TEST_CASE("player construction seam owns deterministic decoder substitutes")
 {

@@ -52,6 +52,28 @@ No exported runtime function returns a borrowed string or metadata reference.
 The former thread-local adaptive switch and manifest-selection getters were
 removed during the version 1 migration.
 
+## Native diagnostics
+
+`openvolumetric_set_log_callback` installs one process-wide optional host log
+sink. The callback receives a severity, a borrowed UTF-8 message, and the
+opaque user context supplied during registration. The message is valid only
+until the callback returns and must not be retained.
+
+Diagnostics may originate on decoder, transport, authoring, or render
+threads. A host callback must therefore be thread-safe, non-blocking, and must
+not call player lifecycle or rendering functions. Registration is synchronized
+with publication; an in-progress callback may finish while the host replaces
+or clears the sink. Passing a null callback restores the platform fallback:
+Android logcat, the Windows debugger/optional console, or standard error on
+other desktop platforms.
+
+The logger formats into fixed-capacity stack storage and invokes the host only
+after releasing its internal lock. Real-time audio callbacks and recurring
+per-frame decode paths do not publish diagnostics. Unity marshals native
+messages into its console, Unreal routes them through `UE_LOG`, and native
+tests may install an isolated capture sink without introducing engine types
+into the core.
+
 ## Result model
 
 Fallible calls return `OpenVolumetricResult`:

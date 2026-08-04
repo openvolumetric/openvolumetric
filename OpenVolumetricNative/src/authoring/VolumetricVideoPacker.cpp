@@ -6,6 +6,7 @@
 #include "TopologyAnalyzer.h"
 
 #include <GeometryPacket.h>
+#include <Logger.h>
 
 #include <draco/compression/decode.h>
 #include <draco/core/decoder_buffer.h>
@@ -22,9 +23,9 @@ extern "C"
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <limits>
 #include <map>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -32,6 +33,34 @@ namespace openvolumetric::authoring
 {
 namespace
 {
+
+/** Collects one non-realtime authoring diagnostic before publishing it. */
+class LogLine final
+{
+public:
+	explicit LogLine(openvolumetric::LogLevel level) : m_level(level) {}
+	~LogLine()
+	{
+		std::string message = m_stream.str();
+		while (!message.empty() &&
+			(message.back() == '\n' || message.back() == '\r'))
+			message.pop_back();
+		if (!message.empty())
+			openvolumetric::Logger::instance().write(
+				m_level, "%s", message.c_str());
+	}
+
+	template<typename Value>
+	LogLine& operator<<(const Value& value)
+	{
+		m_stream << value;
+		return *this;
+	}
+
+private:
+	openvolumetric::LogLevel m_level;
+	std::ostringstream m_stream;
+};
 
 namespace fs = std::filesystem;
 
@@ -103,7 +132,7 @@ bool discover_geometry(
 {
 	if (!fs::is_directory(directory))
 	{
-		std::cerr << "Geometry directory does not exist: " << directory << '\n';
+		LogLine(openvolumetric::LogLevel::Error) << "Geometry directory does not exist: " << directory << '\n';
 		return false;
 	}
 
@@ -121,7 +150,7 @@ bool discover_geometry(
 				return value >= '0' && value <= '9';
 			}))
 		{
-			std::cerr << "Ignoring non-numbered Draco file: "
+			LogLine(openvolumetric::LogLevel::Error) << "Ignoring non-numbered Draco file: "
 				<< entry.path() << '\n';
 			continue;
 		}
@@ -129,7 +158,7 @@ bool discover_geometry(
 		const unsigned long parsed = std::stoul(stem);
 		if (parsed > std::numeric_limits<std::uint32_t>::max())
 		{
-			std::cerr << "Geometry frame number is too large: "
+			LogLine(openvolumetric::LogLevel::Error) << "Geometry frame number is too large: "
 				<< entry.path() << '\n';
 			return false;
 		}
@@ -151,7 +180,7 @@ bool discover_geometry(
 
 	if (geometry.empty())
 	{
-		std::cerr << "No numbered .drc files found in " << directory << '\n';
+		LogLine(openvolumetric::LogLevel::Error) << "No numbered .drc files found in " << directory << '\n';
 		return false;
 	}
 
@@ -159,7 +188,7 @@ bool discover_geometry(
 	{
 		if (geometry[i - 1].frame_number == geometry[i].frame_number)
 		{
-			std::cerr << "Duplicate geometry frame number: "
+			LogLine(openvolumetric::LogLevel::Error) << "Duplicate geometry frame number: "
 				<< geometry[i].frame_number << '\n';
 			return false;
 		}
@@ -184,7 +213,7 @@ bool validate_reused_keyframe(
 	auto decoded = decoder.DecodeMeshFromBuffer(&buffer);
 	if (!decoded.ok())
 	{
-		std::cerr << "Could not validate reused Draco keyframe: "
+		LogLine(openvolumetric::LogLevel::Error) << "Could not validate reused Draco keyframe: "
 			<< decoded.status().error_msg_string() << '\n';
 		return false;
 	}
@@ -195,7 +224,7 @@ bool validate_reused_keyframe(
 		static_cast<std::size_t>(mesh->num_faces()) !=
 			canonical.triangle_count())
 	{
-		std::cerr << "Reused Draco keyframe geometry counts differ from OBJ "
+		LogLine(openvolumetric::LogLevel::Error) << "Reused Draco keyframe geometry counts differ from OBJ "
 			<< obj_path << '\n';
 		return false;
 	}
@@ -210,7 +239,7 @@ bool validate_reused_keyframe(
 					decoded_face[corner].value()) !=
 				canonical.triangle_indices[index])
 			{
-				std::cerr
+				LogLine(openvolumetric::LogLevel::Error)
 					<< "Reused Draco keyframe does not preserve canonical "
 					   "vertex/index order: "
 					<< input.path << '\n';
@@ -237,7 +266,7 @@ bool update_decoded_mesh_counts(
 	auto decoded = decoder.DecodeMeshFromBuffer(&buffer);
 	if (!decoded.ok())
 	{
-		std::cerr << "Could not validate independent Draco mesh "
+		LogLine(openvolumetric::LogLevel::Error) << "Could not validate independent Draco mesh "
 			<< obj_path << ": "
 			<< decoded.status().error_msg_string() << '\n';
 		return false;
@@ -249,7 +278,7 @@ bool update_decoded_mesh_counts(
 		static_cast<std::uint64_t>(mesh->num_faces()) >
 			std::numeric_limits<std::uint32_t>::max())
 	{
-		std::cerr << "Independent Draco mesh has invalid geometry counts: "
+		LogLine(openvolumetric::LogLevel::Error) << "Independent Draco mesh has invalid geometry counts: "
 			<< obj_path << '\n';
 		return false;
 	}
@@ -267,7 +296,7 @@ bool prepare_geometry_packets(
 {
 	if (!fs::is_directory(options.source_geometry_directory))
 	{
-		std::cerr << "OBJ geometry directory does not exist: "
+		LogLine(openvolumetric::LogLevel::Error) << "OBJ geometry directory does not exist: "
 			<< options.source_geometry_directory << '\n';
 		return false;
 	}
@@ -303,7 +332,7 @@ bool prepare_geometry_packets(
 			active_keyframe_input->packet.payload,
 			encode_error))
 		{
-			std::cerr << "Could not encode independent mesh "
+			LogLine(openvolumetric::LogLevel::Error) << "Could not encode independent mesh "
 				<< active_keyframe_obj << ": " << encode_error << '\n';
 			return false;
 		}
@@ -322,7 +351,7 @@ bool prepare_geometry_packets(
 		if (!load_canonical_obj(
 			obj_path, topology_options, current, error))
 		{
-			std::cerr << "Could not analyse OBJ frame "
+			LogLine(openvolumetric::LogLevel::Error) << "Could not analyse OBJ frame "
 				<< obj_path << ": " << error << '\n';
 			return false;
 		}
@@ -331,7 +360,7 @@ bool prepare_geometry_packets(
 			current.triangle_count() >
 				std::numeric_limits<std::uint32_t>::max())
 		{
-			std::cerr << "Geometry counts exceed the packet format limits\n";
+			LogLine(openvolumetric::LogLevel::Error) << "Geometry counts exceed the packet format limits\n";
 			return false;
 		}
 
@@ -378,7 +407,7 @@ bool prepare_geometry_packets(
 						active_keyframe_input->path,
 						active_keyframe_input->packet.payload))
 				{
-					std::cerr << "Failed to read order-preserving Draco "
+					LogLine(openvolumetric::LogLevel::Error) << "Failed to read order-preserving Draco "
 						"keyframe\n";
 					return false;
 				}
@@ -402,7 +431,7 @@ bool prepare_geometry_packets(
 			if (!encode_positions_to_draco_point_cloud(
 				current.positions, 14, 5, 5, input.packet.payload, error))
 			{
-				std::cerr << "Could not encode position update "
+				LogLine(openvolumetric::LogLevel::Error) << "Could not encode position update "
 					<< obj_path << ": " << error << '\n';
 				return false;
 			}
@@ -441,7 +470,7 @@ bool prepare_geometry_packets(
 		static_cast<std::uint64_t>(geometry.size()) *
 		static_cast<std::uint64_t>(
 			openvolumetric::kGeometryPacketHeaderSize);
-	std::cout << "Authored " << keyframe_count
+	LogLine(openvolumetric::LogLevel::Info) << "Authored " << keyframe_count
 		<< " independent meshes and "
 		<< (geometry.size() - keyframe_count)
 		<< " position-only updates\n";
@@ -467,7 +496,7 @@ bool collect_video_timing(
 				packet->pts == AV_NOPTS_VALUE ? packet->dts : packet->pts;
 			if (pts == AV_NOPTS_VALUE)
 			{
-				std::cerr << "Video packet has no usable timestamp\n";
+				LogLine(openvolumetric::LogLevel::Error) << "Video packet has no usable timestamp\n";
 				av_packet_free(&packet);
 				return false;
 			}
@@ -481,7 +510,7 @@ bool collect_video_timing(
 	av_packet_free(&packet);
 	if (result != AVERROR_EOF || timing.empty())
 	{
-		std::cerr << "Could not collect source video sample timestamps\n";
+		LogLine(openvolumetric::LogLevel::Error) << "Could not collect source video sample timestamps\n";
 		return false;
 	}
 
@@ -493,7 +522,7 @@ bool collect_video_timing(
 	{
 		if (timing[index].pts <= timing[index - 1].pts)
 		{
-			std::cerr << "Video presentation timestamps are not unique and monotonic\n";
+			LogLine(openvolumetric::LogLevel::Error) << "Video presentation timestamps are not unique and monotonic\n";
 			return false;
 		}
 		if (timing[index - 1].duration <= 0)
@@ -512,7 +541,7 @@ bool collect_video_timing(
 		std::numeric_limits<std::int64_t>::max(), 0);
 	if (result < 0)
 	{
-		std::cerr << "Could not rewind source media after timing probe: "
+		LogLine(openvolumetric::LogLevel::Error) << "Could not rewind source media after timing probe: "
 			<< ffmpeg_error(result) << '\n';
 		return false;
 	}
@@ -533,7 +562,7 @@ bool write_geometry_sample(
 	if (bytes.empty() ||
 		bytes.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()))
 	{
-		std::cerr << "Failed to serialize geometry frame: " << input.path << '\n';
+		LogLine(openvolumetric::LogLevel::Error) << "Failed to serialize geometry frame: " << input.path << '\n';
 		return false;
 	}
 
@@ -562,7 +591,7 @@ bool write_geometry_sample(
 	av_packet_free(&packet);
 	if (result < 0)
 	{
-		std::cerr << "Failed to write geometry frame "
+		LogLine(openvolumetric::LogLevel::Error) << "Failed to write geometry frame "
 			<< input.frame_number << ": " << ffmpeg_error(result) << '\n';
 		return false;
 	}
@@ -587,7 +616,7 @@ bool mux_file(
 		&input, options.media_path.string().c_str(), nullptr, nullptr);
 	if (result < 0)
 	{
-		std::cerr << "Failed to open input media: "
+		LogLine(openvolumetric::LogLevel::Error) << "Failed to open input media: "
 			<< ffmpeg_error(result) << '\n';
 		goto cleanup;
 	}
@@ -595,7 +624,7 @@ bool mux_file(
 	result = avformat_find_stream_info(input, nullptr);
 	if (result < 0)
 	{
-		std::cerr << "Failed to inspect input media: "
+		LogLine(openvolumetric::LogLevel::Error) << "Failed to inspect input media: "
 			<< ffmpeg_error(result) << '\n';
 		goto cleanup;
 	}
@@ -605,7 +634,7 @@ bool mux_file(
 			input, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
 		if (video_index < 0)
 		{
-			std::cerr << "Input media has no video stream\n";
+			LogLine(openvolumetric::LogLevel::Error) << "Input media has no video stream\n";
 			goto cleanup;
 		}
 		std::vector<VideoSampleTiming> video_timing;
@@ -613,12 +642,12 @@ bool mux_file(
 			goto cleanup;
 		if (video_timing.size() != geometry.size())
 		{
-			std::cerr << "Geometry/video frame count mismatch: "
+			LogLine(openvolumetric::LogLevel::Error) << "Geometry/video frame count mismatch: "
 				<< geometry.size() << " geometry frames and "
 				<< video_timing.size() << " timestamped video samples\n";
 			goto cleanup;
 		}
-		std::cout << "Using " << video_timing.size()
+		LogLine(openvolumetric::LogLevel::Info) << "Using " << video_timing.size()
 			<< " source video sample timestamps for geometry timing\n";
 
 		const AVRational geometry_time_base =
@@ -628,7 +657,7 @@ bool mux_file(
 			&output, nullptr, "mp4", temporary_path.string().c_str());
 		if (result < 0 || output == nullptr)
 		{
-			std::cerr << "Failed to create MP4 output: "
+			LogLine(openvolumetric::LogLevel::Error) << "Failed to create MP4 output: "
 				<< ffmpeg_error(result) << '\n';
 			goto cleanup;
 		}
@@ -640,7 +669,7 @@ bool mux_file(
 			AVStream* output_stream = avformat_new_stream(output, nullptr);
 			if (output_stream == nullptr)
 			{
-				std::cerr << "Failed to create output media stream\n";
+				LogLine(openvolumetric::LogLevel::Error) << "Failed to create output media stream\n";
 				goto cleanup;
 			}
 
@@ -648,7 +677,7 @@ bool mux_file(
 				output_stream->codecpar, input->streams[i]->codecpar);
 			if (result < 0)
 			{
-				std::cerr << "Failed to copy stream parameters: "
+				LogLine(openvolumetric::LogLevel::Error) << "Failed to copy stream parameters: "
 					<< ffmpeg_error(result) << '\n';
 				goto cleanup;
 			}
@@ -660,7 +689,7 @@ bool mux_file(
 		AVStream* geometry_stream = avformat_new_stream(output, nullptr);
 		if (geometry_stream == nullptr)
 		{
-			std::cerr << "Failed to create geometry metadata stream\n";
+			LogLine(openvolumetric::LogLevel::Error) << "Failed to create geometry metadata stream\n";
 			goto cleanup;
 		}
 		geometry_stream->codecpar->codec_type = AVMEDIA_TYPE_DATA;
@@ -686,7 +715,7 @@ bool mux_file(
 				AVIO_FLAG_WRITE);
 			if (result < 0)
 			{
-				std::cerr << "Failed to open output file: "
+				LogLine(openvolumetric::LogLevel::Error) << "Failed to open output file: "
 					<< ffmpeg_error(result) << '\n';
 				goto cleanup;
 			}
@@ -718,7 +747,7 @@ bool mux_file(
 		av_dict_free(&mux_options);
 		if (result < 0)
 		{
-			std::cerr << "Failed to write MP4 header: "
+			LogLine(openvolumetric::LogLevel::Error) << "Failed to write MP4 header: "
 				<< ffmpeg_error(result) << '\n';
 			goto cleanup;
 		}
@@ -768,7 +797,7 @@ bool mux_file(
 			av_packet_unref(packet);
 			if (result < 0)
 			{
-				std::cerr << "Failed to copy media packet: "
+				LogLine(openvolumetric::LogLevel::Error) << "Failed to copy media packet: "
 					<< ffmpeg_error(result) << '\n';
 				goto cleanup;
 			}
@@ -776,7 +805,7 @@ bool mux_file(
 
 		if (result != AVERROR_EOF)
 		{
-			std::cerr << "Failed while reading input media: "
+			LogLine(openvolumetric::LogLevel::Error) << "Failed while reading input media: "
 				<< ffmpeg_error(result) << '\n';
 			goto cleanup;
 		}
@@ -799,7 +828,7 @@ bool mux_file(
 		header_written = false;
 		if (result < 0)
 		{
-			std::cerr << "Failed to finish MP4 output: "
+			LogLine(openvolumetric::LogLevel::Error) << "Failed to finish MP4 output: "
 				<< ffmpeg_error(result) << '\n';
 			goto cleanup;
 		}
@@ -847,14 +876,14 @@ bool verify_mp4_layout(
 	std::ifstream file(path, std::ios::binary | std::ios::ate);
 	if (!file)
 	{
-		std::cerr << "Could not inspect MP4 box order\n";
+		LogLine(openvolumetric::LogLevel::Error) << "Could not inspect MP4 box order\n";
 		return false;
 	}
 
 	const std::streamoff end = file.tellg();
 	if (end < 8)
 	{
-		std::cerr << "MP4 is too small to contain top-level boxes\n";
+		LogLine(openvolumetric::LogLevel::Error) << "MP4 is too small to contain top-level boxes\n";
 		return false;
 	}
 	const std::uint64_t file_size = static_cast<std::uint64_t>(end);
@@ -870,7 +899,7 @@ bool verify_mp4_layout(
 		file.seekg(static_cast<std::streamoff>(offset));
 		if (!file.read(reinterpret_cast<char*>(header.data()), 8))
 		{
-			std::cerr << "Could not read MP4 top-level box header\n";
+			LogLine(openvolumetric::LogLevel::Error) << "Could not read MP4 top-level box header\n";
 			return false;
 		}
 
@@ -880,7 +909,7 @@ bool verify_mp4_layout(
 		{
 			if (!file.read(reinterpret_cast<char*>(header.data() + 8), 8))
 			{
-				std::cerr << "Could not read extended MP4 box size\n";
+				LogLine(openvolumetric::LogLevel::Error) << "Could not read extended MP4 box size\n";
 				return false;
 			}
 			box_size =
@@ -895,7 +924,7 @@ bool verify_mp4_layout(
 
 		if (box_size < header_size || box_size > file_size - offset)
 		{
-			std::cerr << "Invalid MP4 top-level box size\n";
+			LogLine(openvolumetric::LogLevel::Error) << "Invalid MP4 top-level box size\n";
 			return false;
 		}
 
@@ -916,7 +945,7 @@ bool verify_mp4_layout(
 		{
 			if (fragment_waiting_for_media)
 			{
-				std::cerr << "MP4 fragment has no following media-data box\n";
+				LogLine(openvolumetric::LogLevel::Error) << "MP4 fragment has no following media-data box\n";
 				return false;
 			}
 			if (first_moof_offset ==
@@ -933,17 +962,17 @@ bool verify_mp4_layout(
 	if (moov_offset == std::numeric_limits<std::uint64_t>::max() ||
 		mdat_offset == std::numeric_limits<std::uint64_t>::max())
 	{
-		std::cerr << "MP4 is missing its moov or mdat box\n";
+		LogLine(openvolumetric::LogLevel::Error) << "MP4 is missing its moov or mdat box\n";
 		return false;
 	}
 	if (moov_offset > mdat_offset)
 	{
-		std::cerr << "MP4 metadata follows media data; fast-start failed\n";
+		LogLine(openvolumetric::LogLevel::Error) << "MP4 metadata follows media data; fast-start failed\n";
 		return false;
 	}
 	if (fragment_waiting_for_media)
 	{
-		std::cerr << "Final MP4 fragment has no media-data box\n";
+		LogLine(openvolumetric::LogLevel::Error) << "Final MP4 fragment has no media-data box\n";
 		return false;
 	}
 	if (fragmented)
@@ -952,22 +981,22 @@ bool verify_mp4_layout(
 			moov_offset > first_moof_offset ||
 			fragment_count != expected_fragments)
 		{
-			std::cerr << "Fragmented MP4 layout mismatch: expected "
+			LogLine(openvolumetric::LogLevel::Error) << "Fragmented MP4 layout mismatch: expected "
 				<< expected_fragments << " fragments, found "
 				<< fragment_count << '\n';
 			return false;
 		}
-		std::cout << "Verified fragmented MP4 initialization and "
+		LogLine(openvolumetric::LogLevel::Info) << "Verified fragmented MP4 initialization and "
 			<< fragment_count << " media fragments\n";
 		return true;
 	}
 	if (fragment_count != 0)
 	{
-		std::cerr << "Conventional MP4 unexpectedly contains fragments\n";
+		LogLine(openvolumetric::LogLevel::Error) << "Conventional MP4 unexpectedly contains fragments\n";
 		return false;
 	}
 
-	std::cout << "Verified fast-start MP4 metadata at byte "
+	LogLine(openvolumetric::LogLevel::Info) << "Verified fast-start MP4 metadata at byte "
 		<< moov_offset << " before media data at byte " << mdat_offset << '\n';
 	return true;
 }
@@ -1063,7 +1092,7 @@ bool replace_geometry_sample_entry(const fs::path& path)
 
 	if (replacements < 2)
 	{
-		std::cerr << "Expected MP4 geometry declarations were not found\n";
+		LogLine(openvolumetric::LogLevel::Error) << "Expected MP4 geometry declarations were not found\n";
 		return false;
 	}
 
@@ -1076,7 +1105,7 @@ bool replace_geometry_sample_entry(const fs::path& path)
 	}
 	file.flush();
 
-	std::cout << "Converted " << replacements
+	LogLine(openvolumetric::LogLevel::Info) << "Converted " << replacements
 		<< " MP4 metadata declarations to vvge\n";
 	return true;
 }
@@ -1094,7 +1123,7 @@ bool verify_file(
 		&input, path.string().c_str(), nullptr, nullptr);
 	if (result < 0)
 	{
-		std::cerr << "Failed to reopen output: "
+		LogLine(openvolumetric::LogLevel::Error) << "Failed to reopen output: "
 			<< ffmpeg_error(result) << '\n';
 		goto cleanup;
 	}
@@ -1102,7 +1131,7 @@ bool verify_file(
 	result = avformat_find_stream_info(input, nullptr);
 	if (result < 0)
 	{
-		std::cerr << "Failed to inspect output: "
+		LogLine(openvolumetric::LogLevel::Error) << "Failed to inspect output: "
 			<< ffmpeg_error(result) << '\n';
 		goto cleanup;
 	}
@@ -1121,14 +1150,14 @@ bool verify_file(
 		}
 		if (geometry_stream_index < 0)
 		{
-			std::cerr << "Reopened MP4 does not expose a vvge data stream\n";
+			LogLine(openvolumetric::LogLevel::Error) << "Reopened MP4 does not expose a vvge data stream\n";
 			goto cleanup;
 		}
 		const int video_stream_index = av_find_best_stream(
 			input, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
 		if (video_stream_index < 0)
 		{
-			std::cerr << "Reopened MP4 has no video stream\n";
+			LogLine(openvolumetric::LogLevel::Error) << "Reopened MP4 has no video stream\n";
 			goto cleanup;
 		}
 		std::vector<VideoSampleTiming> video_timing;
@@ -1139,7 +1168,7 @@ bool verify_file(
 		}
 		if (video_timing.size() != geometry.size())
 		{
-			std::cerr << "Verified video/geometry sample count mismatch\n";
+			LogLine(openvolumetric::LogLevel::Error) << "Verified video/geometry sample count mismatch\n";
 			goto cleanup;
 		}
 		const AVRational video_time_base =
@@ -1154,7 +1183,7 @@ bool verify_file(
 					geometry[index].packet.coding_mode !=
 						openvolumetric::GeometryCodingMode::IndependentMesh)
 				{
-					std::cerr << "Video/geometry fragment access points are not aligned\n";
+					LogLine(openvolumetric::LogLevel::Error) << "Video/geometry fragment access points are not aligned\n";
 					goto cleanup;
 				}
 			}
@@ -1187,7 +1216,7 @@ bool verify_file(
 			{
 				if (geometry_index >= geometry.size())
 				{
-					std::cerr << "Output contains extra geometry samples\n";
+					LogLine(openvolumetric::LogLevel::Error) << "Output contains extra geometry samples\n";
 					goto cleanup;
 				}
 
@@ -1197,14 +1226,14 @@ bool verify_file(
 					static_cast<std::size_t>(packet->size),
 					decoded))
 				{
-					std::cerr << "Invalid geometry packet at sample "
+					LogLine(openvolumetric::LogLevel::Error) << "Invalid geometry packet at sample "
 						<< geometry_index << '\n';
 					goto cleanup;
 				}
 				if (decoded.frame_number !=
 					geometry[geometry_index].frame_number)
 				{
-					std::cerr << "Geometry frame order mismatch\n";
+					LogLine(openvolumetric::LogLevel::Error) << "Geometry frame order mismatch\n";
 					goto cleanup;
 				}
 
@@ -1221,14 +1250,14 @@ bool verify_file(
 					decoded.triangle_count != expected.triangle_count ||
 					decoded.payload != expected.payload)
 				{
-					std::cerr << "Geometry payload mismatch for frame "
+					LogLine(openvolumetric::LogLevel::Error) << "Geometry payload mismatch for frame "
 						<< decoded.frame_number << '\n';
 					goto cleanup;
 				}
 				if (previous_pts != AV_NOPTS_VALUE &&
 					packet->pts <= previous_pts)
 				{
-					std::cerr << "Geometry timestamps are not monotonic\n";
+					LogLine(openvolumetric::LogLevel::Error) << "Geometry timestamps are not monotonic\n";
 					goto cleanup;
 				}
 				const std::int64_t expected_pts = av_rescale_q(
@@ -1242,7 +1271,7 @@ bool verify_file(
 				if (packet->pts != expected_pts ||
 					packet->duration != expected_duration)
 				{
-					std::cerr << "Geometry timing mismatch for frame "
+					LogLine(openvolumetric::LogLevel::Error) << "Geometry timing mismatch for frame "
 						<< decoded.frame_number << '\n';
 					goto cleanup;
 				}
@@ -1254,14 +1283,14 @@ bool verify_file(
 
 		if (result != AVERROR_EOF || geometry_index != geometry.size())
 		{
-			std::cerr << "Geometry sample count mismatch: expected "
+			LogLine(openvolumetric::LogLevel::Error) << "Geometry sample count mismatch: expected "
 				<< geometry.size() << ", read " << geometry_index << '\n';
 			goto cleanup;
 		}
 		if (fragment_frame_interval > 0 &&
 			maximum_consecutive_stream_packets > 8)
 		{
-			std::cerr << "Fragmented MP4 track interleave is too sparse: "
+			LogLine(openvolumetric::LogLevel::Error) << "Fragmented MP4 track interleave is too sparse: "
 				<< maximum_consecutive_stream_packets
 				<< " consecutive packets from one track\n";
 			goto cleanup;
@@ -1335,7 +1364,7 @@ bool verify_file(
 			{
 				if (!verify_unified_seek(target))
 				{
-					std::cerr << "Unified fragmented MP4 seek validation failed at "
+					LogLine(openvolumetric::LogLevel::Error) << "Unified fragmented MP4 seek validation failed at "
 						<< target << " seconds\n";
 					goto cleanup;
 				}
@@ -1361,7 +1390,7 @@ bool verify_file(
 				AVSEEK_FLAG_BACKWARD);
 			if (seek_result < 0)
 			{
-				std::cerr << "Geometry seek failed: "
+				LogLine(openvolumetric::LogLevel::Error) << "Geometry seek failed: "
 					<< ffmpeg_error(seek_result) << '\n';
 				return false;
 			}
@@ -1381,14 +1410,14 @@ bool verify_file(
 						decoded.keyframe_frame_number == expected_keyframe;
 					if (!valid)
 					{
-						std::cerr << "Geometry seek dependency mismatch\n";
+						LogLine(openvolumetric::LogLevel::Error) << "Geometry seek dependency mismatch\n";
 						return false;
 					}
 					return true;
 				}
 				av_packet_unref(packet);
 			}
-			std::cerr << "Geometry seek produced no geometry sample\n";
+			LogLine(openvolumetric::LogLevel::Error) << "Geometry seek produced no geometry sample\n";
 			return false;
 		};
 
@@ -1416,7 +1445,7 @@ bool verify_file(
 			goto cleanup;
 		}
 
-		std::cout << "Verified " << geometry_index
+		LogLine(openvolumetric::LogLevel::Info) << "Verified " << geometry_index
 			<< " geometry samples and keyframe seek from frame "
 			<< seek_input.frame_number << " to frame "
 			<< expected_seek_frame << '\n';
@@ -1443,7 +1472,7 @@ bool pack_openvolumetric(
 		options.geometry_directory.empty() ||
 		options.output_path.empty())
 	{
-		std::cerr << "Media, geometry, and output paths are required\n";
+		LogLine(openvolumetric::LogLevel::Error) << "Media, geometry, and output paths are required\n";
 		return false;
 	}
 	if (!is_supported_fragment_duration(
@@ -1451,19 +1480,19 @@ bool pack_openvolumetric(
 		(options.fragment_duration_seconds > 0 &&
 			options.fragment_frame_interval == 0))
 	{
-		std::cerr << "Fragment duration must be disabled or set to 1, 2, or 4 seconds\n";
+		LogLine(openvolumetric::LogLevel::Error) << "Fragment duration must be disabled or set to 1, 2, or 4 seconds\n";
 		return false;
 	}
 
 	if (!fs::is_regular_file(options.media_path))
 	{
-		std::cerr << "Input media does not exist: "
+		LogLine(openvolumetric::LogLevel::Error) << "Input media does not exist: "
 			<< options.media_path << '\n';
 		return false;
 	}
 	if (fs::exists(options.output_path))
 	{
-		std::cerr << "Refusing to overwrite existing output: "
+		LogLine(openvolumetric::LogLevel::Error) << "Refusing to overwrite existing output: "
 			<< options.output_path << '\n';
 		return false;
 	}
@@ -1489,7 +1518,7 @@ bool pack_openvolumetric(
 				(geometry[index].packet.flags &
 					openvolumetric::kGeometryPacketKeyframe) == 0)
 			{
-				std::cerr << "Fragment boundary geometry is not independently decodable\n";
+				LogLine(openvolumetric::LogLevel::Error) << "Fragment boundary geometry is not independently decodable\n";
 				return false;
 			}
 		}
@@ -1500,7 +1529,7 @@ bool pack_openvolumetric(
 	std::error_code ignored;
 	fs::remove(temporary_path, ignored);
 
-	std::cout << "Packing " << geometry.size()
+	LogLine(openvolumetric::LogLevel::Info) << "Packing " << geometry.size()
 		<< " geometry samples into MP4\n";
 	const std::size_t expected_fragments =
 		options.fragment_frame_interval > 0
@@ -1528,7 +1557,7 @@ bool pack_openvolumetric(
 	fs::rename(temporary_path, options.output_path);
 	if (statistics != nullptr)
 		*statistics = result_statistics;
-	std::cout << "Verified volumetric MP4: "
+	LogLine(openvolumetric::LogLevel::Info) << "Verified volumetric MP4: "
 		<< options.output_path << '\n';
 	return true;
 }

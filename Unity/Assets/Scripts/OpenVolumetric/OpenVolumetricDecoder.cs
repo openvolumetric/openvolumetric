@@ -28,6 +28,38 @@ public class OpenVolumetricDecoder : IDisposable
     [DllImport(PluginName, EntryPoint = "GetRenderEventFunc")]
     private static extern IntPtr GetRenderEventFunc();
 
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void NativeLogCallback(
+        int level, IntPtr message, IntPtr user);
+
+    [DllImport(PluginName, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void openvolumetric_set_log_callback(
+        NativeLogCallback callback, IntPtr user);
+
+    // The static reference keeps the reverse-P/Invoke thunk alive for the
+    // lifetime of the native plugin. UnityPluginUnload clears it natively.
+    private static readonly NativeLogCallback LogCallback = HandleNativeLog;
+    private static bool nativeLoggingRegistered;
+
+    [AOT.MonoPInvokeCallback(typeof(NativeLogCallback))]
+    private static void HandleNativeLog(int level, IntPtr message, IntPtr user)
+    {
+        string text = Marshal.PtrToStringUTF8(message) ?? String.Empty;
+        if (level >= 3)
+            Debug.LogError(text);
+        else if (level == 2)
+            Debug.LogWarning(text);
+        else
+            Debug.Log(text);
+    }
+
+    private static void EnsureNativeLogging()
+    {
+        if (nativeLoggingRegistered) return;
+        openvolumetric_set_log_callback(LogCallback, IntPtr.Zero);
+        nativeLoggingRegistered = true;
+    }
+
     private enum NativeResult
     {
         Ok,
@@ -562,6 +594,7 @@ public class OpenVolumetricDecoder : IDisposable
     /// </summary>
     public OpenVolumetricDecoder()
     {
+        EnsureNativeLogging();
         m_decoder_state = DecoderState.UNINITIALIZED;
         NativeApiVersion version = new NativeApiVersion
         {

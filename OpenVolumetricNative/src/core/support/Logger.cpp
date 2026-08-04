@@ -1,82 +1,103 @@
 #include "Logger.h"
+
+#include <array>
+#include <cstdio>
+
 #if defined(_WIN32)
 #include <Windows.h>
-#endif
-#if defined(__ANDROID__)
+#elif defined(__ANDROID__)
 #include <android/log.h>
-#endif
-
-#if defined(_MSC_VER)
-#pragma warning(disable:4996)
 #endif
 
 namespace openvolumetric
 {
-
-// Instance of logger
-Logger* Logger::_instance;
-
-
-Logger::Logger() : console_active(false)
+namespace
 {
-}
+constexpr std::size_t kMaximumLogMessage = 2048;
 
-Logger::Logger(std::string filename) : console_active(false)
-{
-	fclose(stdout);
-	freopen(filename.c_str(), "a", stdout);
-}
-
-
-Logger* Logger::instance()
-{
-	if (!_instance) 
-	{
-		_instance = new Logger();
-	}
-	return _instance;
-}
-
-void Logger::open_external_console()
-{
-	if (!console_active)
-	{
-#if defined(_WIN32)
-		FILE* console;
-		AllocConsole();
-		freopen_s(&console, "CONOUT$", "wb", stdout);
-#endif
-		console_active = true;
-	}
-}
-
-void Logger::close_external_console()
-{
-	if (console_active)
-	{
-#if defined(_WIN32)
-		FreeConsole();
-#endif
-		console_active = false;
-	}
-}
-
-void Logger::log(const char* str, ...) 
-{
-	va_list args;
-	va_start(args, str);
 #if defined(__ANDROID__)
-	__android_log_vprint(
-		ANDROID_LOG_INFO,
-		"OpenVolumetric",
-		str,
-		args);
-#else
-	vprintf(str, args);
-	fflush(stdout);
-	printf("\n");
+int android_priority(LogLevel level)
+{
+	switch (level)
+	{
+	case LogLevel::Debug: return ANDROID_LOG_DEBUG;
+	case LogLevel::Warning: return ANDROID_LOG_WARN;
+	case LogLevel::Error: return ANDROID_LOG_ERROR;
+	case LogLevel::Info:
+	default: return ANDROID_LOG_INFO;
+	}
+}
 #endif
-	va_end(args);
+}
+
+Logger& Logger::instance()
+{
+	static Logger logger;
+	return logger;
+}
+
+void Logger::set_callback(LogCallback callback, void* user)
+{
+	std::lock_guard<std::mutex> lock(m_mutex);
+	m_callback = callback;
+	m_user = user;
+}
+
+void Logger::clear_callback(LogCallback callback, void* user)
+{
+	std::lock_guard<std::mutex> lock(m_mutex);
+	if (m_callback == callback && m_user == user)
+	{
+		m_callback = nullptr;
+		m_user = nullptr;
+	}
+}
+
+void Logger::write(LogLevel level, const char* format, ...)
+{
+	std::va_list arguments;
+	va_start(arguments, format);
+	write_v(level, format, arguments);
+	va_end(arguments);
+}
+
+void Logger::write_v(
+	LogLevel level,
+	const char* format,
+	std::va_list arguments)
+{
+	if (format == nullptr)
+		return;
+	std::array<char, kMaximumLogMessage> message{};
+	std::vsnprintf(message.data(), message.size(), format, arguments);
+	message.back() = '\0';
+
+	LogCallback callback = nullptr;
+	void* user = nullptr;
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		callback = m_callback;
+		user = m_user;
+	}
+	if (callback != nullptr)
+		callback(level, message.data(), user);
+	else
+		fallback(level, message.data());
+}
+
+void Logger::fallback(LogLevel level, const char* message)
+{
+#if defined(__ANDROID__)
+	__android_log_write(android_priority(level), "OpenVolumetric", message);
+#elif defined(_WIN32)
+	(void)level;
+	OutputDebugStringA(message);
+	OutputDebugStringA("\n");
+#else
+	(void)level;
+	std::fprintf(stderr, "%s\n", message);
+	std::fflush(stderr);
+#endif
 }
 
 } // namespace openvolumetric

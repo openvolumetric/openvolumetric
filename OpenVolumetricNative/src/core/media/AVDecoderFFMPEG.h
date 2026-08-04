@@ -31,11 +31,10 @@ namespace openvolumetric
 /// vvge samples to a mutex-protected compressed-geometry queue.
 class AVDecoderFFMPEG : public IAVDecoder
 {
-
 public:
 	/// Constructs empty queues, codec pointers, and seek coordination state.
 	AVDecoderFFMPEG();
-	
+
 	/// Stops decoding and releases all FFmpeg resources.
 	~AVDecoderFFMPEG() override;
 
@@ -150,68 +149,60 @@ protected:
 	void flush_buffers();
 
 private:
-
 	/// Owned decoded video frame and its presentation timestamp.
 	struct FrameData
 	{
 		/// Constructs an empty frame holder.
-		FrameData() : data(nullptr), frame_time(0.0){};
+		FrameData() : data(nullptr), frame_time(0.0) {}
 
-		// Owned FFmpeg frame; released when removed from m_video_frames.
+		/// Owned FFmpeg frame; released when removed from m_video_frames.
 		AVFrame* data;
 
-		// Presentation time in seconds.
+		/// Presentation time in seconds.
 		double frame_time;
 	};
-
 
 	/// Frees and removes the oldest queued video frame atomically.
 	void free_front_frame();
 
-
-private:
-
-
-
-	// Container owns AVFormatContext and all demux/seek operations.
+	/// Sole owner of the FFmpeg demuxer and serialized seek operations.
 	std::unique_ptr<openvolumetric::FFmpegMp4VolumetricContainer> m_container;
 
-	int						m_video_stream_index;
-	AVStream*				m_video_stream;
-	AVCodecContext*			m_video_codec_ctx;
-	const AVCodec*			m_video_codec;
+	int m_video_stream_index;
+	AVStream* m_video_stream;
+	AVCodecContext* m_video_codec_ctx;
+	const AVCodec* m_video_codec;
 
-	int						m_audio_stream_index;
-	AVStream*				m_audio_stream;
-	AVCodecContext*			m_audio_codec_ctx;
-	const AVCodec*			m_audio_codec;
-	SwrContext*				m_audio_resampler;
+	int m_audio_stream_index;
+	AVStream* m_audio_stream;
+	AVCodecContext* m_audio_codec_ctx;
+	const AVCodec* m_audio_codec;
+	SwrContext* m_audio_resampler;
 
-	int						m_geometry_stream_index;
-	AVStream*				m_geometry_stream;
+	int m_geometry_stream_index;
+	AVStream* m_geometry_stream;
 
-	// Queues bridge the decoder worker and engine/audio consumer threads.
-	AVPacket				m_packet;
+	/// Queues bridge the decoder worker and engine/audio consumer threads.
+	AVPacket m_packet;
 	openvolumetric::BoundedQueue<FrameData> m_video_frames;
-	std::vector<float>		m_audio_samples;
-	std::atomic<uint64_t>	m_audio_read_position;
-	std::atomic<uint64_t>	m_audio_write_position;
-	std::atomic<uint64_t>	m_audio_timeline_origin_position;
-	std::atomic<double>		m_audio_timeline_origin_time;
-	std::atomic<uint64_t>	m_audio_underrun_count;
-	double					m_audio_discard_before = -1.0;
+	std::vector<float> m_audio_samples;
+	/// Decoder-thread scratch storage retained across resampler calls.
+	std::vector<float> m_audio_conversion_buffer;
+	std::atomic<uint64_t> m_audio_read_position;
+	std::atomic<uint64_t> m_audio_write_position;
+	std::atomic<uint64_t> m_audio_timeline_origin_position;
+	std::atomic<double> m_audio_timeline_origin_time;
+	std::atomic<uint64_t> m_audio_underrun_count;
+	double m_audio_discard_before = -1.0;
 	openvolumetric::BoundedQueue<EncodedGeometryFrame> m_geometry_frames;
 	std::deque<openvolumetric::ContainerPacket> m_pending_video_packets;
 	std::deque<openvolumetric::ContainerPacket> m_pending_audio_packets;
 	std::deque<openvolumetric::ContainerPacket> m_pending_geometry_packets;
 	std::optional<openvolumetric::ContainerPacket> m_deferred_packet;
 	std::atomic<std::uint64_t> m_playback_generation;
-	double m_last_video_packet_time = -1.0;
-	double m_last_geometry_packet_time = -1.0;
 	bool m_video_decoder_drained = false;
 
-	// Runtime seeks are submitted by an engine thread and executed only by the
-	// demux thread, which exclusively owns FFmpeg container/codec mutation.
+	/// Engine threads submit seeks; only the demux thread mutates FFmpeg state.
 	mutable std::mutex m_seek_mutex;
 	std::condition_variable m_seek_condition;
 	std::optional<double> m_requested_seek;
@@ -221,10 +212,8 @@ private:
 	std::atomic<bool> m_thread_running{false};
 	std::atomic<bool> m_stop_requested{false};
 
-	// BoundedQueue protects video/geometry access and carries terminal state.
-	// Audio uses atomic monotonic read/write positions.
-	std::thread				m_decode_thread;
-
+	/// Worker owning demux, codec, and pending-packet mutation.
+	std::thread m_decode_thread;
 };
 
 } // namespace openvolumetric

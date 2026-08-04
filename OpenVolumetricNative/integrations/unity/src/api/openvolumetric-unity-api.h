@@ -41,6 +41,8 @@
 extern "C" {
 #endif
 	typedef struct OpenVolumetricPlayer OpenVolumetricPlayer;
+	typedef void (*OpenVolumetricLogCallback)(
+		int32_t level, const char* message, void* user);
 
 	typedef enum OpenVolumetricResult
 	{
@@ -155,8 +157,12 @@ extern "C" {
 
 	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_get_api_version(
 		OpenVolumetricApiVersionV1* version);
-	OPENVOLUMETRIC_API void openvolumetric_open_external_console();
-	OPENVOLUMETRIC_API void openvolumetric_close_external_console();
+	/**
+	 * Installs a process-wide diagnostic sink. The callback may run on native
+	 * worker or render threads; pass NULL to restore the platform fallback.
+	 */
+	OPENVOLUMETRIC_API void openvolumetric_set_log_callback(
+		OpenVolumetricLogCallback callback, void* user);
 	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_create(
 		OpenVolumetricPlayer** player);
 	OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_destroy(
