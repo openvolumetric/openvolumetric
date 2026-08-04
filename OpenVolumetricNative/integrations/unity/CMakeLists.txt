@@ -92,7 +92,7 @@ elseif(APPLE)
   )
 
   configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/AudioPluginOpenVolumetricUnity.dylib.meta"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AudioPluginOpenVolumetricUnity.dylib.meta.template"
     "${PROJECT_SOURCE_DIR}/../Unity/Assets/Plugins/OpenVolumetric/macOS/AudioPluginOpenVolumetricUnity.dylib.meta"
     COPYONLY
   )
