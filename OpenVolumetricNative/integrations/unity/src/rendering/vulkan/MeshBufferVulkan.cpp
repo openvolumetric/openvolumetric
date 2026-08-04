@@ -152,18 +152,23 @@ bool MeshBufferVulkan::update(Mesh* mesh)
         &vertex_copy);
 
     UnityVulkanBuffer transitioned{};
-    m_unity_vulkan->AccessBuffer(
+    const bool index_transitioned = m_unity_vulkan->AccessBuffer(
         m_index_handle,
         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
         VK_ACCESS_INDEX_READ_BIT,
         kUnityVulkanResourceAccess_PipelineBarrier,
         &transitioned);
-    m_unity_vulkan->AccessBuffer(
+    const bool vertex_transitioned = m_unity_vulkan->AccessBuffer(
         m_vertex_handle,
         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
         VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
         kUnityVulkanResourceAccess_PipelineBarrier,
         &transitioned);
+    if (!index_transitioned || !vertex_transitioned)
+    {
+        LOG("MeshBufferVulkan::update - failed to restore buffer access");
+        return false;
+    }
 
     slot->frame = state.currentFrameNumber;
     slot->used = true;

@@ -88,7 +88,10 @@ bool MeshBufferMetal::update(Mesh* mesh)
 		[device newBufferWithLength:vertex_buffer.length
 		                   options:MTLResourceStorageModeShared];
 	if (index_staging == nil || vertex_staging == nil)
+	{
+		LOG("MeshBufferMetal::update - failed to allocate staging buffers");
 		return false;
+	}
 
 	char* index_data = static_cast<char*>(index_staging.contents);
 	char* vertex_data = static_cast<char*>(vertex_staging.contents);
@@ -107,11 +110,17 @@ bool MeshBufferMetal::update(Mesh* mesh)
 	id<MTLCommandBuffer> command_buffer =
 		(id<MTLCommandBuffer>)unity_metal->CurrentCommandBuffer();
 	if (command_buffer == nil)
+	{
+		LOG("MeshBufferMetal::update - Unity command buffer is unavailable");
 		return false;
+	}
 
 	id<MTLBlitCommandEncoder> blit = [command_buffer blitCommandEncoder];
 	if (blit == nil)
+	{
+		LOG("MeshBufferMetal::update - failed to create blit encoder");
 		return false;
+	}
 	[blit copyFromBuffer:index_staging
 	        sourceOffset:0
 	            toBuffer:index_buffer

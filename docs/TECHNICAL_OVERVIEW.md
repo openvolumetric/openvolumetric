@@ -641,18 +641,25 @@ A typical playback instance uses the following execution contexts:
 | Unity render thread | Timestamp matching and GPU texture/mesh upload |
 | Unity audio thread | Pulling PCM from the lock-free ring buffer |
 | Unreal game thread | Component lifecycle, presentation polling, dynamic-mesh replacement, texture-update submission, audio queueing, and playback commands |
-| Unreal render thread | Execution of transient texture-region updates submitted by the game thread |
+| Unreal render thread | Execution of texture-region updates submitted through a reusable three-slot upload ring |
 | Unreal audio renderer | Consumption of PCM queued through `USoundWaveProcedural` |
 | FFmpeg internal workers | Parallel video decoding, up to the configured thread count |
 
 The shared demux and codec state is mutated only by the FFmpeg worker. Engine
 calls do not directly flush codec state while decoding is active.
 
-On D3D11, the current texture and mesh upload paths additionally create
-short-lived CPU copy threads inside a render operation and join them before
-returning. This is an implementation-specific optimization attempt, not part
-of the core architecture, and may be less efficient than a persistent worker
-or direct copies for small workloads.
+On D3D11, texture and mesh copies run directly inside Unity's render callback.
+The former short-lived copy threads were removed because each was joined before
+the callback returned and therefore provided no pipeline overlap. Unreal uses
+three reusable upload slots whose cleanup callbacks make a slot available only
+after the render thread has consumed it. Unreal also retains the game-thread
+BGRA conversion array between presentations. Its developer overlay reports
+submitted uploads, dropped uploads, and upload-storage growth events so steady
+state can be checked without leaving permanent high-frequency log messages.
+In a 60-second Unreal Editor 5.8 macOS run, the upload counter reached
+approximately 1,800 with zero drops, while storage-growth events remained at
+three from the 10-second sample onward. Thus each ring slot grew once and the
+tested steady-state upload path performed no further buffer growth.
 
 The Unity native registry owns players with `std::unique_ptr` and is protected
 by a `std::shared_mutex`. API calls and render events retain a shared lock for
@@ -868,7 +875,9 @@ The Windows backend:
 - Copies decoded mesh data into those buffers.
 
 D3D11 driver-managed resource renaming helps prevent overwriting data still in
-GPU use.
+GPU use. Every map is checked before copying, partially mapped resources are
+unmapped on failure, and texture/mesh copies no longer create threads per
+presentation.
 
 ### 9.2 D3D12
 
@@ -1540,12 +1549,14 @@ The most significant limitations of the current system are:
   restructuring.
 - Quest 3S thermal, battery, and sustained-performance evaluation is
   outstanding.
-- D3D11 contains short-lived per-presentation copy threads.
-- Some upload paths could reuse staging allocations more aggressively.
+- Metal still creates staging buffers per presentation; a reusable ring is
+  deferred until Metal profiling demonstrates material allocation pressure.
 - The public runtime interface is optimized for continuous engine playback
   rather than arbitrary offline frame evaluation.
 - Unreal currently uses CPU YUV-to-BGRA conversion and whole dynamic-mesh
-  replacement rather than a direct RHI upload path.
+  replacement rather than a direct RHI upload path. Texture upload bytes and
+  region descriptors are retained in a three-slot ring, avoiding recurring
+  heap churn after the slots reach capacity.
 - Unreal packaged builds and platforms beyond the macOS Editor are not yet
   validated.
 - The engine-neutral adaptive policy supports arbitrary compatible ladders,

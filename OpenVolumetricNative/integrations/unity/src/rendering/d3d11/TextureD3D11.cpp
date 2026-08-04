@@ -1,14 +1,17 @@
 #include "TextureD3D11.h"
 
 #include <Logger.h>
-#include <thread>
+#include <cstring>
 
 namespace openvolumetric::unity
 {
 
 TextureD3D11::TextureD3D11() = default;
 
-TextureD3D11::~TextureD3D11() = default;
+TextureD3D11::~TextureD3D11()
+{
+	destroy();
+}
 
 void TextureD3D11::destroy()
 {
@@ -36,8 +39,9 @@ void TextureD3D11::destroy()
 
 int TextureD3D11::init(void* handler, unsigned int width, unsigned int height)
 {
-	// Check handler
-	if (handler == nullptr) {
+	destroy();
+	if (handler == nullptr || width == 0 || height == 0) {
+		LOG("TextureD3D11::init - invalid device or dimensions");
 		return -1;
 	}
 
@@ -68,11 +72,12 @@ int TextureD3D11::init(void* handler, unsigned int width, unsigned int height)
 	HRESULT result = m_device->CreateTexture2D(&texDesc, nullptr, (ID3D11Texture2D**)(&(m_textures[0])));
 	if (FAILED(result)) 
 	{
-		LOG("TextureD3D11::create - Create texture Y fail. Error code: %x", result);
+		LOG("TextureD3D11::init - CreateTexture2D(Y) failed (0x%08x)", result);
+		destroy();
 		return -1;
 	}
 
-	D3D11_SHADER_RESOURCE_VIEW_DESC shaderResourceViewDesc;
+	D3D11_SHADER_RESOURCE_VIEW_DESC shaderResourceViewDesc{};
 	shaderResourceViewDesc.Format = DXGI_FORMAT_A8_UNORM;
 	shaderResourceViewDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
 	shaderResourceViewDesc.Texture2D.MostDetailedMip = 0;
@@ -80,7 +85,8 @@ int TextureD3D11::init(void* handler, unsigned int width, unsigned int height)
 
 	result = m_device->CreateShaderResourceView((ID3D11Texture2D*)(m_textures[0]), &shaderResourceViewDesc, &(m_shader_resource_views[0]));
 	if (FAILED(result)) {
-		LOG("TextureD3D11::create - Create shader resource view Y fail. Error code: %x", result);
+		LOG("TextureD3D11::init - CreateShaderResourceView(Y) failed (0x%08x)", result);
+		destroy();
 		return -1;
 	}
 
@@ -89,24 +95,29 @@ int TextureD3D11::init(void* handler, unsigned int width, unsigned int height)
 	texDesc.Height = height / 2;
 	result = m_device->CreateTexture2D(&texDesc, nullptr, (ID3D11Texture2D**)(&(m_textures[1])));
 	if (FAILED(result)) {
-		LOG("Create texture U fail. Error code: %x", result);
+		LOG("TextureD3D11::init - CreateTexture2D(U) failed (0x%08x)", result);
+		destroy();
+		return -1;
 	}
 
 	result = m_device->CreateShaderResourceView((ID3D11Texture2D*)(m_textures[1]), &shaderResourceViewDesc, &(m_shader_resource_views[1]));
 	if (FAILED(result)) {
-		LOG("TextureD3D11::create - Create shader resource view U fail. Error code: %x", result);
+		LOG("TextureD3D11::init - CreateShaderResourceView(U) failed (0x%08x)", result);
+		destroy();
 		return -1;
 	}
 
 	result = m_device->CreateTexture2D(&texDesc, nullptr, (ID3D11Texture2D**)(&(m_textures[2])));
 	if (FAILED(result)) {
-		LOG("TextureD3D11::create - Create texture V fail. Error code: %x", result);
+		LOG("TextureD3D11::init - CreateTexture2D(V) failed (0x%08x)", result);
+		destroy();
 		return -1;
 	}
 
 	result = m_device->CreateShaderResourceView((ID3D11Texture2D*)(m_textures[2]), &shaderResourceViewDesc, &(m_shader_resource_views[2]));
 	if (FAILED(result)) {
-		LOG("TextureD3D11::create - Create shader resource view V fail. %x", result);
+		LOG("TextureD3D11::init - CreateShaderResourceView(V) failed (0x%08x)", result);
+		destroy();
 		return -1;
 	}
 
@@ -115,8 +126,9 @@ int TextureD3D11::init(void* handler, unsigned int width, unsigned int height)
 
 void TextureD3D11::get_resource_pointers(void*& ptry, void*& ptru, void*& ptrv)
 {
-	if (m_device == nullptr)
+	if (m_device == nullptr || ych == nullptr || uch == nullptr || vch == nullptr)
 	{
+		LOG("TextureD3D11::upload - invalid texture state or source planes");
 		return;
 	}
 
@@ -134,11 +146,26 @@ void TextureD3D11::upload(unsigned char* ych, unsigned char* uch, unsigned char*
 
 	ID3D11DeviceContext* ctx = nullptr;
 	m_device->GetImmediateContext(&ctx);
+	if (ctx == nullptr)
+	{
+		LOG("TextureD3D11::upload - immediate context is unavailable");
+		return;
+	}
 
-	D3D11_MAPPED_SUBRESOURCE mappedResource[TEXTURE_COUNT];
-	for (int i = 0; i < TEXTURE_COUNT; i++) {
-		ZeroMemory(&(mappedResource[i]), sizeof(D3D11_MAPPED_SUBRESOURCE));
-		ctx->Map(m_textures[i], 0, D3D11_MAP_WRITE_DISCARD, 0, &(mappedResource[i]));
+	D3D11_MAPPED_SUBRESOURCE mappedResource[TEXTURE_COUNT]{};
+	int mapped_count = 0;
+	for (int i = 0; i < TEXTURE_COUNT; ++i) {
+		const HRESULT result = ctx->Map(
+			m_textures[i], 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource[i]);
+		if (FAILED(result) || mappedResource[i].pData == nullptr)
+		{
+			LOG("TextureD3D11::upload - plane %d Map failed (0x%08x)", i, result);
+			for (int mapped = 0; mapped < mapped_count; ++mapped)
+				ctx->Unmap(m_textures[mapped], 0);
+			ctx->Release();
+			return;
+		}
+		++mapped_count;
 	}
 
 	//	Consider padding.
@@ -149,48 +176,17 @@ void TextureD3D11::upload(unsigned char* ych, unsigned char* uch, unsigned char*
 	uint8_t* ptrMappedU = (uint8_t*)(mappedResource[1].pData);
 	uint8_t* ptrMappedV = (uint8_t*)(mappedResource[2].pData);
 
-	//	Two thread memory copy
-	std::thread YThread = std::thread([&]() {
-		//	Map region has its own row pitch which may different to texture width.
-		if (m_width_y == rowPitchY) {
-			memcpy(ptrMappedY, ych, m_length_y);
-		}
-		else {
-			//	Handle rowpitch of mapped memory.
-			uint8_t* end = ych + m_length_y;
-			while (ych != end) {
-				memcpy(ptrMappedY, ych, m_width_y);
-				ych += m_width_y;
-				ptrMappedY += rowPitchY;
-			}
-		}
-		});
-
-	std::thread UVThread = std::thread([&]() {
-		if (m_width_uv == rowPitchUV) {
-			memcpy(ptrMappedU, uch, m_length_uv);
-			memcpy(ptrMappedV, vch, m_length_uv);
-		}
-		else {
-			//	Handle rowpitch of mapped memory.
-			//	YUV420, length U == length V
-			uint8_t* endU = uch + m_length_uv;
-			while (uch != endU) {
-				memcpy(ptrMappedU, uch, m_width_uv);
-				memcpy(ptrMappedV, vch, m_width_uv);
-				uch += m_width_uv;
-				vch += m_width_uv;
-				ptrMappedU += rowPitchUV;
-				ptrMappedV += rowPitchUV;
-			}
-		}
-		});
-
-	if (YThread.joinable()) {
-		YThread.join();
-	}
-	if (UVThread.joinable()) {
-		UVThread.join();
+	// These copies already execute on Unity's render thread. Creating and
+	// joining worker threads per frame costs more than three linear copies.
+	for (unsigned int row = 0; row < m_height_y; ++row)
+		std::memcpy(ptrMappedY + row * rowPitchY,
+			ych + row * m_width_y, m_width_y);
+	for (unsigned int row = 0; row < m_height_uv; ++row)
+	{
+		std::memcpy(ptrMappedU + row * rowPitchUV,
+			uch + row * m_width_uv, m_width_uv);
+		std::memcpy(ptrMappedV + row * mappedResource[2].RowPitch,
+			vch + row * m_width_uv, m_width_uv);
 	}
 
 	for (int i = 0; i < TEXTURE_COUNT; i++) {

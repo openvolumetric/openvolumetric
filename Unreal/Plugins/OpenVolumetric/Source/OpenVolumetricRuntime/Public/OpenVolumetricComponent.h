@@ -307,6 +307,7 @@ private:
 	class FOpenVolumetricPlayerAdapter* Player = nullptr;
 	class FOpenVolumetricPlaybackClock* PlaybackClock = nullptr;
 	class FOpenVolumetricNetworkRecovery* NetworkRecovery = nullptr;
+	class FOpenVolumetricPresentationUploader* PresentationUploader = nullptr;
 	void CreateDynamicMeshComponent();
 	void UpdatePresentationTexture(
 		const TArray<FColor>& Pixels,
@@ -345,6 +346,8 @@ private:
 	TObjectPtr<USoundWaveProcedural> ProceduralSoundWave;
 
 	TArray<int16> AudioSamples;
+	/** Reused CPU conversion output; capacity is retained between frames. */
+	TArray<FColor> PresentationPixels;
 	float SmoothedDeveloperDeltaTime = 0.0f;
 	float DeveloperStatusUpdateCountdown = 0.0f;
 	uint64 DeveloperMessageKey = 0;

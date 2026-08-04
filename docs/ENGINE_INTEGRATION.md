@@ -203,12 +203,17 @@ The implemented Unreal Engine 5.8 plug-in contains:
 
 The current macOS implementation polls one complete timestamp-matched
 presentation on the Unreal game thread, converts planar YUV420 data to BGRA,
-updates the dynamic mesh, and enqueues a transient texture-region upload.
+updates the dynamic mesh, and enqueues a texture-region upload through three
+reusable storage slots.
 Audio is drained into a procedural sound wave with approximately 250 ms of
 queued PCM. This is intentionally an initial engine adapter rather than a
 final RHI-optimized path: a future implementation can move YUV conversion and
 mesh/texture transfer onto render/RHI resources without changing the
 container or core player contract.
+
+Detailed backend resource ownership, valid calling threads, synchronization,
+failure handling, and teardown order are documented in
+[RENDERING.md](RENDERING.md).
 
 Editor playback on macOS is implemented and manually validated. Packaged
 build staging, Windows and additional RHI implementations, lifecycle stress

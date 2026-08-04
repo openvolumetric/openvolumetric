@@ -5,6 +5,35 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 
+#include <array>
+
+DEFINE_LOG_CATEGORY_STATIC(LogOpenVolumetricUpload, Log, All);
+
+namespace
+{
+constexpr int32 OpenVolumetricUploadSlotCount = 3;
+}
+
+struct FOpenVolumetricPresentationUploader::FUploadState final
+{
+	struct FSlot
+	{
+		TArray<uint8> Bytes;
+		FUpdateTextureRegion2D Region{0, 0, 0, 0, 0, 0};
+		TAtomic<bool> bInFlight{false};
+	};
+
+	std::array<FSlot, OpenVolumetricUploadSlotCount> Slots;
+	int32 NextSlot = 0;
+};
+
+FOpenVolumetricPresentationUploader::FOpenVolumetricPresentationUploader()
+	: UploadState(MakeShared<FUploadState, ESPMode::ThreadSafe>())
+{
+}
+
+FOpenVolumetricPresentationUploader::~FOpenVolumetricPresentationUploader() = default;
+
 EOpenVolumetricClockAction FOpenVolumetricPlaybackClock::Advance(
 	double DeltaSeconds,
 	double DurationSeconds,
@@ -66,7 +95,7 @@ void FOpenVolumetricNetworkRecovery::Reset()
 	RecoveryTarget = 0.0;
 }
 
-void FOpenVolumetricPresentationUploader::UpdateTexture(
+bool FOpenVolumetricPresentationUploader::UpdateTexture(
 	UObject* Owner,
 	UDynamicMeshComponent* MeshComponent,
 	UMaterialInterface* Material,
@@ -76,12 +105,24 @@ void FOpenVolumetricPresentationUploader::UpdateTexture(
 	UTexture2D*& Texture,
 	UMaterialInstanceDynamic*& DynamicMaterial)
 {
-	if (Pixels.Num() != Width * Height || Width <= 0 || Height <= 0)
-		return;
+	if (Pixels.Num() != Width * Height || Width <= 0 || Height <= 0 ||
+		!UploadState.IsValid())
+	{
+		UE_LOG(LogOpenVolumetricUpload, Error,
+			TEXT("Texture upload rejected invalid dimensions or pixel storage."));
+		return false;
+	}
 	if (Texture == nullptr || Texture->GetSizeX() != Width ||
 		Texture->GetSizeY() != Height)
 	{
 		Texture = UTexture2D::CreateTransient(Width, Height, PF_B8G8R8A8);
+		if (Texture == nullptr)
+		{
+			UE_LOG(LogOpenVolumetricUpload, Error,
+				TEXT("CreateTransient failed for %dx%d presentation texture."),
+				Width, Height);
+			return false;
+		}
 		Texture->SRGB = true;
 		Texture->Filter = TF_Bilinear;
 		Texture->UpdateResource();
@@ -94,15 +135,52 @@ void FOpenVolumetricPresentationUploader::UpdateTexture(
 		}
 	}
 	const SIZE_T ByteCount = static_cast<SIZE_T>(Pixels.Num()) * sizeof(FColor);
-	uint8* Upload = static_cast<uint8*>(FMemory::Malloc(ByteCount));
-	FMemory::Memcpy(Upload, Pixels.GetData(), ByteCount);
-	FUpdateTextureRegion2D* Region =
-		new FUpdateTextureRegion2D(0, 0, 0, 0, Width, Height);
-	Texture->UpdateTextureRegions(
-		0, 1, Region, Width * sizeof(FColor), sizeof(FColor), Upload,
-		[](uint8* Data, const FUpdateTextureRegion2D* Regions)
+	int32 SlotIndex = INDEX_NONE;
+	for (int32 Attempt = 0; Attempt < OpenVolumetricUploadSlotCount; ++Attempt)
+	{
+		const int32 Candidate =
+			(UploadState->NextSlot + Attempt) % OpenVolumetricUploadSlotCount;
+		if (!UploadState->Slots[Candidate].bInFlight.Load())
 		{
-			FMemory::Free(Data);
-			delete Regions;
+			UploadState->Slots[Candidate].bInFlight.Store(true);
+			SlotIndex = Candidate;
+			UploadState->NextSlot =
+				(Candidate + 1) % OpenVolumetricUploadSlotCount;
+			break;
+		}
+	}
+	if (SlotIndex == INDEX_NONE)
+	{
+		++Metrics.DroppedFrames;
+		UE_LOG(LogOpenVolumetricUpload, Warning,
+			TEXT("Texture upload ring is full; presentation frame dropped."));
+		return false;
+	}
+
+	FUploadState::FSlot& Slot = UploadState->Slots[SlotIndex];
+	if (ByteCount > static_cast<SIZE_T>(Slot.Bytes.Max()))
+		++Metrics.StorageGrowths;
+	Slot.Bytes.SetNumUninitialized(ByteCount, EAllowShrinking::No);
+	FMemory::Memcpy(Slot.Bytes.GetData(), Pixels.GetData(), ByteCount);
+	Slot.Region = FUpdateTextureRegion2D(0, 0, 0, 0, Width, Height);
+	const TSharedPtr<FUploadState, ESPMode::ThreadSafe> State = UploadState;
+	Texture->UpdateTextureRegions(
+		0,
+		1,
+		&Slot.Region,
+		Width * sizeof(FColor),
+		sizeof(FColor),
+		Slot.Bytes.GetData(),
+		[State, SlotIndex](uint8*, const FUpdateTextureRegion2D*)
+		{
+			State->Slots[SlotIndex].bInFlight.Store(false);
 		});
+	++Metrics.SubmittedFrames;
+	return true;
+}
+
+FOpenVolumetricUploadMetrics
+FOpenVolumetricPresentationUploader::GetMetrics() const
+{
+	return Metrics;
 }

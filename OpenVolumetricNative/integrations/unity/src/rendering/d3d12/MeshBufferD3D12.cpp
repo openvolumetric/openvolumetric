@@ -75,9 +75,19 @@ bool MeshBufferD3D12::update(Mesh* mesh)
 	}
 	void* index_data = nullptr;
 	void* vertex_data = nullptr;
-	if (FAILED(slot.index->Map(0, nullptr, &index_data)) ||
-		FAILED(slot.vertex->Map(0, nullptr, &vertex_data)))
+	HRESULT result = slot.index->Map(0, nullptr, &index_data);
+	if (FAILED(result) || index_data == nullptr)
+	{
+		LOG("MeshBufferD3D12::update - index Map failed (0x%08x)", result);
 		return false;
+	}
+	result = slot.vertex->Map(0, nullptr, &vertex_data);
+	if (FAILED(result) || vertex_data == nullptr)
+	{
+		LOG("MeshBufferD3D12::update - vertex Map failed (0x%08x)", result);
+		slot.index->Unmap(0, nullptr);
+		return false;
+	}
 	std::memset(index_data, 0, static_cast<std::size_t>(m_index_bytes));
 	std::memset(vertex_data, 0, static_cast<std::size_t>(m_vertex_bytes));
 	for (std::size_t index = 0; index < mesh->indexes.size(); ++index)

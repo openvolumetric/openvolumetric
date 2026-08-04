@@ -104,45 +104,56 @@ void TextureMetal::upload(unsigned char* ych, unsigned char* uch, unsigned char*
 	if (unity_metal == nullptr || device == nil)
 		return;
 
+	// Allocate and populate every plane before recording commands so allocation
+	// failure cannot publish a texture containing a mixture of old/new planes.
+	id<MTLBuffer> staging[TEXTURE_COUNT]{};
+	unsigned int staging_row_bytes[TEXTURE_COUNT]{};
+	NSUInteger staging_lengths[TEXTURE_COUNT]{};
+	for (unsigned int i = 0; i < TEXTURE_COUNT; ++i)
+	{
+		staging_row_bytes[i] = ((widths[i] + 255u) / 256u) * 256u;
+		staging_lengths[i] =
+			static_cast<NSUInteger>(staging_row_bytes[i]) * heights[i];
+		staging[i] = [device newBufferWithLength:staging_lengths[i]
+		                                options:MTLResourceStorageModeShared];
+		if (staging[i] == nil)
+		{
+			LOG("TextureMetal::upload - failed to allocate plane %u staging", i);
+			return;
+		}
+		unsigned char* destination =
+			static_cast<unsigned char*>(staging[i].contents);
+		for (unsigned int row = 0; row < heights[i]; ++row)
+			std::memcpy(
+				destination + row * staging_row_bytes[i],
+				data[i] + row * row_bytes[i],
+				widths[i]);
+	}
+
 	// A blit encoder cannot coexist with Unity's current render encoder.
 	unity_metal->EndCurrentCommandEncoder();
 	id<MTLCommandBuffer> command_buffer =
 		(id<MTLCommandBuffer>)unity_metal->CurrentCommandBuffer();
 	if (command_buffer == nil)
+	{
+		LOG("TextureMetal::upload - Unity command buffer is unavailable");
 		return;
+	}
 
 	id<MTLBlitCommandEncoder> blit = [command_buffer blitCommandEncoder];
 	if (blit == nil)
+	{
+		LOG("TextureMetal::upload - failed to create blit encoder");
 		return;
+	}
 
 	for (unsigned int i = 0; i < TEXTURE_COUNT; ++i)
 	{
 		id<MTLTexture> texture = (__bridge id<MTLTexture>)m_textures[i];
-		// Metal texture blits require a 256-byte-aligned source row pitch.
-		const unsigned int staging_row_bytes =
-			((widths[i] + 255u) / 256u) * 256u;
-		const NSUInteger staging_length =
-			static_cast<NSUInteger>(staging_row_bytes) * heights[i];
-		id<MTLBuffer> staging =
-			[device newBufferWithLength:staging_length
-			                   options:MTLResourceStorageModeShared];
-		if (staging == nil)
-			continue;
-
-		unsigned char* destination =
-			static_cast<unsigned char*>(staging.contents);
-		for (unsigned int row = 0; row < heights[i]; ++row)
-		{
-			std::memcpy(
-				destination + row * staging_row_bytes,
-				data[i] + row * row_bytes[i],
-				widths[i]);
-		}
-
-		[blit copyFromBuffer:staging
+		[blit copyFromBuffer:staging[i]
 		       sourceOffset:0
-		  sourceBytesPerRow:staging_row_bytes
-		sourceBytesPerImage:staging_length
+		  sourceBytesPerRow:staging_row_bytes[i]
+		sourceBytesPerImage:staging_lengths[i]
 		         sourceSize:MTLSizeMake(widths[i], heights[i], 1)
 		          toTexture:texture
 		   destinationSlice:0

@@ -56,10 +56,20 @@ private:
 };
 
 /** Main-thread Unreal texture upload isolated from playback orchestration. */
+struct FOpenVolumetricUploadMetrics
+{
+	uint64 SubmittedFrames = 0;
+	uint64 DroppedFrames = 0;
+	uint64 StorageGrowths = 0;
+};
+
 class FOpenVolumetricPresentationUploader final
 {
 public:
-	static void UpdateTexture(
+	FOpenVolumetricPresentationUploader();
+	~FOpenVolumetricPresentationUploader();
+
+	bool UpdateTexture(
 		UObject* Owner,
 		UDynamicMeshComponent* MeshComponent,
 		UMaterialInterface* Material,
@@ -68,4 +78,10 @@ public:
 		int32 Height,
 		UTexture2D*& Texture,
 		UMaterialInstanceDynamic*& DynamicMaterial);
+	FOpenVolumetricUploadMetrics GetMetrics() const;
+
+private:
+	struct FUploadState;
+	TSharedPtr<FUploadState, ESPMode::ThreadSafe> UploadState;
+	FOpenVolumetricUploadMetrics Metrics;
 };

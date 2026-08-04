@@ -74,6 +74,7 @@ UOpenVolumetricComponent::UOpenVolumetricComponent()
 	Player = new FOpenVolumetricPlayerAdapter();
 	PlaybackClock = new FOpenVolumetricPlaybackClock();
 	NetworkRecovery = new FOpenVolumetricNetworkRecovery();
+	PresentationUploader = new FOpenVolumetricPresentationUploader();
 	AdaptiveMetrics = new FOpenVolumetricAdaptiveMetrics();
 
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> Material(
@@ -93,6 +94,8 @@ UOpenVolumetricComponent::~UOpenVolumetricComponent()
 	PlaybackClock = nullptr;
 	delete NetworkRecovery;
 	NetworkRecovery = nullptr;
+	delete PresentationUploader;
+	PresentationUploader = nullptr;
 	delete AdaptiveMetrics;
 	AdaptiveMetrics = nullptr;
 }
@@ -185,7 +188,6 @@ void UOpenVolumetricComponent::TickComponent(
 
 	UE::Geometry::FDynamicMesh3 Mesh;
 	FVector GeometryCentroid = FVector::ZeroVector;
-	TArray<FColor> Pixels;
 	int32 TextureWidth = 0;
 	int32 TextureHeight = 0;
 	double PresentationTime = 0.0;
@@ -198,7 +200,7 @@ void UOpenVolumetricComponent::TickComponent(
 			RedProjectionCorrection,
 			Mesh,
 			GeometryCentroid,
-			Pixels,
+			PresentationPixels,
 			TextureWidth,
 			TextureHeight,
 			PresentationTime);
@@ -235,7 +237,7 @@ void UOpenVolumetricComponent::TickComponent(
 			}
 		}
 		UpdatePresentationTexture(
-			Pixels, TextureWidth, TextureHeight);
+			PresentationPixels, TextureWidth, TextureHeight);
 	}
 }
 
@@ -246,7 +248,7 @@ void UOpenVolumetricComponent::UpdatePresentationTexture(
 {
 	UTexture2D* Texture = PresentationTexture.Get();
 	UMaterialInstanceDynamic* Material = DynamicMaterial.Get();
-	FOpenVolumetricPresentationUploader::UpdateTexture(
+	PresentationUploader->UpdateTexture(
 		this,
 		DynamicMeshComponent.Get(),
 		TextureMaterial.Get(),
@@ -826,8 +828,10 @@ void UOpenVolumetricComponent::UpdateDeveloperControls(float DeltaTime)
 		: FString::Printf(TEXT("\nERROR: %s"), *LastError);
 	const double UsedMemoryMb =
 		static_cast<double>(FPlatformMemory::GetStats().UsedPhysical) / Megabytes;
+	const FOpenVolumetricUploadMetrics UploadMetrics =
+		PresentationUploader->GetMetrics();
 	const FString StatusText = FString::Printf(
-		TEXT("OPENVOLUMETRIC\n%s  %.1f/%.1fs  Loop:%s\n%.1f fps  %.2f ms  Memory:%.0f MB%s%s\n\nK Play/Pause  O Loop  P Quality\nJ -%.0fs  L +%.0fs  I Hide"),
+		TEXT("OPENVOLUMETRIC\n%s  %.1f/%.1fs  Loop:%s\n%.1f fps  %.2f ms  Memory:%.0f MB\nUploads:%llu  dropped:%llu  storage growths:%llu%s%s\n\nK Play/Pause  O Loop  P Quality\nJ -%.0fs  L +%.0fs  I Hide"),
 		*StateName,
 		CurrentTimeSeconds,
 		DurationSeconds,
@@ -835,6 +839,9 @@ void UOpenVolumetricComponent::UpdateDeveloperControls(float DeltaTime)
 		FramesPerSecond,
 		SmoothedDeveloperDeltaTime * 1000.0f,
 		UsedMemoryMb,
+		UploadMetrics.SubmittedFrames,
+		UploadMetrics.DroppedFrames,
+		UploadMetrics.StorageGrowths,
 		*NetworkStatus,
 		*ErrorStatus,
 		DeveloperSeekSeconds,

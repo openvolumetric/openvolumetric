@@ -43,7 +43,10 @@ bool TextureD3D12::create_plane(Plane& plane, unsigned int width,
 		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, nullptr,
 		IID_PPV_ARGS(&plane.texture));
 	if (FAILED(result))
+	{
+		LOG("TextureD3D12::create_plane - texture creation failed (0x%08x)", result);
 		return false;
+	}
 
 	description.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
 	description.Width = static_cast<UINT64>(plane.row_pitch) * height;
@@ -58,7 +61,10 @@ bool TextureD3D12::create_plane(Plane& plane, unsigned int width,
 			D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
 			IID_PPV_ARGS(&slot.resource));
 		if (FAILED(result))
+		{
+			LOG("TextureD3D12::create_plane - upload creation failed (0x%08x)", result);
 			return false;
+		}
 	}
 	return true;
 }
@@ -114,8 +120,13 @@ void TextureD3D12::upload(unsigned char* y, unsigned char* u, unsigned char* v)
 			return;
 		}
 		void* mapped = nullptr;
-		if (FAILED(slot.resource->Map(0, nullptr, &mapped)))
+		const HRESULT map_result = slot.resource->Map(0, nullptr, &mapped);
+		if (FAILED(map_result) || mapped == nullptr)
+		{
+			LOG("TextureD3D12::upload - plane %u Map failed (0x%08x)",
+				index, map_result);
 			return;
+		}
 		for (unsigned int row = 0; row < plane.height; ++row)
 			std::memcpy(static_cast<unsigned char*>(mapped) + row * plane.row_pitch,
 				sources[index] + row * plane.source_stride, plane.width);

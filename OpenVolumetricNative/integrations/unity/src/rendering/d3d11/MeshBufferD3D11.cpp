@@ -3,8 +3,8 @@
 #include <Logger.h>
 #include <Mesh.h>
 
-#include <assert.h>
-#include <thread>
+#include <algorithm>
+#include <cstring>
 
 namespace openvolumetric::unity
 {
@@ -12,7 +12,10 @@ namespace openvolumetric::unity
 MeshBufferD3D11::MeshBufferD3D11() = default;
 
 
-MeshBufferD3D11::~MeshBufferD3D11() = default;
+MeshBufferD3D11::~MeshBufferD3D11()
+{
+	destroy();
+}
 
 void MeshBufferD3D11::destroy()
 {
@@ -35,24 +38,11 @@ bool MeshBufferD3D11::init(
 	void* vertex_buffer_handle,
 	int vertex_buffer_size)
 {
-	// Check device handler
-	if (handler == nullptr)
+	if (handler == nullptr || index_buffer_handle == nullptr ||
+		vertex_buffer_handle == nullptr || index_buffer_size <= 0 ||
+		vertex_buffer_size <= 0)
 	{
-		LOG("MeshBufferD311::init - error handler == nullptr");
-		return false;
-	}
-
-	// check index buffer handle
-	if (index_buffer_handle == nullptr)
-	{
-		LOG("MeshBufferD311::init - error index_buffer_handle == nullptr");
-		return false;
-	}
-
-	// check vertex buffer handle
-	if (vertex_buffer_handle == nullptr)
-	{
-		LOG("MeshBufferD311::init - error vertex_buffer_handle == nullptr");
+		LOG("MeshBufferD3D11::init - invalid device, buffer, or capacity");
 		return false;
 	}
 
@@ -62,27 +52,29 @@ bool MeshBufferD3D11::init(
 	// Index buffer / sizes / strides 
 	m_index_buffer_size = index_buffer_size;
 	m_index_buffer_handle = (ID3D11Buffer*)index_buffer_handle;
-	assert(m_index_buffer_handle);
 	int index_buffer_size_bytes = get_buffer_size(m_index_buffer_handle);
 	m_index_stride = (int)index_buffer_size_bytes / index_buffer_size;
 
 	//vertex buffer / sizes / strides
 	m_vertex_buffer_size= vertex_buffer_size;
 	m_vertex_buffer_handle = (ID3D11Buffer*)vertex_buffer_handle;
-	assert(m_vertex_buffer_handle);
 	int vertex_buffer_size_bytes = get_buffer_size(m_vertex_buffer_handle);
 	m_vertex_stride = int(vertex_buffer_size_bytes / vertex_buffer_size);
+	if (m_index_stride < static_cast<int>(sizeof(int)) ||
+		m_vertex_stride < static_cast<int>(sizeof(Vertex)))
+	{
+		LOG("MeshBufferD3D11::init - invalid buffer strides (%d, %d)",
+			m_index_stride, m_vertex_stride);
+		destroy();
+		return false;
+	}
 
 	// Report index Details
-	LOG("MeshBufferD311::init - index_buffer_handle :      %d", index_buffer_handle);
-	LOG("MeshBufferD311::init - index_buffer_size:         %d", index_buffer_size);
-	LOG("MeshBufferD311::init - index_buffer_size_bytes:   %d", index_buffer_size_bytes);
-	LOG("MeshBufferD311::init - index_stride:              %d", m_index_stride);
+	LOG("MeshBufferD3D11::init - index capacity/bytes/stride: %d/%d/%d",
+		index_buffer_size, index_buffer_size_bytes, m_index_stride);
 	// Report vertex Details
-	LOG("MeshBufferD311::init - vertex_buffer_handle :     %d", vertex_buffer_handle);
-	LOG("MeshBufferD311::init - vertex_buffer_size:        %d", vertex_buffer_size);
-	LOG("MeshBufferD311::init - vertex_buffer_size_bytes:  %d", vertex_buffer_size_bytes);
-	LOG("MeshBufferD311::init - vertex_stride:             %d", m_vertex_stride);
+	LOG("MeshBufferD3D11::init - vertex capacity/bytes/stride: %d/%d/%d",
+		vertex_buffer_size, vertex_buffer_size_bytes, m_vertex_stride);
 	
 	return true;
 }
@@ -91,8 +83,9 @@ bool MeshBufferD3D11::init(
 // Function to get vertex buffer size
 int MeshBufferD3D11::get_buffer_size(void* buffer_handle)
 {
-	ID3D11Buffer* d3dbuf = (ID3D11Buffer*)buffer_handle;
-	assert(d3dbuf);
+	ID3D11Buffer* d3dbuf = static_cast<ID3D11Buffer*>(buffer_handle);
+	if (d3dbuf == nullptr)
+		return 0;
 	D3D11_BUFFER_DESC desc;
 	d3dbuf->GetDesc(&desc);
 
@@ -103,83 +96,59 @@ int MeshBufferD3D11::get_buffer_size(void* buffer_handle)
 // Function to update the data buffers 
 bool MeshBufferD3D11::update(Mesh* mesh)
 {
-	//	LOG("MeshBufferD311::update - start");
+	if (m_device == nullptr || mesh == nullptr ||
+		mesh->indexes.size() > static_cast<std::size_t>(m_index_buffer_size) ||
+		mesh->verts.size() > static_cast<std::size_t>(m_vertex_buffer_size))
+	{
+		LOG("MeshBufferD3D11::update - invalid state or mesh exceeds capacity");
+		return false;
+	}
 
-	// Get Context
 	ID3D11DeviceContext* ctx = nullptr;
-	this->m_device->GetImmediateContext(&ctx);
-
-	D3D11_MAPPED_SUBRESOURCE mapped_vertexbuffer, mapped_indexbuffer;
-	ctx->Map(m_vertex_buffer_handle,	0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_vertexbuffer);
-	ctx->Map(m_index_buffer_handle,		0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_indexbuffer);
-
-	// Update Index Buffer data
-	std::thread index_update_thread = std::thread([&]() 
+	m_device->GetImmediateContext(&ctx);
+	if (ctx == nullptr)
 	{
-		//Pointer to data
-		char* bufferPtr = (char*)mapped_indexbuffer.pData;
-		memset(bufferPtr, 0, m_index_buffer_size * m_index_stride);
-
-		// Update vertex
-		for (int i = 0; i < mesh->indexes.size(); i++)
-		{
-			//Set value
-			int& dst = *(int*)bufferPtr;
-			dst = mesh->indexes[i];
-
-			// increment buffer
-			bufferPtr += m_index_stride;
-		}
-	});
-
-
-	// Update Vertex Buffer
-	std::thread vertex_update_thread = std::thread([&]() 
-	{
-		//Pointer to data
-		char* bufferPtr = (char*)mapped_vertexbuffer.pData;
-
-		//Zero all data
-		memset(bufferPtr, 0, m_vertex_buffer_size * m_vertex_stride);
-
-		// Update vertex buffer data
-		for (int i = 0; i < mesh->verts.size(); i++)
-		{
-			// Get source vertex 
-			const Vertex& src = mesh->verts[i];
-
-			// Get dst vertex and set values
-			Vertex& dst = *(Vertex*)bufferPtr;
-			dst.pos[0]		= src.pos[0];			dst.pos[1]		= src.pos[1];			dst.pos[2]		= src.pos[2];
-			dst.normal[0]	= src.normal[0];		dst.normal[1]	= src.normal[1];		dst.normal[2]	= src.normal[2];
-			dst.uv[0]		= src.uv[0];			dst.uv[1]		= src.uv[1];
-
-			// Increment buffer by stride value
-			bufferPtr += m_vertex_stride;
-		}
-	});
-
-
-	// index buffer update thread to join main thread
-	if (index_update_thread.joinable())
-	{
-		index_update_thread.join();
+		LOG("MeshBufferD3D11::update - immediate context is unavailable");
+		return false;
 	}
 
-	// index buffer update thread to join main thread
-	if (vertex_update_thread.joinable())
+	D3D11_MAPPED_SUBRESOURCE mapped_vertex{};
+	D3D11_MAPPED_SUBRESOURCE mapped_index{};
+	HRESULT result = ctx->Map(
+		m_vertex_buffer_handle, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_vertex);
+	if (FAILED(result) || mapped_vertex.pData == nullptr)
 	{
-		vertex_update_thread.join();
+		LOG("MeshBufferD3D11::update - vertex Map failed (0x%08x)", result);
+		ctx->Release();
+		return false;
+	}
+	result = ctx->Map(
+		m_index_buffer_handle, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_index);
+	if (FAILED(result) || mapped_index.pData == nullptr)
+	{
+		LOG("MeshBufferD3D11::update - index Map failed (0x%08x)", result);
+		ctx->Unmap(m_vertex_buffer_handle, 0);
+		ctx->Release();
+		return false;
 	}
 
-	// Release Context and resouces
+	std::memset(mapped_index.pData, 0,
+		static_cast<std::size_t>(m_index_buffer_size) * m_index_stride);
+	std::memset(mapped_vertex.pData, 0,
+		static_cast<std::size_t>(m_vertex_buffer_size) * m_vertex_stride);
+	for (std::size_t index = 0; index < mesh->indexes.size(); ++index)
+		std::memcpy(
+			static_cast<unsigned char*>(mapped_index.pData) + index * m_index_stride,
+			&mesh->indexes[index], sizeof(int));
+	for (std::size_t index = 0; index < mesh->verts.size(); ++index)
+		std::memcpy(
+			static_cast<unsigned char*>(mapped_vertex.pData) + index * m_vertex_stride,
+			&mesh->verts[index], sizeof(Vertex));
+
 	ctx->Unmap(m_vertex_buffer_handle, 0);
 	ctx->Unmap(m_index_buffer_handle, 0);
 	ctx->Release();
-
-//	LOG("MeshBufferD311::update - end");
 	return true;
-
 }
 
 } // namespace openvolumetric::unity

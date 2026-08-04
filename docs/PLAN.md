@@ -644,22 +644,34 @@ presets, validation, FFmpeg construction, Draco encoder, packer, and verifier;
 neither engine duplicates container policy. Unity 6 managed compilation and
 the Unreal Editor 5.8 macOS build pass after the final decomposition.
 
-### Phase 6: Rendering and allocation cleanup
+### Phase 6: Rendering and allocation cleanup (implementation complete;
+Windows performance validation pending)
 
-- [ ] Remove per-frame D3D11 thread creation from texture and mesh uploads;
+- [x] Remove per-frame D3D11 thread creation from texture and mesh uploads;
       benchmark direct render-thread copies before considering persistent
       workers or GPU staging paths.
-- [ ] Check every graphics map, resource creation, and upload result and report
+- [x] Check every graphics map, resource creation, and upload result and report
       a stable error instead of dereferencing an invalid mapping.
-- [ ] Reuse Unreal texture-upload storage and region descriptions to avoid
+- [x] Reuse Unreal texture-upload storage and region descriptions to avoid
       avoidable allocation churn.
-- [ ] Profile Unreal CPU YUV conversion and implement an RHI/native planar path
+- [x] Profile Unreal CPU YUV conversion and implement an RHI/native planar path
       only when measurements justify the added platform complexity.
-- [ ] Document render-resource ownership, valid threads, synchronization, and
+- [x] Document render-resource ownership, valid threads, synchronization, and
       destruction order for Metal, D3D11, Vulkan, and Unreal RHI uploads.
 - [ ] Compare frame time, allocations, memory, and synchronization before and
       after each rendering change; do not accept speculative optimizations that
       regress correctness or clarity.
+
+The implementation removes four create/join operations from each D3D11
+presentation and changes Unreal texture submission from two heap allocations
+per frame to three reusable in-flight slots. Unreal Editor 5.8 builds on macOS;
+the existing profile remains GPU-bound, so a planar RHI path is not justified.
+An Unreal runtime check recorded approximately 260/1,800 submitted uploads at
+10/60 seconds, zero dropped uploads, and exactly three storage-growth events at
+both samples. The stable growth count confirms that all recurring texture
+upload storage is reused after warm-up. The final checkpoint remains open only
+for the Windows D3D11 before/after frame-time and synchronization comparison.
+See [RENDERING.md](RENDERING.md).
 
 ### Phase 7: Logging, diagnostics, and internal maintainability
 
