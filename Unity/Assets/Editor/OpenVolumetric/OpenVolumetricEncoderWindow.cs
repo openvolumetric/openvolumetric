@@ -1,12 +1,9 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEditor;
@@ -154,9 +151,6 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         int frameCount,
         ref NativeEncodingSettings settings);
 
-    private static readonly Regex NumberedFile =
-        new Regex(@"^(?<frame>[0-9]+)$", RegexOptions.Compiled);
-
     private enum EncodingPreset
     {
         DesktopLocal,
@@ -209,12 +203,13 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
     [SerializeField] private bool showAdvanced;
     [SerializeField] private string ffmpegPath = "";
 
-    private CancellationTokenSource cancellation;
+    private readonly OpenVolumetricAuthoringProgress job =
+        new OpenVolumetricAuthoringProgress();
     private Vector2 scroll;
-    private readonly StringBuilder log = new StringBuilder();
-    private volatile float progress;
-    private volatile bool running;
-    private volatile string status = "Ready";
+
+    private float progress { get => job.Completion; set => job.Completion = value; }
+    private bool running => job.IsRunning;
+    private string status { get => job.Status; set => job.Status = value; }
 
     /// <summary>Opens or focuses the OpenVolumetric authoring window.</summary>
     [MenuItem("Tools/OpenVolumetric/Encoder")]
@@ -430,8 +425,7 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             EditorGUI.ProgressBar(progressRect, progress, status);
             if (GUILayout.Button("Cancel"))
             {
-                cancellation.Cancel();
-                status = "Cancelling…";
+                job.Cancel();
             }
             Repaint();
         }
@@ -487,14 +481,11 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         }
 
         SaveSettings();
-        cancellation = new CancellationTokenSource();
-        running = true;
-        progress = 0.0f;
-        log.Clear();
+        CancellationToken token = job.Begin();
 
         try
         {
-            await Task.Run(() => Encode(inputs, cancellation.Token));
+            await Task.Run(() => Encode(inputs, token));
             status = "Encoding complete";
             progress = 1.0f;
             AssetDatabase.Refresh();
@@ -517,9 +508,7 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         }
         finally
         {
-            running = false;
-            cancellation.Dispose();
-            cancellation = null;
+            job.End();
             Repaint();
         }
     }
@@ -568,7 +557,7 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             for (int index = 0; index < inputs.Geometry.Count; ++index)
             {
                 token.ThrowIfCancellationRequested();
-                NumberedPath source = inputs.Geometry[index];
+                OpenVolumetricNumberedPath source = inputs.Geometry[index];
                 string destination = Path.Combine(
                     dracoDirectory,
                     source.FrameText + ".drc");
@@ -786,7 +775,7 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         EncodingSettings settings,
         bool useFragments)
     {
-        NumberedPath first = inputs.Images[0];
+        OpenVolumetricNumberedPath first = inputs.Images[0];
         string imagePattern = Path.Combine(
             imageDirectory,
             "%0" + first.FrameText.Length + "d" + first.Extension);
@@ -817,9 +806,11 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
     /// </summary>
     private EncodingInputs ValidateInputs()
     {
-        RequireDirectory(imageDirectory, "Image sequence");
-        RequireDirectory(geometryDirectory, "OBJ sequence");
-        RequireExecutable(ffmpegPath, "FFmpeg");
+        OpenVolumetricAuthoringValidation.RequireDirectory(
+            imageDirectory, "Image sequence");
+        OpenVolumetricAuthoringValidation.RequireDirectory(
+            geometryDirectory, "OBJ sequence");
+        OpenVolumetricAuthoringValidation.RequireExecutable(ffmpegPath, "FFmpeg");
 
         if (frameRate <= 0.0f)
         {
@@ -887,11 +878,13 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
                 "Image and OBJ validation failed.");
         }
 
-        List<NumberedPath> images = DiscoverNumberedFiles(
+        List<OpenVolumetricNumberedPath> images =
+            OpenVolumetricAuthoringValidation.DiscoverNumberedFiles(
             imageDirectory,
             new[] { ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".exr" },
             "images");
-        List<NumberedPath> geometry = DiscoverNumberedFiles(
+        List<OpenVolumetricNumberedPath> geometry =
+            OpenVolumetricAuthoringValidation.DiscoverNumberedFiles(
             geometryDirectory,
             new[] { ".obj" },
             "OBJ meshes");
@@ -920,50 +913,8 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
             throw new InvalidOperationException(
                 "Fragment duration must be 1, 2, or 4 seconds.");
         }
-        double exact = sourceFrameRate * (int)duration;
-        int frames = (int)Math.Round(exact);
-        if(frames <= 0 || Math.Abs(exact - frames) > 0.000001)
-        {
-            throw new InvalidOperationException(
-                "Fragment duration must contain an integral number of source frames.");
-        }
-        return frames;
-    }
-
-    /// <summary>
-    /// Finds files whose stem is an integer and returns them in frame order.
-    /// </summary>
-    private static List<NumberedPath> DiscoverNumberedFiles(
-        string directory,
-        IReadOnlyCollection<string> extensions,
-        string label)
-    {
-        List<NumberedPath> files = new List<NumberedPath>();
-        foreach (string path in Directory.EnumerateFiles(directory))
-        {
-            string extension = Path.GetExtension(path);
-            if (!extensions.Contains(extension.ToLowerInvariant()))
-            {
-                continue;
-            }
-
-            string stem = Path.GetFileNameWithoutExtension(path);
-            Match match = NumberedFile.Match(stem);
-            if (!match.Success ||
-                !Int32.TryParse(match.Groups["frame"].Value, out int frame))
-            {
-                continue;
-            }
-            files.Add(new NumberedPath(frame, stem, extension, path));
-        }
-
-        files.Sort((left, right) => left.Frame.CompareTo(right.Frame));
-        if (files.Count == 0)
-        {
-            throw new InvalidOperationException(
-                "No numbered " + label + " found in " + directory + ".");
-        }
-        return files;
+        return OpenVolumetricAuthoringValidation.FragmentFrameInterval(
+            sourceFrameRate, (int)duration);
     }
 
     /// <summary>
@@ -975,102 +926,20 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
         IEnumerable<string> arguments,
         CancellationToken token)
     {
-        string argumentString = String.Join(" ", arguments.Select(QuoteArgument));
-        AppendLog("> " + executable + " " + argumentString);
-
-        using (Process process = new Process())
-        {
-            process.StartInfo = new ProcessStartInfo
-            {
-                FileName = executable,
-                Arguments = argumentString,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-            process.OutputDataReceived += (_, eventArgs) =>
-            {
-                if (eventArgs.Data != null) AppendLog(eventArgs.Data);
-            };
-            process.ErrorDataReceived += (_, eventArgs) =>
-            {
-                if (eventArgs.Data != null) AppendLog(eventArgs.Data);
-            };
-
-            if (!process.Start())
-            {
-                throw new InvalidOperationException("Could not start " + executable);
-            }
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-
-            while (!process.WaitForExit(100))
-            {
-                if (!token.IsCancellationRequested)
-                {
-                    continue;
-                }
-                try { process.Kill(); } catch { }
-                token.ThrowIfCancellationRequested();
-            }
-            process.WaitForExit();
-            if (process.ExitCode != 0)
-            {
-                throw new InvalidOperationException(
-                    Path.GetFileName(executable) +
-                    " failed with exit code " + process.ExitCode + ".");
-            }
-        }
+        OpenVolumetricAuthoringProcess.Run(
+            executable, arguments, token, AppendLog);
     }
 
     /// <summary>Appends one thread-safe line to the bounded UI log.</summary>
     private void AppendLog(string message)
     {
-        lock (log)
-        {
-            log.AppendLine(message);
-        }
+        job.Append(message);
     }
 
     /// <summary>Returns a thread-safe snapshot of the current UI log.</summary>
     private string GetLogText()
     {
-        lock (log)
-        {
-            return log.ToString();
-        }
-    }
-
-    /// <summary>Quotes one process argument without invoking a shell.</summary>
-    private static string QuoteArgument(string value)
-    {
-        if (String.IsNullOrEmpty(value)) return "\"\"";
-        if (!value.Any(character =>
-            Char.IsWhiteSpace(character) || character == '"' || character == '\\'))
-        {
-            return value;
-        }
-        return "\"" + value.Replace("\"", "\\\"") + "\"";
-    }
-
-    /// <summary>Throws a validation error unless path is an existing directory.</summary>
-    private static void RequireDirectory(string path, string label)
-    {
-        if (!Directory.Exists(path))
-        {
-            throw new InvalidOperationException(label + " directory does not exist.");
-        }
-    }
-
-    /// <summary>Throws a validation error unless path is an executable file.</summary>
-    private static void RequireExecutable(string path, string label)
-    {
-        if (String.IsNullOrWhiteSpace(path) || !File.Exists(path))
-        {
-            throw new InvalidOperationException(
-                label + " was not found. Set its path under Advanced.");
-        }
+        return job.LogSnapshot();
     }
 
     /// <summary>Draws a text field with an adjacent directory picker.</summary>
@@ -1367,37 +1236,18 @@ public sealed class OpenVolumetricEncoderWindow : EditorWindow
 
     private sealed class EncodingInputs
     {
-        public readonly List<NumberedPath> Images;
-        public readonly List<NumberedPath> Geometry;
+        public readonly List<OpenVolumetricNumberedPath> Images;
+        public readonly List<OpenVolumetricNumberedPath> Geometry;
 
         public EncodingInputs(
-            List<NumberedPath> images,
-            List<NumberedPath> geometry)
+            List<OpenVolumetricNumberedPath> images,
+            List<OpenVolumetricNumberedPath> geometry)
         {
             Images = images;
             Geometry = geometry;
         }
     }
 
-    private sealed class NumberedPath
-    {
-        public readonly int Frame;
-        public readonly string FrameText;
-        public readonly string Extension;
-        public readonly string Path;
-
-        public NumberedPath(
-            int frame,
-            string frameText,
-            string extension,
-            string path)
-        {
-            Frame = frame;
-            FrameText = frameText;
-            Extension = extension;
-            Path = path;
-        }
-    }
 }
 
 }

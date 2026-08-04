@@ -1,6 +1,6 @@
 # Open Volumetric Development Plan
 
-Last updated: 2 August 2026
+Last updated: 4 August 2026
 
 ## Current objective
 
@@ -607,7 +607,7 @@ using only core include paths. Local validation passed 22 native cases with
 245 assertions, the HTTP transport suite, warnings-as-errors macOS and Android
 ARM64 builds, and the Unreal Editor macOS build.
 
-### Phase 5: Decompose engine orchestration (in progress)
+### Phase 5: Decompose engine orchestration (complete)
 
 - [x] Reduce the Unity `OpenVolumetric` component to serialized configuration,
       public controls, and lifecycle orchestration. Extract source resolution,
@@ -622,7 +622,7 @@ ARM64 builds, and the Unreal Editor macOS build.
       helpers where Unreal ownership permits it.
 - [x] Keep adaptive decisions in the core rather than recreating policy in an
       extracted Unity or Unreal helper.
-- [ ] Split the Unity and Unreal authoring windows into UI state, validation,
+- [x] Split the Unity and Unreal authoring windows into UI state, validation,
       job/process execution, and progress reporting while continuing to use
       shared native presets, validation, FFmpeg argument construction, Draco
       encoding, packaging, and verification.
@@ -637,9 +637,12 @@ metrics into private managed collaborators. The serialized component and
 adaptive source resolution, playback clock policy, network recovery state,
 metrics ownership, and texture presentation now live in private plain-C++
 helpers. Manifest and live adaptive decisions still delegate to the core.
-Unity managed compilation and Unreal Editor macOS builds pass at these
-checkpoints. Both authoring-window decompositions remain before the phase is
-complete.
+The authoring front ends now keep engine UI/configuration separate from
+numbered-source validation, process execution, and thread-safe progress and
+diagnostic publication. Job orchestration continues to call the shared native
+presets, validation, FFmpeg construction, Draco encoder, packer, and verifier;
+neither engine duplicates container policy. Unity 6 managed compilation and
+the Unreal Editor 5.8 macOS build pass after the final decomposition.
 
 ### Phase 6: Rendering and allocation cleanup
 

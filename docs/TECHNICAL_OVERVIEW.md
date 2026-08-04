@@ -327,11 +327,14 @@ and network-rate consistency. They do not resize the input imagery. The
 streaming ceilings cover the texture-video track rather than the geometry
 and audio streams, so the final container rate is higher.
 
-Preset values, numbered-source validation, and FFmpeg argument construction
-are implemented once in `AuthoringWorkflow`. Unity consumes them through the
+Preset values, cross-sequence validation, and FFmpeg argument construction are
+implemented once in `AuthoringWorkflow`. Unity consumes them through the
 authoring C ABI, while the Unreal Editor module links the same C++ authoring
-core. The engine windows retain only host-specific file pickers, progress
-reporting, process launching, and UI state.
+core. Each engine front end separates its window and persisted UI state from
+host filesystem validation, external-process execution, and thread-safe
+progress/diagnostic publication. The engine-side job coordinator only adapts
+those services to the shared Draco encoder, packer, and verifier; it does not
+reimplement container or preset policy.
 
 Both interfaces also provide optional fixed-quality fragmented MP4 authoring
 with 1-, 2-, or 4-second durations. This option overrides the video GOP length
