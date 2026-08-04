@@ -2,12 +2,15 @@
 
 #if defined(_WIN32)
 #include <d3d11.h>
+#include <d3d12.h>
+#include <dxgi.h>
 #endif
 
 #include <Unity/IUnityInterface.h>
 #include <Unity/IUnityGraphics.h>
 #if defined(_WIN32)
 #include <Unity/IUnityGraphicsD3D11.h>
+#include <Unity/IUnityGraphicsD3D12.h>
 #elif defined(__APPLE__)
 #include <Unity/IUnityGraphicsMetal.h>
 #import <Metal/Metal.h>
@@ -29,6 +32,9 @@
 #if defined(_WIN32)
 #include <MeshBufferD3D11.h>
 #include <TextureD3D11.h>
+#include <D3D12UnityContext.h>
+#include <MeshBufferD3D12.h>
+#include <TextureD3D12.h>
 #elif defined(__APPLE__)
 #include <MeshBufferMetal.h>
 #include <TextureMetal.h>
@@ -46,6 +52,9 @@ using openvolumetric::unity::UnityOpenVolumetricPlayer;
 #if defined(_WIN32)
 using openvolumetric::unity::MeshBufferD3D11;
 using openvolumetric::unity::TextureD3D11;
+using openvolumetric::unity::D3D12UnityContext;
+using openvolumetric::unity::MeshBufferD3D12;
+using openvolumetric::unity::TextureD3D12;
 #elif defined(__APPLE__)
 using openvolumetric::unity::MeshBufferMetal;
 using openvolumetric::unity::TextureMetal;
@@ -166,12 +175,29 @@ extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API UnityPluginUnload()
 static UnityGfxRenderer g_device_type = kUnityGfxRendererNull;
 static void* g_graphics_device = nullptr;
 #if defined(_WIN32)
+static D3D12UnityContext g_d3d12_context;
 static void DoEventGraphicsDeviceD3D11(UnityGfxDeviceEventType eventType)
 {
 	if (eventType == kUnityGfxDeviceEventInitialize)
 	{
 		IUnityGraphicsD3D11* d3d11 = g_unity_interfaces->Get<IUnityGraphicsD3D11>();
 		g_graphics_device = d3d11->GetDevice();
+	}
+}
+static void DoEventGraphicsDeviceD3D12(UnityGfxDeviceEventType eventType)
+{
+	if (eventType == kUnityGfxDeviceEventInitialize)
+	{
+		g_d3d12_context.unity =
+			g_unity_interfaces->Get<IUnityGraphicsD3D12v8>();
+		g_d3d12_context.device = g_d3d12_context.unity == nullptr
+			? nullptr : g_d3d12_context.unity->GetDevice();
+		g_graphics_device = g_d3d12_context.device == nullptr
+			? nullptr : &g_d3d12_context;
+	}
+	else if (eventType == kUnityGfxDeviceEventShutdown)
+	{
+		g_d3d12_context = {};
 	}
 }
 #elif defined(__APPLE__)
@@ -221,6 +247,12 @@ static void UNITY_INTERFACE_API OnGraphicsDeviceEvent(UnityGfxDeviceEventType ev
 	{
 #if defined(_WIN32)
 		DoEventGraphicsDeviceD3D11(eventType);
+#endif
+	}
+	else if (currentDeviceType == kUnityGfxRendererD3D12)
+	{
+#if defined(_WIN32)
+		DoEventGraphicsDeviceD3D12(eventType);
 #endif
 	}
 	else if (currentDeviceType == kUnityGfxRendererMetal)
@@ -297,6 +329,11 @@ OPENVOLUMETRIC_API OpenVolumetricResult openvolumetric_player_create(
 			event_id,
 			std::make_unique<TextureD3D11>(),
 			std::make_unique<MeshBufferD3D11>());
+	else if (g_device_type == kUnityGfxRendererD3D12)
+		instance = std::make_unique<UnityOpenVolumetricPlayer>(
+			event_id,
+			std::make_unique<TextureD3D12>(),
+			std::make_unique<MeshBufferD3D12>());
 #elif defined(__APPLE__)
 	if (g_device_type == kUnityGfxRendererMetal)
 		instance = std::make_unique<UnityOpenVolumetricPlayer>(

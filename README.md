@@ -11,7 +11,8 @@ Unity and Unreal Engine integrations.
 | --- | --- |
 | Unity 6 on macOS/Metal | Implemented and validated |
 | Unity 6 on Meta Quest/Android ARM64/Vulkan | Implemented and validated on Quest 2 |
-| Unity on Windows/D3D11 | Implemented; clean validation outstanding |
+| Unity on Windows/D3D11 | Local playback and seeking manually validated |
+| Unity on Windows/D3D12 | Local playback and seeking manually validated |
 | Unreal Engine 5.8 on macOS | Runtime playback and authoring implemented and validated in the Editor |
 | Unreal packaged applications | Packaging validation outstanding |
 | Linux | Portable native core build |
@@ -37,7 +38,7 @@ preview, but not every generic player ignores the custom track correctly; see
 The Unity 6 project contains:
 
 - the `OpenVolumetric.OpenVolumetric` playback component;
-- Metal, D3D11, and Vulkan native rendering paths;
+- Metal, D3D11, D3D12, and Vulkan native rendering paths;
 - synchronized streaming audio, with optional geometry-centroid following and
   lightweight native stereo spatialisation validated on Quest for local and
   HTTP-streamed input;
@@ -102,7 +103,7 @@ tools/                  Package-serving and controlled-network evaluation tools
 - VLC does not reliably ignore `vvge` in fragmented files; video/audio-only
   stream-copy previews remain available without re-encoding.
 - Quest video decoding is software-based.
-- Windows, Quest 3S, and Unreal packaged-build validation remain outstanding.
+- Quest 3S and Unreal packaged-build validation remain outstanding.
 - Native format, lifecycle, transport, corruption-recovery, and sanitizer
   regression checks are automated; engine conformance and performance testing
   remains manual.

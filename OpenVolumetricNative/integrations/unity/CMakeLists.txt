@@ -22,12 +22,15 @@ if(WIN32)
     ${VV_UNITY_API_SOURCES}
     src/rendering/d3d11/MeshBufferD3D11.cpp
     src/rendering/d3d11/TextureD3D11.cpp
+    src/rendering/d3d12/MeshBufferD3D12.cpp
+    src/rendering/d3d12/TextureD3D12.cpp
   )
 
   target_include_directories(OpenVolumetricUnityPlugin
     PRIVATE
       ${VV_UNITY_INCLUDE_DIRS}
       "${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/d3d11"
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/rendering/d3d12"
   )
   target_include_directories(OpenVolumetricUnityPlugin SYSTEM PRIVATE
     "${VV_UNITY_SYSTEM_INCLUDE_DIR}"
@@ -37,6 +40,7 @@ if(WIN32)
     PRIVATE
       OpenVolumetricCore
       d3d11
+      d3d12
   )
 
   set_target_properties(OpenVolumetricUnityPlugin PROPERTIES

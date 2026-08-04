@@ -120,12 +120,14 @@ native audio effect exported by the same library as the runtime C API.
 
 ### Windows
 
-The Windows build produces the D3D11 Unity plug-in and authoring DLL. Build
-with MSVC on Windows; the D3D11 implementation cannot be produced by the
-Linux development container.
+The Windows build produces one Unity plug-in with D3D11 and D3D12 backends,
+plus the authoring DLL. Build with MSVC on Windows; these implementations
+cannot be produced by the Linux development container.
 
-The implementation exists, but a clean build and runtime test on the current
-repository remain outstanding.
+D3D11 and D3D12 local playback and seeking are manually validated. D3D12 also
+builds cleanly with warnings treated as errors. Launch Unity with
+`-force-d3d12` to select it without changing the project's saved graphics API
+order.
 
 ## Quest/Android ARM64
 

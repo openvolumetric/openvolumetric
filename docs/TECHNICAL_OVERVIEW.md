@@ -867,7 +867,15 @@ The Windows backend:
 D3D11 driver-managed resource renaming helps prevent overwriting data still in
 GPU use.
 
-### 9.2 Metal
+### 9.2 D3D12
+
+The Windows D3D12 backend creates default-heap single-channel textures and
+copies decoded planes and Unity mesh buffers through upload heaps recorded in
+Unity's active command list. It uses Unity's resource-state tracking API for
+copy and shader/index/vertex transitions. Fence-aware upload rings prevent CPU
+writes from overwriting data that is still in flight on the GPU.
+
+### 9.3 Metal
 
 The macOS backend uses Unity's Metal interface and native Metal resources. It
 uploads planar textures and dynamic mesh data during Unity's render callback.
@@ -877,7 +885,7 @@ reusable in-flight upload ring has been identified as a future optimization,
 provided command-buffer ordering prevents staging memory from being
 overwritten while the GPU is consuming it.
 
-### 9.3 Vulkan
+### 9.4 Vulkan
 
 The Android/Quest backend uses Unity's Vulkan plug-in interface. Unity creates
 the external textures, then returns the native image handles to the plug-in
@@ -895,7 +903,8 @@ fallback.
 | Host/platform | Backend | Status |
 | --- | --- | --- |
 | Unity 6 on macOS | Metal | Implemented and manually validated |
-| Unity on Windows x64 | D3D11 | Implemented; clean current-repository validation remains outstanding |
+| Unity on Windows x64 | D3D11 | Local playback and seeking manually validated |
+| Unity on Windows x64 | D3D12 | Local playback and seeking manually validated |
 | Unity on Meta Quest/Android ARM64 | Vulkan | Local and progressive HTTP playback implemented and manually validated on Quest 2 |
 | Unity on Meta Quest 3S | Vulkan | Intended target; final physical-device profiling remains outstanding |
 | Unreal Engine 5.8 Editor on macOS | Dynamic Mesh, transient BGRA texture, procedural audio | Local and progressive HTTP playback implemented and manually validated |
