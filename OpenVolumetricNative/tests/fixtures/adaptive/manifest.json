@@ -1,0 +1,27 @@
+{
+  "format": "openvolumetric-adaptive",
+  "version": 1,
+  "presentation_id": "native-test",
+  "duration_seconds": 1.0,
+  "segment_duration_seconds": 1.0,
+  "has_audio": false,
+  "segments": [
+    {"number": 0, "start_seconds": 0.0, "duration_seconds": 1.0}
+  ],
+  "representations": [
+    {
+      "id": "low", "resource_uri": "low.mp4",
+      "compatibility_group": "test", "bandwidth": 100000,
+      "texture": {"codec": "avc1", "width": 16, "height": 16, "bitrate": 50000},
+      "geometry": {"codec": "vvge-v2", "position_quantization_bits": 11,
+        "bitrate": 50000, "temporal_compression": true}
+    },
+    {
+      "id": "high", "resource_uri": "high.mp4",
+      "compatibility_group": "test", "bandwidth": 200000,
+      "texture": {"codec": "avc1", "width": 16, "height": 16, "bitrate": 100000},
+      "geometry": {"codec": "vvge-v2", "position_quantization_bits": 14,
+        "bitrate": 100000, "temporal_compression": true}
+    }
+  ]
+}
