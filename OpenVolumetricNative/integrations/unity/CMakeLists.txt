@@ -142,3 +142,5 @@ elseif(ANDROID)
     COMMENT "Stripping Android native plugin"
   )
 endif()
+
+openvolumetric_apply_build_options(OpenVolumetricUnityPlugin)

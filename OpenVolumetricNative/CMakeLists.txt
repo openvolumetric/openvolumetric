@@ -1,8 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(OpenVolumetricNative LANGUAGES C CXX)
+project(OpenVolumetricNative VERSION 0.1.0 LANGUAGES C CXX)
 
 include(CTest)
+include(CMakePackageConfigHelpers)
+include(GNUInstallDirs)
 
 if(APPLE)
   enable_language(OBJCXX)
@@ -17,29 +19,29 @@ option(OPENVOLUMETRIC_WARNINGS_AS_ERRORS
 option(OPENVOLUMETRIC_ENABLE_SANITIZERS
   "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 
-add_library(OpenVolumetricBuildOptions INTERFACE)
-if(WIN32)
-  # Prevent Windows SDK min/max macros from breaking std::min/std::max calls.
-  target_compile_definitions(OpenVolumetricBuildOptions INTERFACE NOMINMAX)
-endif()
-if(MSVC)
-  target_compile_options(OpenVolumetricBuildOptions INTERFACE /W4)
-  if(OPENVOLUMETRIC_WARNINGS_AS_ERRORS)
-    target_compile_options(OpenVolumetricBuildOptions INTERFACE /WX)
+function(openvolumetric_apply_build_options target)
+  if(WIN32)
+    # Prevent Windows SDK min/max macros from breaking std::min/std::max calls.
+    target_compile_definitions(${target} PRIVATE NOMINMAX)
   endif()
-else()
-  target_compile_options(OpenVolumetricBuildOptions INTERFACE
-    -Wall -Wextra -Wpedantic)
-  if(OPENVOLUMETRIC_WARNINGS_AS_ERRORS)
-    target_compile_options(OpenVolumetricBuildOptions INTERFACE -Werror)
+  if(MSVC)
+    target_compile_options(${target} PRIVATE /W4)
+    if(OPENVOLUMETRIC_WARNINGS_AS_ERRORS)
+      target_compile_options(${target} PRIVATE /WX)
+    endif()
+  else()
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+    if(OPENVOLUMETRIC_WARNINGS_AS_ERRORS)
+      target_compile_options(${target} PRIVATE -Werror)
+    endif()
+    if(OPENVOLUMETRIC_ENABLE_SANITIZERS)
+      target_compile_options(${target} PRIVATE
+        -fno-omit-frame-pointer -fsanitize=address,undefined)
+      target_link_options(${target} PRIVATE
+        -fno-omit-frame-pointer -fsanitize=address,undefined)
+    endif()
   endif()
-  if(OPENVOLUMETRIC_ENABLE_SANITIZERS)
-    target_compile_options(OpenVolumetricBuildOptions INTERFACE
-      -fno-omit-frame-pointer -fsanitize=address,undefined)
-    target_link_options(OpenVolumetricBuildOptions INTERFACE
-      -fno-omit-frame-pointer -fsanitize=address,undefined)
-  endif()
-endif()
+endfunction()
 
 add_subdirectory(src/core)
 if(NOT ANDROID)
@@ -57,4 +59,36 @@ endif()
 
 if(BUILD_TESTING AND NOT ANDROID)
   add_subdirectory(tests)
+  configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/InstalledConsumerTest.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/InstalledConsumerTest.cmake"
+    @ONLY
+  )
+  add_test(
+    NAME OpenVolumetricInstalledConsumerTest
+    COMMAND "${CMAKE_COMMAND}" -P
+      "${CMAKE_CURRENT_BINARY_DIR}/InstalledConsumerTest.cmake"
+  )
 endif()
+
+install(EXPORT OpenVolumetricTargets
+  FILE OpenVolumetricTargets.cmake
+  NAMESPACE OpenVolumetric::
+  DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/OpenVolumetric"
+)
+
+configure_package_config_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/OpenVolumetricConfig.cmake.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/OpenVolumetricConfig.cmake"
+  INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/OpenVolumetric"
+)
+write_basic_package_version_file(
+  "${CMAKE_CURRENT_BINARY_DIR}/OpenVolumetricConfigVersion.cmake"
+  VERSION "${PROJECT_VERSION}"
+  COMPATIBILITY SameMajorVersion
+)
+install(FILES
+  "${CMAKE_CURRENT_BINARY_DIR}/OpenVolumetricConfig.cmake"
+  "${CMAKE_CURRENT_BINARY_DIR}/OpenVolumetricConfigVersion.cmake"
+  DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/OpenVolumetric"
+)

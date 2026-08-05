@@ -1,0 +1,19 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(FFMPEG REQUIRED)
+find_dependency(CURL CONFIG REQUIRED)
+find_dependency(draco CONFIG REQUIRED)
+find_dependency(nlohmann_json CONFIG REQUIRED)
+
+if(NOT TARGET OpenVolumetric::FFmpeg)
+  add_library(OpenVolumetric::FFmpeg INTERFACE IMPORTED)
+  target_include_directories(OpenVolumetric::FFmpeg
+    INTERFACE ${FFMPEG_INCLUDE_DIRS})
+  target_link_libraries(OpenVolumetric::FFmpeg
+    INTERFACE ${FFMPEG_LIBRARIES})
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/OpenVolumetricTargets.cmake")
+
+check_required_components(OpenVolumetric)

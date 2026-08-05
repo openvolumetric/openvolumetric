@@ -10,6 +10,13 @@ Unity integration.
   Blueprints and links the engine-independent decoder core.
 - `OpenVolumetricAuthoring` adds the OpenVolumetric Encoder to Unreal's Tools
   menu and links the reusable authoring core.
+- `OpenVolumetricSDK` is an external build module that supplies installed
+  public headers and staged Mac or Win64 static archives to both modules.
+
+The plug-in does not include files from `OpenVolumetricNative/src` or link a
+repository build directory. Generate its ignored `Source/ThirdParty` SDK with
+`tools/stage_unreal_sdk.py`, as described in [SDK.md](SDK.md), or set the
+`OPENVOLUMETRIC_UNREAL_SDK` environment variable.
 
 ## Runtime usage
 

@@ -121,6 +121,14 @@ The source tree separates the system into four primary layers:
 | `integrations/unity` | Thin `UnityOpenVolumetricPlayer` adapter, thread-safe C ABI registry, graphics API access, and native GPU uploads |
 | `Unreal/Plugins/OpenVolumetric` | Unreal runtime component, core adapter, dynamic mesh/texture/audio output, and Editor authoring interface |
 
+For SDK consumption, CMake installs these engine-neutral boundaries as
+`OpenVolumetric::Core` and `OpenVolumetric::Authoring`. Only façade and
+contract headers are installed; concrete FFmpeg, Draco, HTTP, queue, and
+fragment-index implementation headers remain private. Unreal consumes a
+generated external SDK containing the same installed headers and
+platform-matched static archives, so its build rules do not depend on the
+monorepo source or build-tree layout.
+
 The core deliberately contains no Unity or Unreal headers or types. Graphics
 operations are represented by caller-owned CPU presentations. Unity-specific
 `ITexture` and `IMeshBuffer` upload contracts live entirely inside the Unity

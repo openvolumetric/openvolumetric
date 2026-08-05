@@ -6,19 +6,22 @@ add_library(OpenVolumetricAuthoringCore STATIC
   TopologyAnalyzer.cpp
   VolumetricVideoPacker.cpp
 )
+add_library(OpenVolumetric::Authoring ALIAS OpenVolumetricAuthoringCore)
 
 set_target_properties(OpenVolumetricAuthoringCore PROPERTIES
+  EXPORT_NAME Authoring
   POSITION_INDEPENDENT_CODE ON
 )
+openvolumetric_apply_build_options(OpenVolumetricAuthoringCore)
 
 target_include_directories(OpenVolumetricAuthoringCore
   PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}"
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>"
+    "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/OpenVolumetric>"
 )
 
 target_link_libraries(OpenVolumetricAuthoringCore
   PUBLIC
-    OpenVolumetricBuildOptions
     OpenVolumetricCore
 )
 
@@ -26,6 +29,7 @@ if(WIN32 OR APPLE)
   add_library(OpenVolumetricAuthoring SHARED
     OpenVolumetricAuthoringApi.cpp
   )
+  openvolumetric_apply_build_options(OpenVolumetricAuthoring)
 
   target_link_libraries(OpenVolumetricAuthoring
     PRIVATE
@@ -54,3 +58,15 @@ if(WIN32 OR APPLE)
     )
   endif()
 endif()
+
+install(TARGETS OpenVolumetricAuthoringCore
+  EXPORT OpenVolumetricTargets
+  ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+)
+install(FILES
+  AdaptivePackage.h
+  AuthoringWorkflow.h
+  DracoMeshEncoder.h
+  VolumetricVideoPacker.h
+  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/OpenVolumetric"
+)

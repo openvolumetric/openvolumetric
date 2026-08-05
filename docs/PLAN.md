@@ -700,22 +700,32 @@ paths do not log, and audio conversion reuses worker-owned scratch storage.
 The existing single FFmpeg owner is retained while packet routing, staging,
 conversion, and queue publication remain explicit internal operations.
 
-### Phase 8: Packaging and SDK consumption
+### Phase 8: Packaging and SDK consumption (implementation complete;
+Windows and packaged-build validation pending)
 
-- [ ] Add CMake install/export rules and a namespaced
+- [x] Add CMake install/export rules and a namespaced
       `OpenVolumetric::Core` package target with a deliberate public-header
       set.
-- [ ] Stop requiring consumers to enumerate internal source include
+- [x] Stop requiring consumers to enumerate internal source include
       directories.
 - [ ] Generalize Unreal build rules and staged dependencies for macOS and
       Windows first, then Android/Quest if Unreal Quest support becomes a
       release target.
-- [ ] Remove source-repository-relative native library assumptions from the
+- [x] Remove source-repository-relative native library assumptions from the
       distributable Unreal plugin.
-- [ ] Define supported compiler, architecture, engine, FFmpeg, Draco, Android
+- [x] Define supported compiler, architecture, engine, FFmpeg, Draco, Android
       SDK/NDK, and operating-system versions in one compatibility document.
-- [ ] Validate installation and consumption from a clean directory rather than
+- [x] Validate installation and consumption from a clean directory rather than
       only from the monorepo build tree.
+
+The CMake package exports `OpenVolumetric::Core` and
+`OpenVolumetric::Authoring`, installs only engine-neutral façade/contract
+headers, and finds its pinned static dependencies through the consumer's
+toolchain. CTest installs the package into a fresh directory and builds
+independent runtime and authoring consumers. Unreal now consumes one generated
+external SDK module with Mac and Win64 layouts instead of repository source,
+CMake build-tree, or vcpkg-relative paths. The Mac staging and Unreal Editor
+build pass; the Win64 rule and packaged plug-in still require validation.
 
 ### Validation gates
 

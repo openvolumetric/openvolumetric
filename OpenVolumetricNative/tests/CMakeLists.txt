@@ -3,6 +3,7 @@ find_package(doctest CONFIG REQUIRED)
 add_executable(OpenVolumetricCoreTests
   CoreTests.cpp
 )
+openvolumetric_apply_build_options(OpenVolumetricCoreTests)
 
 target_link_libraries(OpenVolumetricCoreTests
   PRIVATE
@@ -31,6 +32,7 @@ if(Python3_Interpreter_FOUND)
   add_executable(OpenVolumetricHttpTransportTests
     HttpTransportTests.cpp
   )
+  openvolumetric_apply_build_options(OpenVolumetricHttpTransportTests)
   target_link_libraries(OpenVolumetricHttpTransportTests
     PRIVATE
       OpenVolumetricCore
@@ -53,6 +55,7 @@ endif()
 add_executable(OpenVolumetricFixtureGenerator EXCLUDE_FROM_ALL
   FixtureGenerator.cpp
 )
+openvolumetric_apply_build_options(OpenVolumetricFixtureGenerator)
 
 target_link_libraries(OpenVolumetricFixtureGenerator
   PRIVATE

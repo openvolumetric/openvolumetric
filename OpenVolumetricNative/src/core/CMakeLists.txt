@@ -26,26 +26,30 @@ add_library(OpenVolumetricCore STATIC
   media/AVDecoderFFMPEG.cpp
   support/Logger.cpp
 )
+add_library(OpenVolumetric::Core ALIAS OpenVolumetricCore)
 
 set_target_properties(OpenVolumetricCore PROPERTIES
+  EXPORT_NAME Core
   POSITION_INDEPENDENT_CODE ON
 )
+openvolumetric_apply_build_options(OpenVolumetricCore)
 
 target_include_directories(OpenVolumetricCore
   PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}/decoding"
-    "${CMAKE_CURRENT_SOURCE_DIR}/adaptive"
-    "${CMAKE_CURRENT_SOURCE_DIR}/container"
-    "${CMAKE_CURRENT_SOURCE_DIR}/geometry"
-    "${CMAKE_CURRENT_SOURCE_DIR}/io"
-    "${CMAKE_CURRENT_SOURCE_DIR}/media"
-    "${CMAKE_CURRENT_SOURCE_DIR}/support"
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/decoding>"
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/adaptive>"
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/container>"
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/geometry>"
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/io>"
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/media>"
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/support>"
+    "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/OpenVolumetric>"
 )
 
 target_link_libraries(OpenVolumetricCore
   PUBLIC
-    OpenVolumetricBuildOptions
-    OpenVolumetricFFmpeg
+    "$<BUILD_INTERFACE:OpenVolumetricFFmpeg>"
+    "$<INSTALL_INTERFACE:OpenVolumetric::FFmpeg>"
     CURL::libcurl
     draco::draco
     nlohmann_json::nlohmann_json
@@ -65,6 +69,35 @@ target_include_directories(OpenVolumetricCoreHeaderCheck PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/io"
   "${CMAKE_CURRENT_SOURCE_DIR}/media"
 )
-target_link_libraries(OpenVolumetricCoreHeaderCheck PRIVATE
-  OpenVolumetricBuildOptions
+openvolumetric_apply_build_options(OpenVolumetricCoreHeaderCheck)
+
+# Only engine-neutral façades and contracts form the installed SDK. Concrete
+# FFmpeg, Draco, transport, queue, and fragmented-index headers remain private.
+set(OPENVOLUMETRIC_PUBLIC_HEADERS
+  adaptive/AdaptiveManifest.h
+  adaptive/AdaptivePolicy.h
+  adaptive/AdaptiveSelection.h
+  container/GeometryPacket.h
+  container/IVolumetricContainer.h
+  container/TimedFrame.h
+  decoding/AdaptivePlayerCoordinator.h
+  decoding/IAVDecoder.h
+  decoding/IDecoder.h
+  decoding/IGeometryDecoder.h
+  decoding/OpenVolumetricPlayer.h
+  geometry/Mesh.h
+  io/IByteSource.h
+  media/Stream.h
+  support/Logger.h
+)
+
+install(TARGETS
+  OpenVolumetricCore
+  EXPORT OpenVolumetricTargets
+  ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+  LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+  RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+)
+install(FILES ${OPENVOLUMETRIC_PUBLIC_HEADERS}
+  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/OpenVolumetric"
 )

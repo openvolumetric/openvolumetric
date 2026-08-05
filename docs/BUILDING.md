@@ -104,6 +104,15 @@ The complete automated and manual acceptance procedure is in
 [TESTING.md](TESTING.md). Clang and GCC hosts can run ASan and UBSan through
 the `vcpkg-sanitizers` configure, build, and test presets.
 
+## Installable C++ SDK
+
+The desktop build installs `OpenVolumetric::Core` and
+`OpenVolumetric::Authoring` CMake package targets with a deliberate public
+header set. A clean-consumer CTest verifies both installed targets without
+including repository source directories. Installation, consumption, and
+Unreal staging are documented in [SDK.md](SDK.md). Supported and pending
+configurations are recorded in [COMPATIBILITY.md](COMPATIBILITY.md).
+
 ### macOS
 
 The macOS build produces the Metal Unity runtime and the authoring library:
@@ -164,15 +173,9 @@ platform trusted-certificate directory.
 
 ## Unreal Engine 5.8 on macOS
 
-The current Unreal modules link an ARM64 macOS 14 native build from:
-
-```text
-OpenVolumetricNative/build/unreal-host-macos14
-```
-
-Configure that native tree with the repository's vcpkg toolchain and
-`arm64-osx-openvolumetric` overlay triplet, then build it before compiling the
-Unreal project.
+Configure an ARM64 macOS 14 SDK with the repository's vcpkg toolchain and
+`arm64-osx-openvolumetric` overlay triplet, then install and stage it before
+compiling the Unreal project.
 
 ```sh
 cmake -S OpenVolumetricNative \
@@ -183,9 +186,15 @@ cmake -S OpenVolumetricNative \
   -DVCPKG_TARGET_TRIPLET=arm64-osx-openvolumetric \
   -DVCPKG_OVERLAY_TRIPLETS=OpenVolumetricNative/triplets \
   -DBUILD_TESTING=OFF \
-  -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
+  -DCMAKE_INSTALL_PREFIX=/tmp/openvolumetric-unreal-sdk
 
 cmake --build OpenVolumetricNative/build/unreal-host-macos14
+cmake --install OpenVolumetricNative/build/unreal-host-macos14
+python3 tools/stage_unreal_sdk.py \
+  --sdk /tmp/openvolumetric-unreal-sdk \
+  --dependencies OpenVolumetricNative/build/unreal-host-macos14/vcpkg_installed/arm64-osx-openvolumetric \
+  --platform Mac
 ```
 
 Build the Editor target with UnrealBuildTool:
@@ -200,8 +209,10 @@ Build the Editor target with UnrealBuildTool:
 Alternatively, open `Unreal/Unreal.uproject` in Unreal Engine 5.8 and allow
 the Editor to compile the modules.
 
-The current Unreal build has been validated in the macOS Editor. Packaged
-dependency staging and packaged-build validation remain outstanding.
+The Unreal modules consume only this staged SDK, not the repository source or
+CMake build tree. The same build rules accept a staged Win64 SDK. The macOS
+Editor build is validated; Win64 and packaged-build validation remain
+outstanding.
 
 ## Authoring dependency
 

@@ -1,0 +1,56 @@
+set(test_root "@CMAKE_CURRENT_BINARY_DIR@/_installed_consumer")
+set(sdk_root "${test_root}/sdk")
+set(build_root "${test_root}/build")
+
+file(REMOVE_RECURSE "${test_root}")
+
+execute_process(
+  COMMAND "@CMAKE_COMMAND@" --install "@CMAKE_BINARY_DIR@"
+    --prefix "${sdk_root}"
+  RESULT_VARIABLE install_result
+)
+if(NOT install_result EQUAL 0)
+  message(FATAL_ERROR "OpenVolumetric SDK installation failed")
+endif()
+
+set(configure_command
+  "@CMAKE_COMMAND@"
+  -S "@CMAKE_CURRENT_SOURCE_DIR@/tests/consumer"
+  -B "${build_root}"
+  -G "@CMAKE_GENERATOR@"
+  "-DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@"
+  "-DCMAKE_PREFIX_PATH=${sdk_root}"
+)
+if(NOT "@CMAKE_MAKE_PROGRAM@" STREQUAL "")
+  list(APPEND configure_command
+    "-DCMAKE_MAKE_PROGRAM=@CMAKE_MAKE_PROGRAM@")
+endif()
+if(NOT "@CMAKE_TOOLCHAIN_FILE@" STREQUAL "")
+  list(APPEND configure_command
+    "-DCMAKE_TOOLCHAIN_FILE=@CMAKE_TOOLCHAIN_FILE@")
+endif()
+if(NOT "@VCPKG_INSTALLED_DIR@" STREQUAL "")
+  list(APPEND configure_command
+    "-DVCPKG_INSTALLED_DIR=@VCPKG_INSTALLED_DIR@"
+    "-DVCPKG_MANIFEST_MODE=OFF")
+endif()
+if(NOT "@VCPKG_TARGET_TRIPLET@" STREQUAL "")
+  list(APPEND configure_command
+    "-DVCPKG_TARGET_TRIPLET=@VCPKG_TARGET_TRIPLET@")
+endif()
+
+execute_process(
+  COMMAND ${configure_command}
+  RESULT_VARIABLE configure_result
+)
+if(NOT configure_result EQUAL 0)
+  message(FATAL_ERROR "Installed OpenVolumetric consumer configuration failed")
+endif()
+
+execute_process(
+  COMMAND "@CMAKE_COMMAND@" --build "${build_root}"
+  RESULT_VARIABLE build_result
+)
+if(NOT build_result EQUAL 0)
+  message(FATAL_ERROR "Installed OpenVolumetric consumer build failed")
+endif()

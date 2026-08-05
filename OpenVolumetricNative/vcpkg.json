@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
-  "name": "volumetric-video-native-plugin",
+  "name": "openvolumetric-native",
   "version-string": "0.1.0",
   "description": "Native decoding and authoring dependencies for OpenVolumetric engine integrations.",
   "builtin-baseline": "40f3c709db80acf154ac4b17a1f83c564ebd022e",
