@@ -30,6 +30,9 @@ jobs:
           fetch-depth: 0
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
+      - name: Install Linux build tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y nasm
       - name: Bootstrap vcpkg
         if: runner.os != 'Windows'
         shell: bash
@@ -63,6 +66,8 @@ jobs:
           ref: 40f3c709db80acf154ac4b17a1f83c564ebd022e
           path: vcpkg
           fetch-depth: 0
+      - name: Install Linux build tools
+        run: sudo apt-get update && sudo apt-get install -y nasm
       - run: ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
       - name: Configure sanitizers
         run: >-
