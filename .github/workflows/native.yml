@@ -27,6 +27,7 @@ jobs:
           repository: microsoft/vcpkg
           ref: 40f3c709db80acf154ac4b17a1f83c564ebd022e
           path: vcpkg
+          fetch-depth: 0
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
       - name: Bootstrap vcpkg
@@ -61,6 +62,7 @@ jobs:
           repository: microsoft/vcpkg
           ref: 40f3c709db80acf154ac4b17a1f83c564ebd022e
           path: vcpkg
+          fetch-depth: 0
       - run: ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
       - name: Configure sanitizers
         run: >-
@@ -92,6 +94,7 @@ jobs:
           repository: microsoft/vcpkg
           ref: 40f3c709db80acf154ac4b17a1f83c564ebd022e
           path: vcpkg
+          fetch-depth: 0
       - uses: android-actions/setup-android@v3
       - run: sdkmanager "ndk;27.2.12479018"
       - run: ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
