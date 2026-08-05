@@ -126,9 +126,12 @@ int TextureD3D11::init(void* handler, unsigned int width, unsigned int height)
 
 void TextureD3D11::get_resource_pointers(void*& ptry, void*& ptru, void*& ptrv)
 {
-	if (m_device == nullptr || ych == nullptr || uch == nullptr || vch == nullptr)
+	ptry = nullptr;
+	ptru = nullptr;
+	ptrv = nullptr;
+	if (m_device == nullptr)
 	{
-		LOG("TextureD3D11::upload - invalid texture state or source planes");
+		LOG("TextureD3D11::get_resource_pointers - texture is not initialized");
 		return;
 	}
 
@@ -139,8 +142,9 @@ void TextureD3D11::get_resource_pointers(void*& ptry, void*& ptru, void*& ptrv)
 
 void TextureD3D11::upload(unsigned char* ych, unsigned char* uch, unsigned char* vch)
 {
-	if (m_device == nullptr)
+	if (m_device == nullptr || ych == nullptr || uch == nullptr || vch == nullptr)
 	{
+		LOG("TextureD3D11::upload - invalid texture state or source planes");
 		return;
 	}
 

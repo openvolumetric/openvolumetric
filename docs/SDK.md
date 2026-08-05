@@ -52,7 +52,30 @@ python3 tools/stage_unreal_sdk.py \
   --platform Mac
 ```
 
-Use `--platform Win64` for Windows. The generated layout is:
+For Win64, build the SDK and dependencies with vcpkg's
+`x64-windows-static-md` triplet. It produces static archives while retaining
+the dynamic MSVC runtime used by Unreal. Run the commands from one Visual
+Studio x64 Developer Prompt so CMake, vcpkg, and Unreal use a compatible MSVC
+toolset. Then stage with `--platform Win64`:
+
+```powershell
+cmake -S OpenVolumetricNative `
+  -B OpenVolumetricNative/build/unreal-host-win64 `
+  -G Ninja `
+  -DCMAKE_BUILD_TYPE=Release `
+  -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
+  -DVCPKG_TARGET_TRIPLET=x64-windows-static-md `
+  -DBUILD_TESTING=OFF `
+  -DCMAKE_INSTALL_PREFIX=OpenVolumetricNative/build/sdk-win64
+cmake --build OpenVolumetricNative/build/unreal-host-win64
+cmake --install OpenVolumetricNative/build/unreal-host-win64
+python tools/stage_unreal_sdk.py `
+  --sdk OpenVolumetricNative/build/sdk-win64 `
+  --dependencies OpenVolumetricNative/build/unreal-host-win64/vcpkg_installed/x64-windows-static-md `
+  --platform Win64
+```
+
+The generated layout is:
 
 ```text
 Unreal/Plugins/OpenVolumetric/Source/ThirdParty/OpenVolumetricSDK/
@@ -73,3 +96,9 @@ The staged libraries must use the same architecture, C++ runtime, deployment
 target, and build configuration as Unreal. On macOS, build both OpenVolumetric
 and its vcpkg dependencies with the repository's
 `arm64-osx-openvolumetric` triplet and a macOS 14 deployment target.
+On Windows, do not use `x64-windows-static`: its static MSVC runtime is not
+compatible with Unreal's dynamic runtime.
+
+Win64 staging and independent runtime and authoring consumer linkage are
+validated with `x64-windows-static-md`. Unreal Editor module compilation still
+requires an installed compatible Unreal Engine toolchain.

@@ -138,6 +138,12 @@ builds cleanly with warnings treated as errors. Launch Unity with
 `-force-d3d12` to select it without changing the project's saved graphics API
 order.
 
+The staged Unreal Win64 SDK must use vcpkg's `x64-windows-static-md` triplet:
+it combines static dependency archives with Unreal's dynamic MSVC runtime.
+Configure it from the same Visual Studio x64 Developer Prompt used for the
+OpenVolumetric build so vcpkg dependencies do not mix MSVC toolsets.
+See [SDK.md](SDK.md) for the complete install and staging commands.
+
 ## Quest/Android ARM64
 
 Install Android Build Support through Unity Hub and use the SDK, OpenJDK,
@@ -210,9 +216,9 @@ Alternatively, open `Unreal/Unreal.uproject` in Unreal Engine 5.8 and allow
 the Editor to compile the modules.
 
 The Unreal modules consume only this staged SDK, not the repository source or
-CMake build tree. The same build rules accept a staged Win64 SDK. The macOS
-Editor build is validated; Win64 and packaged-build validation remain
-outstanding.
+CMake build tree. The macOS Editor build and Win64 staged-SDK creation and
+independent linkage are validated. A Win64 Unreal Editor build and packaged
+application validation remain outstanding.
 
 ## Authoring dependency
 

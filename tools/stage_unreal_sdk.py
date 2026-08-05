@@ -14,9 +14,17 @@ MAC_LIBRARIES = (
     "libdraco.a", "libcurl.a", "libssl.a", "libcrypto.a", "libz.a",
 )
 WINDOWS_LIBRARIES = (
-    "OpenVolumetricCore.lib", "OpenVolumetricAuthoringCore.lib",
-    "avformat.lib", "avcodec.lib", "swresample.lib", "avutil.lib",
-    "draco.lib", "libcurl.lib", "libssl.lib", "libcrypto.lib", "zlib.lib",
+    ("OpenVolumetricCore.lib", "OpenVolumetricCore.lib"),
+    ("OpenVolumetricAuthoringCore.lib", "OpenVolumetricAuthoringCore.lib"),
+    ("avformat.lib", "avformat.lib"),
+    ("avcodec.lib", "avcodec.lib"),
+    ("swresample.lib", "swresample.lib"),
+    ("avutil.lib", "avutil.lib"),
+    ("draco.lib", "draco.lib"),
+    ("libcurl.lib", "libcurl.lib"),
+    # The static vcpkg zlib archive is named zs.lib. Keep the staged name
+    # consumed by the Unreal module stable.
+    ("zlib.lib", "zs.lib"),
 )
 
 
@@ -51,14 +59,18 @@ def main() -> int:
     output_libraries.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source_headers, output_headers, dirs_exist_ok=True)
 
-    libraries = MAC_LIBRARIES if arguments.platform == "Mac" else WINDOWS_LIBRARIES
-    for filename in libraries:
-        sdk_archive = arguments.sdk / "lib" / filename
-        dependency_archive = arguments.dependencies / "lib" / filename
+    libraries = (
+        tuple((filename, filename) for filename in MAC_LIBRARIES)
+        if arguments.platform == "Mac" else WINDOWS_LIBRARIES
+    )
+    for staged_filename, source_filename in libraries:
+        sdk_archive = arguments.sdk / "lib" / source_filename
+        dependency_archive = arguments.dependencies / "lib" / source_filename
         source = sdk_archive if sdk_archive.is_file() else dependency_archive
         if not source.is_file():
-            raise SystemExit(f"Required Unreal SDK archive not found: {filename}")
-        shutil.copy2(source, output_libraries / filename)
+            raise SystemExit(
+                f"Required Unreal SDK archive not found: {source_filename}")
+        shutil.copy2(source, output_libraries / staged_filename)
 
     print(f"Staged OpenVolumetric Unreal SDK at {arguments.output.resolve()}")
     return 0
