@@ -179,7 +179,7 @@ bool load_canonical_obj(
 	{
 		const draco::Mesh::Face& face =
 			mesh.face(draco::FaceIndex(face_index));
-		for (const draco::PointIndex point : face)
+		for (const draco::PointIndex& point : face)
 		{
 			const draco::AttributeValueIndex position_index =
 				positions->mapped_index(point);
