@@ -17,6 +17,13 @@ RESOURCE_SIZE = 128 * 1024
 RESOURCE = bytes(index % 251 for index in range(RESOURCE_SIZE))
 
 
+class TestHttpServer(ThreadingHTTPServer):
+    """HTTP server whose request threads cannot stall test-process cleanup."""
+
+    daemon_threads = True
+    block_on_close = False
+
+
 class RangeHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     recover_requests = 0
@@ -81,25 +88,47 @@ def main() -> int:
               file=sys.stderr)
         return 2
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), RangeHandler)
+    server = TestHttpServer(("127.0.0.1", 0), RangeHandler)
     worker = threading.Thread(target=server.serve_forever, daemon=True)
     worker.start()
     environment = os.environ.copy()
     environment["NO_PROXY"] = "127.0.0.1,localhost"
     environment["no_proxy"] = "127.0.0.1,localhost"
     base_url = f"http://127.0.0.1:{server.server_port}"
+    print(f"HTTP transport harness listening at {base_url}", flush=True)
     try:
-        completed = subprocess.run(
-            [str(executable), base_url],
-            env=environment,
-            timeout=20,
-            check=False,
+        try:
+            completed = subprocess.run(
+                [str(executable), base_url],
+                env=environment,
+                timeout=20,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            print(
+                "Native HTTP transport test exceeded its 20-second timeout.",
+                file=sys.stderr,
+                flush=True,
+            )
+            return 124
+        print(
+            f"Native HTTP transport test exited with {completed.returncode}.",
+            flush=True,
         )
         return completed.returncode
     finally:
+        print("Stopping HTTP transport test server.", flush=True)
         server.shutdown()
         server.server_close()
         worker.join(timeout=2)
+        if worker.is_alive():
+            print(
+                "HTTP transport server thread did not stop within 2 seconds.",
+                file=sys.stderr,
+                flush=True,
+            )
+        else:
+            print("HTTP transport test server stopped.", flush=True)
 
 
 if __name__ == "__main__":

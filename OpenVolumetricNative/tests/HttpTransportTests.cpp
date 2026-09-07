@@ -128,6 +128,18 @@ bool test_cancellation(const std::string& base_url)
 		elapsed < 2.0;
 }
 
+bool run_test_case(
+	const char* name,
+	bool (*test_case)(const std::string&),
+	const std::string& base_url)
+{
+	std::cerr << "[ RUN      ] " << name << '\n' << std::flush;
+	const bool passed = test_case(base_url);
+	std::cerr << (passed ? "[       OK ] " : "[  FAILED  ] ")
+		<< name << '\n' << std::flush;
+	return passed;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -138,30 +150,11 @@ int main(int argc, char** argv)
 		return 2;
 	}
 	const std::string base_url = argv[1];
-	if (!test_normal_ranges(base_url))
-	{
-		std::cerr << "Normal HTTP range test failed.\n";
+	if (!run_test_case("normal ranges", &test_normal_ranges, base_url) ||
+		!run_test_case("retry recovery", &test_retry_recovery, base_url) ||
+		!run_test_case("retry exhaustion", &test_retry_exhaustion, base_url) ||
+		!run_test_case("truncated ranges", &test_truncated_ranges, base_url) ||
+		!run_test_case("cancellation", &test_cancellation, base_url))
 		return 1;
-	}
-	if (!test_retry_recovery(base_url))
-	{
-		std::cerr << "HTTP retry recovery test failed.\n";
-		return 1;
-	}
-	if (!test_retry_exhaustion(base_url))
-	{
-		std::cerr << "HTTP retry exhaustion test failed.\n";
-		return 1;
-	}
-	if (!test_truncated_ranges(base_url))
-	{
-		std::cerr << "HTTP truncated-range test failed.\n";
-		return 1;
-	}
-	if (!test_cancellation(base_url))
-	{
-		std::cerr << "HTTP cancellation test failed.\n";
-		return 1;
-	}
 	return 0;
 }
