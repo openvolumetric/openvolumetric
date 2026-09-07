@@ -192,7 +192,12 @@ void FFmpegMp4VolumetricContainer::close()
 	if (m_context != nullptr)
 		avformat_close_input(&m_context);
 	if (m_io_context != nullptr)
+	{
+		// libavformat may replace a custom AVIOContext's original buffer.
+		// Release the current buffer explicitly before freeing the context.
+		av_freep(&m_io_context->buffer);
 		avio_context_free(&m_io_context);
+	}
 	m_source.reset();
 	m_stream_indices = {{-1, -1, -1}};
 	m_duration_seconds = 0.0;

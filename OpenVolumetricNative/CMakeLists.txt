@@ -59,24 +59,29 @@ endif()
 
 if(BUILD_TESTING AND NOT ANDROID)
   add_subdirectory(tests)
-  # Values substituted into the CMake script must use forward slashes. A
-  # backslash path such as C:\Program Files is otherwise parsed as escapes.
-  file(TO_CMAKE_PATH "${CMAKE_MAKE_PROGRAM}"
-    OPENVOLUMETRIC_CONSUMER_MAKE_PROGRAM)
-  file(TO_CMAKE_PATH "${CMAKE_TOOLCHAIN_FILE}"
-    OPENVOLUMETRIC_CONSUMER_TOOLCHAIN_FILE)
-  file(TO_CMAKE_PATH "${VCPKG_INSTALLED_DIR}"
-    OPENVOLUMETRIC_CONSUMER_VCPKG_INSTALLED_DIR)
-  configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/tests/InstalledConsumerTest.cmake.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/InstalledConsumerTest.cmake"
-    @ONLY
-  )
-  add_test(
-    NAME OpenVolumetricInstalledConsumerTest
-    COMMAND "${CMAKE_COMMAND}" -P
+  # An installed static library built with sanitizers requires its consumer
+  # to link the sanitizer runtimes. Keep that private instrumentation out of
+  # the exported package interface; normal desktop CI validates installation.
+  if(NOT OPENVOLUMETRIC_ENABLE_SANITIZERS)
+    # Values substituted into the CMake script must use forward slashes. A
+    # backslash path such as C:\Program Files is otherwise parsed as escapes.
+    file(TO_CMAKE_PATH "${CMAKE_MAKE_PROGRAM}"
+      OPENVOLUMETRIC_CONSUMER_MAKE_PROGRAM)
+    file(TO_CMAKE_PATH "${CMAKE_TOOLCHAIN_FILE}"
+      OPENVOLUMETRIC_CONSUMER_TOOLCHAIN_FILE)
+    file(TO_CMAKE_PATH "${VCPKG_INSTALLED_DIR}"
+      OPENVOLUMETRIC_CONSUMER_VCPKG_INSTALLED_DIR)
+    configure_file(
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/InstalledConsumerTest.cmake.in"
       "${CMAKE_CURRENT_BINARY_DIR}/InstalledConsumerTest.cmake"
-  )
+      @ONLY
+    )
+    add_test(
+      NAME OpenVolumetricInstalledConsumerTest
+      COMMAND "${CMAKE_COMMAND}" -P
+        "${CMAKE_CURRENT_BINARY_DIR}/InstalledConsumerTest.cmake"
+    )
+  endif()
 endif()
 
 install(EXPORT OpenVolumetricTargets
