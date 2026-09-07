@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from socketserver import TCPServer
 
 
 RESOURCE_SIZE = 128 * 1024
@@ -22,6 +23,12 @@ class TestHttpServer(ThreadingHTTPServer):
 
     daemon_threads = True
     block_on_close = False
+
+    def server_bind(self) -> None:
+        # HTTPServer.server_bind() resolves the bound address with
+        # getfqdn(). Avoid that external DNS dependency in this local test.
+        TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
 
 
 class RangeHandler(BaseHTTPRequestHandler):
@@ -88,6 +95,7 @@ def main() -> int:
               file=sys.stderr)
         return 2
 
+    print("Starting HTTP transport test server.", flush=True)
     server = TestHttpServer(("127.0.0.1", 0), RangeHandler)
     worker = threading.Thread(target=server.serve_forever, daemon=True)
     worker.start()
