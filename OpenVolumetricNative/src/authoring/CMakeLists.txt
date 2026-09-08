@@ -41,13 +41,17 @@ if(WIN32 OR APPLE)
       PRIVATE
         OPENVOLUMETRIC_AUTHORING_EXPORTS
     )
+    set(OPENVOLUMETRIC_UNITY_WINDOWS_PLUGIN_DIRECTORY
+      "${PROJECT_SOURCE_DIR}/../Unity/Assets/Plugins/OpenVolumetric/x64")
+    file(MAKE_DIRECTORY
+      "${OPENVOLUMETRIC_UNITY_WINDOWS_PLUGIN_DIRECTORY}")
     set_target_properties(OpenVolumetricAuthoring PROPERTIES
       RUNTIME_OUTPUT_DIRECTORY
-        "${PROJECT_SOURCE_DIR}/../Unity/Assets/Plugins/OpenVolumetric/x64"
+        "${OPENVOLUMETRIC_UNITY_WINDOWS_PLUGIN_DIRECTORY}"
     )
     configure_file(
-      "${CMAKE_CURRENT_SOURCE_DIR}/OpenVolumetricAuthoring.dll.meta"
-      "${PROJECT_SOURCE_DIR}/../Unity/Assets/Plugins/OpenVolumetric/x64/OpenVolumetricAuthoring.dll.meta"
+      "${CMAKE_CURRENT_SOURCE_DIR}/OpenVolumetricAuthoring.dll.meta.in"
+      "${OPENVOLUMETRIC_UNITY_WINDOWS_PLUGIN_DIRECTORY}/OpenVolumetricAuthoring.dll.meta"
       COPYONLY
     )
   elseif(APPLE)
