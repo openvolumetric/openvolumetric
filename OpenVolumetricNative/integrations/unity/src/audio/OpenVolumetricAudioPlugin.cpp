@@ -85,7 +85,10 @@ UNITY_AUDIODSP_RESULT UNITY_AUDIODSP_CALLBACK process_effect(
 		length,
 		output_channels,
 		state->currdsptick,
-		state->samplerate);
+		state->samplerate,
+		(state->flags & UnityAudioEffectStateFlags_IsPaused) != 0);
+	if ((state->flags & UnityAudioEffectStateFlags_IsPaused) != 0)
+		return UNITY_AUDIODSP_OK;
 	spatialize_stereo(
 		state->spatializerdata,
 		output,

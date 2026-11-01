@@ -22,7 +22,8 @@ void process_dsp_audio(
 	unsigned int frame_count,
 	int channel_count,
 	std::uint64_t block_start_tick,
-	std::uint32_t sample_rate);
+	std::uint32_t sample_rate,
+	bool paused);
 
 /// Returns the media timestamp published for the latest mixer block.
 double dsp_audio_time();

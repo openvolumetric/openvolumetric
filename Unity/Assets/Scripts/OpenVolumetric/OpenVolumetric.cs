@@ -136,6 +136,9 @@ public class OpenVolumetric : MonoBehaviour
     private double m_adaptive_smoothed_throughput_bps;
     private readonly OpenVolumetricAdaptiveMetrics m_adaptive_metrics =
         new OpenVolumetricAdaptiveMetrics();
+#if UNITY_EDITOR
+    private bool m_resume_after_editor_pause;
+#endif
 
     /// <summary>Current managed playback state.</summary>
     public PlaybackState State { get { return m_playback_state; } }
@@ -206,6 +209,65 @@ public class OpenVolumetric : MonoBehaviour
         centroid = Vector3.zero;
         return false;
     }
+
+#if UNITY_EDITOR
+    /// <summary>
+    /// Subscribes to the Unity Editor pause control while this component is
+    /// active. Player builds do not compile or reference UnityEditor APIs.
+    /// </summary>
+    private void OnEnable()
+    {
+        UnityEditor.EditorApplication.pauseStateChanged +=
+            OnEditorPauseStateChanged;
+    }
+
+    /// <summary>Removes the editor callback when the component is disabled.</summary>
+    private void OnDisable()
+    {
+        UnityEditor.EditorApplication.pauseStateChanged -=
+            OnEditorPauseStateChanged;
+    }
+
+    /// <summary>
+    /// Routes the Editor toolbar pause through the same synchronized playback
+    /// controls used by the runtime UI. This stops native DSP consumption
+    /// before game updates freeze and creates a fresh shared schedule on resume.
+    /// </summary>
+    private void OnEditorPauseStateChanged(
+        UnityEditor.PauseState pauseState)
+    {
+        if(pauseState == UnityEditor.PauseState.Paused)
+        {
+            m_resume_after_editor_pause =
+                m_playback_state == PlaybackState.PLAYING ||
+                m_playback_state == PlaybackState.SCHEDULED;
+            if(m_resume_after_editor_pause)
+            {
+                PausePlayback();
+            }
+            return;
+        }
+
+        if(m_resume_after_editor_pause)
+        {
+            m_resume_after_editor_pause = false;
+            // The mixer can finish part of its current block while the Editor
+            // enters pause, leaving its PCM read head slightly beyond the
+            // frozen visual position. Re-seek all streams as one decoder
+            // generation so normal presentation and audio preroll establish
+            // an exact common resume point.
+            double resumePosition = m_playback_position;
+            if(!Seek(resumePosition))
+            {
+                Debug.LogError(
+                    "OpenVolumetric - failed to synchronize Editor resume");
+                return;
+            }
+            Play();
+        }
+    }
+#endif
+
     /// <summary>Current playback position in seconds.</summary>
     public double CurrentTime
     {

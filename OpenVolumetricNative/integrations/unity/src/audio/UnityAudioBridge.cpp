@@ -20,6 +20,8 @@ std::atomic<double> g_media_start_time{0.0};
 std::atomic<double> g_audio_time{-1.0};
 std::atomic<bool> g_active{false};
 std::atomic<std::uint32_t> g_media_sample_rate{0};
+std::atomic<bool> g_paused{false};
+std::atomic<std::uint64_t> g_pause_start_tick{0};
 
 // The bridge currently permits one DSP consumer, so its sample-rate converter
 // can retain state here without synchronization. Scheduling disables the
@@ -43,6 +45,8 @@ void schedule_dsp_audio(
 	g_start_tick.store(dsp_start_tick, std::memory_order_release);
 	g_media_start_time.store(media_start_time, std::memory_order_release);
 	g_audio_time.store(media_start_time, std::memory_order_release);
+	g_paused.store(false, std::memory_order_release);
+	g_pause_start_tick.store(0, std::memory_order_release);
 	g_media_sample_rate.store(
 		player != nullptr
 			? static_cast<std::uint32_t>(
@@ -67,6 +71,8 @@ void stop_dsp_audio(UnityOpenVolumetricPlayer* player)
 	g_resample_frames = 0;
 	g_resample_position = 0.0;
 	g_audio_time.store(-1.0, std::memory_order_release);
+	g_paused.store(false, std::memory_order_release);
+	g_pause_start_tick.store(0, std::memory_order_release);
 }
 
 void process_dsp_audio(
@@ -74,7 +80,8 @@ void process_dsp_audio(
 	unsigned int frame_count,
 	int channel_count,
 	std::uint64_t block_start_tick,
-	std::uint32_t sample_rate)
+	std::uint32_t sample_rate,
+	bool paused)
 {
 	const std::size_t sample_count =
 		static_cast<std::size_t>(frame_count) *
@@ -86,6 +93,26 @@ void process_dsp_audio(
 		channel_count != 2 ||
 		sample_rate == 0)
 		return;
+
+	// Unity keeps its audio thread alive when the Editor pause button freezes
+	// game updates. Do not consume decoded PCM while visuals are frozen. On the
+	// first block after resume, move the scheduled DSP origin forward by the
+	// paused tick interval so audio time continues from the held presentation.
+	if (paused)
+	{
+		if (!g_paused.exchange(true, std::memory_order_acq_rel))
+			g_pause_start_tick.store(block_start_tick, std::memory_order_release);
+		return;
+	}
+	if (g_paused.exchange(false, std::memory_order_acq_rel))
+	{
+		const std::uint64_t pause_start =
+			g_pause_start_tick.exchange(0, std::memory_order_acq_rel);
+		if (block_start_tick > pause_start)
+			g_start_tick.fetch_add(
+				block_start_tick - pause_start,
+				std::memory_order_acq_rel);
+	}
 
 	const std::uint64_t start_tick =
 		g_start_tick.load(std::memory_order_acquire);
