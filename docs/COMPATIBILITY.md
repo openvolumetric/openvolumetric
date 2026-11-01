@@ -30,6 +30,7 @@ OpenVolumetric. Mixing archives from unrelated vcpkg triplets is unsupported.
 | Unity 6.0/6000.3 | Android ARM64 API 29+, Vulkan | Native build and Quest 2/3S playback validated; release APK and sustained Quest 3S matrix remain. |
 | Unreal Engine 5.8 | macOS ARM64 14+, Metal/RHI | Editor runtime, authoring, HTTP/adaptive playback, and staged SDK linkage validated. |
 | Unreal Engine 5.8 | Windows x64 | Staged SDK rules are implemented; clean compilation and packaged playback remain unvalidated. |
+| Foundry Nuke 17.1v1 | macOS ARM64 | Combined local-MP4 reader, synchronized geometry/texture, random access, scrubbing, frame holding, script persistence, and Write workflow validated; broader Phase 6 lifecycle testing remains. |
 | Native core | Linux x64 | Supported through the development container; clean CI/container validation remains outstanding. |
 
 Unreal Android/Quest and other Unreal RHIs are not current release targets.

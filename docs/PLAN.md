@@ -1,6 +1,6 @@
 # Open Volumetric Development Plan
 
-Last updated: 4 August 2026
+Last updated: 9 September 2026
 
 ## Current objective
 
@@ -414,6 +414,93 @@ recovery, authoring, and validation design is recorded in
       equivalent manifests.
 - [ ] Evaluate MPEG-DASH as the initial manifest/delivery model and document
       custom `vvge` signaling and interoperability limits.
+      This is an additive compatibility experiment: the established
+      `manifest.json`, complete fragmented-MP4 representations, and runtime
+      adaptation path remain supported until the DASH work passes its exit
+      criteria.
+
+### Milestone 13 MPEG-DASH compatibility plan
+
+#### Phase A: Profile and signaling design
+
+- [ ] Select the smallest on-demand DASH profile capable of describing the
+      existing `low.mp4` and `high.mp4` fragmented representations through
+      HTTP byte ranges; do not split them into `.m4s` files in this phase.
+- [ ] Define how an OpenVolumetric representation and its `vvge` sample entry
+      are identified in an MPD without claiming compatibility with ordinary
+      DASH video decoders.
+- [ ] Map MPD concepts (`Period`, `AdaptationSet`, `Representation`,
+      `BaseURL`, bandwidth, dimensions, codecs, and segment/index ranges) onto
+      the existing engine-neutral adaptive presentation model.
+- [ ] Document the supported DASH subset, unsupported live/DRM/multi-period
+      features, and expected behaviour in generic DASH tooling.
+
+#### Phase B: Read-only MPD prototype
+
+- [ ] Add a DASH manifest adapter alongside `AdaptiveManifestParser`; keep XML
+      parsing and DASH-specific types outside playback and engine adapters.
+- [ ] Resolve relative and absolute representation URLs using the same source
+      resolution rules as `manifest.json`.
+- [ ] Reject unsupported or ambiguous MPDs with actionable errors rather than
+      silently selecting an incorrect representation.
+- [ ] Add small committed MPD fixtures and parser tests covering valid input,
+      malformed XML, unsupported profiles, missing attributes, URL resolution,
+      and incompatible representation timelines.
+
+#### Phase C: Existing-media playback experiment
+
+- [ ] Generate a hand-authored reference MPD that points to the existing,
+      byte-identical `low.mp4` and `high.mp4` files.
+- [ ] Feed the mapped presentation into the unchanged startup selection,
+      range transport, buffering, switching, seeking, looping, recovery, and
+      synchronization pipeline.
+- [ ] Validate local and HTTP playback in Unity and Unreal before exposing MPD
+      as a normal user-facing source option.
+- [ ] Confirm that the same MP4 representation hashes are used by both the JSON
+      and MPD packages, proving that this phase changes only manifest handling.
+
+#### Phase D: Shared DASH authoring
+
+- [ ] Add MPD generation to `OpenVolumetricAuthoringCore`, using the same
+      verified representation metadata that currently writes `manifest.json`.
+- [ ] Expose `OpenVolumetric JSON`, `MPEG-DASH`, or `Both` as an authoring
+      packaging choice shared by Unity and Unreal; default to the established
+      JSON package during evaluation.
+- [ ] Validate every generated MPD by parsing it back into the internal model
+      and comparing its representation metadata and timeline with the verified
+      MP4 files.
+- [ ] Check the package with available DASH conformance and inspection tools,
+      recording limitations caused by the custom geometry track.
+
+#### Phase E: Evaluation and adoption decision
+
+- [ ] Repeat local, HTTP, seek, pause/resume, loop, network interruption,
+      forced switching, automatic switching, and long-playback tests against
+      both manifest formats on macOS, Windows, Quest, Unity, and Unreal.
+- [ ] Compare package complexity, startup time, request patterns, authoring
+      time, parser maintenance, interoperability, and failure diagnostics.
+- [ ] Decide from measured results whether DASH becomes the default, remains an
+      optional standards-compatible output, or is retained only as documented
+      future work.
+- [ ] Consider separate initialization and `.m4s` media files only after that
+      decision; they are explicitly outside the first DASH implementation.
+
+### MPEG-DASH compatibility exit criteria
+
+- [ ] Existing `manifest.json` packages and playback behaviour are unchanged.
+- [ ] One set of complete fragmented MP4 representations can be addressed by
+      either `manifest.json` or an MPD without remuxing or duplication.
+- [ ] MPD parsing and generation live behind the engine-neutral adaptive model;
+      Unity and Unreal contain no independent DASH logic.
+- [ ] Texture, geometry, and audio remain synchronized through seeking,
+      switching, looping, interruption, and recovery.
+- [ ] Custom `vvge` signaling and generic-player interoperability limitations
+      are documented and covered by fixtures.
+- [ ] DASH adoption is based on cross-platform measurements rather than
+      replacing the stable package format by assumption.
+
+### Remaining Milestone 13 work
+
 - [x] Implement startup representation selection with Auto, Low, and High
       choices in Unity and Unreal.
 - [x] Implement conservative startup throughput selection: remote Auto probes
@@ -762,6 +849,301 @@ After every phase:
 - A consumer can install and link the core, and package the supported Unity and
   Unreal integrations, without relying on the repository's internal build-tree
   layout.
+
+## Milestone 15: Foundry Nuke integration
+
+Target Foundry Nuke 17.1v1 on macOS first. Nuke evaluates arbitrary timeline
+frames on demand and may repeat, reorder, or concurrently evaluate requests;
+the integration must therefore use deterministic random access rather than a
+hidden continuously advancing game-engine playback session.
+
+The artist selects one OpenVolumetric MP4 containing texture, geometry, and
+optional audio. The proposed artist-facing `OpenVolumetricRead` toolset
+internally contains two native NDK operators because Nuke represents geometry
+and images as different output types:
+
+- `OpenVolumetricGeo`, a geometry source producing animated positions,
+  triangle indices, normals, and UVs; and
+- `OpenVolumetricTexture`, an image operator producing the synchronized
+  decoded texture.
+
+The two operators do not expose separate source inputs. The toolset owns one
+file selector, propagates that source and identical timing settings internally,
+connects the texture through Nuke's normal material workflow, and presents the
+result as one reader to artists. Shared presentations are keyed by source,
+representation, and requested frame/time so geometry and texture remain
+synchronized without decoding the same presentation twice.
+
+### Phase 1: NDK discovery and build skeleton
+
+- [x] Inspect the Nuke 17.1v1 installation and its supplied NDK examples,
+      headers, libraries, and CMake package configuration.
+- [x] Add `OpenVolumetricNative/integrations/nuke` without adding Nuke headers
+      or types to `OpenVolumetricCore`.
+- [x] Add an opt-in `OPENVOLUMETRIC_BUILD_NUKE` CMake setting and configurable
+      Nuke installation root; do not commit machine-specific absolute paths.
+- [x] Build a minimal Nuke 17.1v1 binary plug-in with Apple Clang and C++17.
+- [ ] Load the plug-in directly from its build output through `NUKE_PATH` and
+      verify creation, destruction, reload, and clean Nuke shutdown.
+
+The Phase 1 ARM64 plug-in builds cleanly against the installed Nuke 17.1v1
+NDK with warnings treated as errors, and the existing native regression suite
+passes unchanged. Automated terminal-mode loading requests a separate Nuke
+render licence that is not included in the available developer entitlement;
+the final Phase 1 checkbox therefore remains open for an interactive
+`NUKE_PATH` load, node recreation, and shutdown check.
+
+### Phase 2: Demand-driven core access
+
+- [x] Add an engine-neutral random-access façade that returns one immutable,
+      complete texture-and-mesh presentation for an exact media timestamp.
+- [x] Seek and preroll from the appropriate video and geometry access points,
+      including temporal-geometry reference reconstruction.
+- [x] Coalesce duplicate in-flight requests and cancel obsolete work when the
+      source, representation, or requested frame changes.
+- [x] Add a bounded least-recently-used presentation cache with explicit
+      ownership, memory limits, and thread contracts.
+- [x] Leave the existing clock-driven Unity and Unreal playback paths
+      unchanged.
+- [x] Test sequential, repeated, reverse, out-of-order, and concurrent frame
+      requests using deterministic native fixtures.
+
+Phase 2 adds `OpenVolumetricFrameReader` as a core-only pull façade without
+changing either game-engine adapter. Exact timestamp requests return shared
+immutable texture-and-mesh presentations. Different misses serialize around
+one decoder session, identical in-flight timestamps coalesce, and completed
+results use an explicitly byte- and count-bounded LRU. Random access starts
+with a one-frame preroll and widens toward time zero only when a temporal
+geometry packet reports a missing reference, preserving correctness for
+arbitrary reference windows. A generation boundary lets a timeline host
+discard obsolete work while retaining completed cache entries. Native tests
+cover sequential, repeated, reverse, out-of-order, concurrent, and cancelled-
+generation use; the complete native and HTTP suites pass on macOS, and the
+Nuke 17.1v1 plug-in relinks against the new façade.
+
+### Phase 3: Geometry operator
+
+- [x] Implement `OpenVolumetricGeo` using the NDK geometry reader/source APIs
+      and the installed `my3dReader` example as the compatibility reference.
+- [x] Map Nuke timeline frames, source frame rate, start frame, and frame
+      offset onto exact OpenVolumetric presentation timestamps.
+- [x] Convert owned core mesh data into Nuke geometry with an explicit and
+      tested coordinate-system, scale, triangle-winding, normal, and UV
+      mapping.
+- [x] Produce stable geometry hashes containing every source, time, quality,
+      and conversion setting that can change the output.
+- [x] Report missing, corrupt, unsupported, cancelled, and unavailable input
+      through Nuke's normal error interface.
+- [x] Validate representative frames numerically against core output and
+      visually against the Unity and Unreal integrations.
+
+Phase 3 implements demand-driven `OpenVolumetricGeo` output from the combined
+MP4. Nuke frame 1 maps to media time zero by default, with explicit start-frame,
+frame-offset, source-rate, and scale controls. Core XYZ coordinates are
+preserved, clockwise triangles are converted to Nuke's counter-clockwise
+convention, and point-rate normals and UVs are expanded to face-vertex
+attributes. Source, timing, conversion, and evaluation-time state participate
+in geometry invalidation. Per-engine scene publication is serialized, while
+timeline changes publish time-sampled topology and attribute values without
+recomposing the primitive or dropping its material binding. Interactive Nuke
+17.1v1 validation passed initial
+display, forward and reverse scrubbing, widely separated random jumps, scale
+changes, and repeated rapid jumps without the earlier segmentation fault.
+Texture appearance and final UV comparison continue in Phase 4.
+
+### Phase 4: Texture operator
+
+- [x] Implement `OpenVolumetricTexture` as a demand-driven NDK image operator.
+- [x] Request the same cached presentation timestamp as the geometry operator
+      and convert its YUV planes into Nuke RGB/RGBA output.
+- [x] Declare correct format, bounds, channels, alpha behavior, and source
+      colour metadata where available.
+- [x] Expose the existing luminance, red-channel, and blue-channel controls.
+- [x] Ensure concurrent scanline/tile requests never mutate shared decoded
+      storage or trigger redundant presentation decoding.
+- [ ] Compare decoded texture frames with Unity/Unreal references and verify
+      that arbitrary timeline access cannot mismatch texture and geometry.
+
+Interactive validation confirms synchronized geometry and texture, correct
+first/final-frame holding outside the media range, and persistence across Nuke
+script save/reload. A residual intermittent grey material flash remains under
+investigation before final visual sign-off.
+
+### Phase 5: Artist-facing reader workflow
+
+- [x] Add an `OpenVolumetricRead` Python toolset/group that creates and wires
+      the native geometry and texture operators as one artist-facing reader.
+- [x] Expose exactly one source selector for the combined OpenVolumetric MP4;
+      keep the paired native operators and their synchronized settings as an
+      internal Nuke graph implementation detail.
+- [x] Connect texture output through a suitable two-sided material arrangement
+      while preserving normal Nuke material overrides.
+- [x] Expose source, timing, representation, coordinate, texture-adjustment,
+      cache, reload, and diagnostic controls without duplicating hidden state.
+- [x] Install an OpenVolumetric menu entry, icon, `init.py`, and `menu.py`
+      through a relocatable `NUKE_PATH` package.
+- [x] Keep the native component operators registered for the combined reader,
+      saved-script compatibility, and diagnostics, but omit them from the
+      artist-facing node menu.
+
+Phase 5 provides one local-MP4 reader with timing, coordinate, texture, bounded
+cache, and safe reload controls. The selected local MP4 is the fixed embedded
+representation; manifest and remote fixed-representation selection remain
+explicitly deferred to Phase 8. Downstream material nodes can override the
+reader's internally assigned texture through Nuke's normal geometry workflow.
+Continuous 3D viewport playback can briefly show Nuke's grey fallback material
+while frame-varying topology and its material resources are rebuilt. Random
+access, scrubbing, synchronization, and deterministic frame evaluation remain
+correct, so this is recorded as an interactive-preview limitation rather than
+a decoded-frame mismatch.
+
+### Phase 6: Correctness and lifecycle validation
+
+The manual acceptance procedure is maintained in
+[`NUKE_TESTING.md`](NUKE_TESTING.md). The shared session registry now keeps
+only weak references: native geometry and texture consumers share ownership,
+while deletion of the final consumer deterministically releases its decoder,
+threads, and presentation cache. Interactive teardown validation remains
+required before marking the lifecycle item complete.
+
+#### Timing and trim controls
+
+- [x] Replace the artist-facing `start frame` and `frame offset` controls with
+      an explicit source-range and timeline-placement model while retaining
+      the low-level native timing knobs as hidden implementation details.
+- [x] Expose native media metadata needed by the Python reader, including the
+      native frame rate, duration, and inclusive source-frame range, without
+      opening a second decoder.
+- [x] Add constrained **Trim In** and **Trim Out** sliders for the available
+      source frames, plus a numeric **Timeline Start** control. Nuke's
+      `Range_Knob` is a single scalar with display limits rather than a
+      two-handle range selector, so two explicit endpoints are used.
+- [x] Map Nuke time deterministically using
+      `source frame = trim in + (timeline frame - timeline start)` and keep
+      geometry and texture on the identical derived presentation timestamp.
+- [x] Add explicit **Before** behavior (`none`, `hold`) and **After** behavior
+      (`none`, `hold`, with `loop` considered only if it remains deterministic
+      for background rendering).
+- [x] For `none`, publish no geometry primitive and black/transparent image
+      output outside the active range; never publish an incomplete mesh to
+      Hydra. For `hold`, publish the nearest complete boundary presentation.
+- [ ] Preserve trim range, timeline placement, and boundary modes across clone,
+      copy/paste, script save/reload, source reload, and cache changes.
+- [ ] Validate full-range defaults, trimmed playback, positive and negative
+      timeline placement, single-frame trims, before/after evaluation, random
+      access, and frame-range rendering.
+
+- [x] Test the first, middle, and final frames; sequential playback; reverse
+      playback; repeated scrubbing; large jumps; and loop-like frame orders.
+- [x] Test multiple nodes sharing one source, multiple independent sources,
+      cloning, deletion, project reload, background render, and application
+      shutdown.
+- [ ] Test temporal-geometry keyframe preroll and recovery at the next valid
+      reference after a missing or corrupt dependent sample.
+- [x] Confirm all caches and sessions are released after their final consumer
+      and that partially initialized nodes remain safely destructible.
+- [ ] Confirm existing local, HTTP, adaptive, Unity, Unreal, authoring, and
+      native test suites remain unchanged.
+
+Interactive Nuke 17.1v1 validation passes boundary-frame holding, sequential
+and random timeline access, cloning, reload, deletion, script persistence,
+background rendering, cancellation, clean shutdown, and composition of
+multiple independently transformed readers through `GeoScene`. Reader groups
+publish unique scene paths derived from their parent node names, while readers
+using the same source and cache configuration share a weakly registered native
+session. The registry cannot retain decoder threads or cached presentations
+after the final native node consumer is destroyed.
+
+### Phase 7: Nuke authoring integration
+
+- [ ] Reuse `OpenVolumetricAuthoringCore` for presets, validation, FFmpeg
+      command construction, Draco encoding, topology analysis, packaging, and
+      verification; do not duplicate authoring policy in Nuke.
+- [ ] Add a Nuke-native authoring panel, initially operating on numbered OBJ
+      geometry and texture-image sequences plus optional audio rather than
+      implementing a graph-evaluating Write node.
+- [ ] Expose the frame range, frame rate, output directory, standardized
+      package naming, platform/delivery preset, texture settings, topology
+      compression, maximum geometry-reference interval, fragmented-MP4
+      settings, and optional adaptive-package output.
+- [ ] Run encoding away from Nuke's UI thread with progress, cancellation,
+      actionable validation errors, geometry-keyframe statistics, and final
+      verification results.
+- [ ] Publish output only after it passes the shared authoring verifier and
+      remove incomplete temporary output after cancellation or failure.
+- [ ] Compare Nuke-authored output with equivalent Unity and Unreal authoring
+      jobs and require byte-identical results where inputs and deterministic
+      encoder settings permit them; otherwise compare verified stream,
+      geometry, timing, and manifest semantics.
+- [ ] Consider a fully graph-native writer only after the sequence-based
+      authoring workflow is stable and its Nuke frame-evaluation and render
+      callback requirements are understood.
+
+### Phase 8: Optional remote and packaged-source support
+
+- [ ] Keep local MP4 input as Nuke's primary and required source path.
+- [ ] Optionally add direct HTTP MP4 input by reusing core range transport and
+      fragment caching rather than Nuke-specific networking.
+- [ ] Optionally accept `manifest.json` as a package description, but require
+      the artist to select a fixed representation for deterministic work.
+- [ ] Do not perform automatic adaptive quality switching in interactive or
+      background Nuke evaluation.
+- [ ] Cancel stale downloads during scrubbing and never publish geometry and
+      texture from different representations or timestamp windows.
+- [ ] Require background renders to use a fixed representation and verify that
+      local and HTTP decoding of it is frame-identical.
+
+### Phase 9: Profiling and optimization
+
+- [ ] Measure first-frame latency, sequential decode throughput, random-seek
+      latency, cache hit rate, memory use, duplicate work avoided, Viewer
+      responsiveness, and background-render throughput.
+- [ ] Add monotonic-request read-ahead, shared immutable topology storage,
+      reusable colour-conversion buffers, or bounded decoder-session pooling
+      only where measurements justify the added complexity.
+- [ ] Provide separate conservative cache defaults for interactive and
+      background-render workloads.
+
+### Phase 10: Packaging and documentation
+
+- [ ] Produce a relocatable Nuke package containing native plug-ins, Python
+      startup files, the reader toolset, icons, runtime libraries, and a short
+      installation guide.
+- [ ] Document supported Nuke/OS/architecture combinations, `NUKE_PATH`
+      installation, frame mapping, colour management, cache controls, local
+      and network behavior, build requirements, and limitations.
+- [ ] Record that Nuke's C++ ABI is version-sensitive and build/package a
+      distinct binary for each supported Nuke major/minor release.
+- [ ] Document bundled and externally supplied FFmpeg/Draco dependencies and
+      their licensing implications.
+
+Audio playback, automatic adaptive quality switching, GPU-native YUV
+conversion, Nuke Studio editorial integration, and Windows/Linux binaries are
+outside the initial macOS integration. Audio remains present in authored and
+source MP4 files but is not presented for playback by the Nuke reader.
+
+### Milestone 15 exit criteria
+
+- Nuke 17.1v1 loads and unloads the macOS plug-in without errors or lifecycle
+  crashes.
+- One artist-facing reader produces synchronized animated geometry and
+  texture from an OpenVolumetric MP4.
+- Sequential, repeated, reverse, and arbitrary frame evaluation return the
+  correct timestamped presentation.
+- Output geometry and texture agree with the shared core and Unity/Unreal
+  reference results.
+- Temporal geometry reconstructs correctly after random access and recovers
+  predictably from missing or corrupt dependent data.
+- Multiple readers and background rendering operate within documented memory
+  bounds without duplicate unbounded decode work.
+- The Nuke authoring panel produces a verified OpenVolumetric MP4 from OBJ and
+  texture-image sequences with optional audio, using the same shared authoring
+  implementation and output conventions as Unity and Unreal.
+- Local input passes independently of optional HTTP/package support; any
+  enabled remote mode uses a fixed representation and passes equivalent
+  synchronization and random-access tests.
+- Building, installation, compatibility, ownership, threading, limitations,
+  dependencies, and licensing are documented.
 
 ## Test matrix
 

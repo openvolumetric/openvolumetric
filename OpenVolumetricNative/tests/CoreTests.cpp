@@ -8,6 +8,7 @@
 #include <GeometryPacket.h>
 #include <LocalFileByteSource.h>
 #include <Logger.h>
+#include <OpenVolumetricFrameReader.h>
 #include <OpenVolumetricPlayer.h>
 #include <TopologyAnalyzer.h>
 
@@ -806,6 +807,83 @@ TEST_CASE("player opens, presents, seeks, reaches the tail, and restarts")
 	player.close();
 	player.close();
 	CHECK_FALSE(player.start());
+}
+
+TEST_CASE("demand-driven frame reader caches and evaluates out of order")
+{
+	OpenVolumetricFrameReaderOptions options;
+	options.maximum_cached_presentations = 2;
+	options.maximum_cache_bytes = 1024U * 1024U;
+	options.request_timeout_milliseconds = 3000;
+	OpenVolumetricFrameReader reader(options);
+
+	std::shared_ptr<const OpenVolumetricPresentation> unopened;
+	CHECK(reader.request(0.0, unopened) ==
+		FrameRequestResult::NotOpen);
+	REQUIRE(reader.open(OPENVOLUMETRIC_TEST_FIXTURE));
+	CHECK(reader.media_info().frame_rate == doctest::Approx(4.0));
+
+	std::shared_ptr<const OpenVolumetricPresentation> middle;
+	REQUIRE(reader.request(0.5, middle) == FrameRequestResult::Ready);
+	REQUIRE(middle);
+	CHECK(middle->presentation_time == doctest::Approx(0.5).epsilon(0.01));
+
+	std::shared_ptr<const OpenVolumetricPresentation> first;
+	REQUIRE(reader.request(0.0, first) == FrameRequestResult::Ready);
+	CHECK(first->presentation_time == doctest::Approx(0.0).epsilon(0.01));
+
+	std::shared_ptr<const OpenVolumetricPresentation> middle_again;
+	REQUIRE(reader.request(0.5, middle_again) == FrameRequestResult::Ready);
+	CHECK(middle_again == middle);
+	CHECK(reader.diagnostics().cache_hits == 1);
+
+	std::shared_ptr<const OpenVolumetricPresentation> last;
+	REQUIRE(reader.request(0.75, last) == FrameRequestResult::Ready);
+	CHECK(last->presentation_time == doctest::Approx(0.75).epsilon(0.01));
+	CHECK(reader.diagnostics().cached_presentations == 2);
+	CHECK(reader.diagnostics().cache_evictions == 1);
+	CHECK(reader.error().empty());
+	reader.cancel_pending_requests();
+	std::shared_ptr<const OpenVolumetricPresentation> after_cancel;
+	CHECK(reader.request(0.75, after_cancel) == FrameRequestResult::Ready);
+	CHECK(after_cancel == last);
+	reader.close();
+	reader.close();
+}
+
+TEST_CASE("demand-driven frame reader coalesces concurrent identical requests")
+{
+	OpenVolumetricFrameReaderOptions options;
+	options.maximum_cached_presentations = 2;
+	options.request_timeout_milliseconds = 3000;
+	OpenVolumetricFrameReader reader(options);
+	REQUIRE(reader.open(OPENVOLUMETRIC_TEST_FIXTURE));
+
+	FrameRequestResult first_result = FrameRequestResult::Failed;
+	FrameRequestResult second_result = FrameRequestResult::Failed;
+	std::shared_ptr<const OpenVolumetricPresentation> first;
+	std::shared_ptr<const OpenVolumetricPresentation> second;
+	std::atomic<bool> begin{false};
+	std::thread first_thread([&] {
+		while (!begin.load())
+			std::this_thread::yield();
+		first_result = reader.request(0.25, first);
+	});
+	std::thread second_thread([&] {
+		while (!begin.load())
+			std::this_thread::yield();
+		second_result = reader.request(0.25, second);
+	});
+	begin.store(true);
+	first_thread.join();
+	second_thread.join();
+
+	CHECK(first_result == FrameRequestResult::Ready);
+	CHECK(second_result == FrameRequestResult::Ready);
+	CHECK(first == second);
+	const auto diagnostics = reader.diagnostics();
+	CHECK(diagnostics.cache_misses == 1);
+	CHECK(diagnostics.cache_hits + diagnostics.coalesced_requests == 1);
 }
 
 TEST_CASE("player supports independent geometry and no-audio inputs")

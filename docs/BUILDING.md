@@ -16,6 +16,7 @@ installed native runtimes.
 | `OpenVolumetricUnityPlugin` | CMake target for the Unity runtime and native DSP plug-in |
 | `OpenVolumetricRuntime` | Unreal runtime module |
 | `OpenVolumetricAuthoring` | Unreal Editor module |
+| `OpenVolumetricGeo` | Foundry Nuke geometry-reader plug-in |
 
 ## Development container
 
@@ -219,6 +220,95 @@ The Unreal modules consume only this staged SDK, not the repository source or
 CMake build tree. The macOS Editor build and Win64 staged-SDK creation and
 independent linkage are validated. A Win64 Unreal Editor build and packaged
 application validation remain outstanding.
+
+## Foundry Nuke 17.1v1 on macOS
+
+The Nuke integration is opt-in because the NDK is supplied by a separately
+installed, version-specific Nuke release. Configure a dedicated build and
+point CMake at either the Nuke installation directory or application bundle:
+On macOS, a fresh vcpkg dependency build also requires a host `pkg-config`
+executable.
+
+```sh
+cmake -S OpenVolumetricNative \
+  -B OpenVolumetricNative/build/nuke-17.1 \
+  -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+  -DOPENVOLUMETRIC_BUILD_UNITY=OFF \
+  -DOPENVOLUMETRIC_BUILD_NUKE=ON \
+  -DOPENVOLUMETRIC_NUKE_ROOT=/Applications/Nuke17.1v1
+
+cmake --build OpenVolumetricNative/build/nuke-17.1 \
+  --target OpenVolumetricGeo
+```
+
+The Nuke plug-in is written to:
+
+```text
+OpenVolumetricNative/build/nuke-17.1/integrations/nuke/plugins/
+OpenVolumetricGeo.dylib
+```
+
+Load the development build without copying it into the Nuke installation:
+
+```sh
+export NUKE_PATH="$PWD/OpenVolumetricNative/build/nuke-17.1/integrations/nuke/plugins"
+"/Applications/Nuke17.1v1/Nuke17.1v1.app/Contents/MacOS/Nuke17.1"
+```
+
+Press Tab in Nuke's Node Graph and create `OpenVolumetricRead`. Select one
+combined OpenVolumetric MP4 using its single file control. The group wires the
+native texture into the native geometry source and exposes synchronized timing,
+geometry scale, texture correction, bounded-cache, and safe-reload controls.
+The **Transform** tab links directly to the internal geometry source's standard
+Nuke translation, rotation, scale, skew, pivot, and transform-order knobs, so
+multiple readers using the same MP4 can be positioned independently without
+creating duplicate transform state.
+Each reader also publishes under a scene-graph path derived from its unique
+Group name. Multiple readers—including readers sharing one decoder source—can
+therefore be combined through `GeoScene` without one primitive replacing the
+other.
+The native `OpenVolumetricGeo` and `OpenVolumetricTexture` nodes remain
+available for advanced graphs and diagnostics.
+
+To inspect the geometry component independently, create `OpenVolumetricGeo`.
+Select one
+combined OpenVolumetric MP4 with the node's **OpenVolumetric MP4** control,
+connect it to a Viewer, and switch the Viewer to its 3D view. The default
+mapping treats Nuke frame 1 as media time zero and uses the MP4's native frame
+rate. `start frame`, `frame offset`, and `source frame rate` provide explicit
+timeline overrides; a source-frame-rate value of zero retains the native rate.
+`geometry scale` multiplies decoded object-space positions before publication.
+
+Create `OpenVolumetricTexture` from the same OpenVolumetric menu and select the
+same combined MP4. It uses the identical start-frame, frame-offset, and native
+or overridden source-rate mapping. Connect it directly to a 2D Viewer to
+inspect the synchronized decoded texture. The output is full-frame RGBA with
+opaque alpha; the MP4 width and height define both format and bounds. The
+luminance, red-projection, and blue-projection correction controls use the
+same normalized-YUV offsets and BT.601 conversion as Unity and Unreal. The
+current media-info contract does not expose MP4 colour tags, so the node does
+not claim source-colour metadata.
+
+Both native node descriptions live in `OpenVolumetricGeo.dylib`. This is
+intentional: nodes reading the same source share one demand-driven session,
+coalesced in-flight requests, and bounded immutable presentation cache. An
+`OpenVolumetricTexture.tcl` alias asks Nuke's plug-in loader to load that shared
+module when the texture class is requested; menu callbacks never reload a live
+binary directly.
+
+Scrub forward, backward, and out of order. The operator preserves XYZ axes,
+converts OpenVolumetric's clockwise triangle list to Nuke's counter-clockwise
+winding, and publishes synchronized positions, normals, and UVs. Delete and
+recreate the node, then quit Nuke normally to check lifecycle cleanup. Nuke's
+C++ ABI is version-sensitive, so rebuild the plug-in against each supported
+Nuke major/minor SDK.
+
+The generated relocatable package contains `init.py`, `menu.py`, the combined
+reader constructor, icon resources, and the shared native module. Nuke
+discovers it from the same `NUKE_PATH` directory. Use
+[NUKE_TESTING.md](NUKE_TESTING.md) for the Phase 6 validation procedure.
 
 ## Authoring dependency
 

@@ -288,6 +288,20 @@ bool AVDecoderFFMPEG::init_video_context()
 			m_video_stream->duration <= 0
 				? 0.0
 				: m_video_stream->duration * av_q2d(m_video_stream->time_base));
+		// Fragmented MP4 commonly omits AVStream::nb_frames because samples are
+		// discovered fragment by fragment. Keep the container value when present,
+		// otherwise derive the inclusive presentation count from validated timing.
+		if (m_video_info.frame_count == 0 &&
+			std::isfinite(m_video_info.fps) && m_video_info.fps > 0.0 &&
+			std::isfinite(m_video_info.total_time) && m_video_info.total_time > 0.0)
+		{
+			const double derived_count = std::ceil(
+				m_video_info.total_time * m_video_info.fps);
+			m_video_info.frame_count = static_cast<int>(std::clamp(
+				derived_count,
+				1.0,
+				static_cast<double>(std::numeric_limits<int>::max())));
+		}
 
 		// Report video properties to log
 		LOG("AVDecoderFFMPEG::init_video_context - Video Stream:  %d",		m_video_stream_index);
@@ -1038,16 +1052,12 @@ void AVDecoderFFMPEG::free_front_frame()
 // Delete all data in the buffers
 void AVDecoderFFMPEG::flush_buffers()
 {
-	LOG(" AVDecoderFFMPEG::flush_buffers - start");
-
 	//std::lock_guard<std::mutex> lock(m_video_mutex);
 
 	m_video_frames.clear([](FrameData& frame)
 	{
 		av_frame_free(&frame.data);
 	});
-
-	LOG(" AVDecoderFFMPEG::flush_buffers - end");
 }
 bool AVDecoderFFMPEG::seek(double time)
 {

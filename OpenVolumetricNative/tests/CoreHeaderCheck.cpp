@@ -9,6 +9,7 @@
 #include <IByteSource.h>
 #include <IGeometryDecoder.h>
 #include <IVolumetricContainer.h>
+#include <OpenVolumetricFrameReader.h>
 #include <OpenVolumetricPlayer.h>
 
 static_assert(sizeof(openvolumetric::OpenVolumetricMediaInfo) > 0,

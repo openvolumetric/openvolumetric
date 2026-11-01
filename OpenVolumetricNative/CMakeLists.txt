@@ -18,6 +18,12 @@ option(OPENVOLUMETRIC_WARNINGS_AS_ERRORS
   "Treat OpenVolumetric compiler warnings as errors" OFF)
 option(OPENVOLUMETRIC_ENABLE_SANITIZERS
   "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+option(OPENVOLUMETRIC_BUILD_UNITY
+  "Build the native Unity integration on supported platforms" ON)
+option(OPENVOLUMETRIC_BUILD_NUKE
+  "Build the Foundry Nuke integration" OFF)
+set(OPENVOLUMETRIC_NUKE_ROOT "" CACHE PATH
+  "Nuke installation root, application bundle, or directory containing NukeConfig.cmake")
 
 function(openvolumetric_apply_build_options target)
   if(WIN32)
@@ -50,11 +56,18 @@ endif()
 
 # The native Unity integration is built here. Unreal links the same portable
 # core from its engine module rather than compiling an additional CMake target.
-if(WIN32 OR APPLE OR ANDROID)
+if(OPENVOLUMETRIC_BUILD_UNITY AND (WIN32 OR APPLE OR ANDROID))
   add_subdirectory(integrations/unity)
-else()
+elseif(OPENVOLUMETRIC_BUILD_UNITY)
   message(STATUS
     "Building OpenVolumetricCore only; no engine integration is available for this platform")
+endif()
+
+if(OPENVOLUMETRIC_BUILD_NUKE)
+  if(ANDROID)
+    message(FATAL_ERROR "The Foundry Nuke integration cannot be built for Android")
+  endif()
+  add_subdirectory(integrations/nuke)
 endif()
 
 if(BUILD_TESTING AND NOT ANDROID)

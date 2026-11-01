@@ -31,8 +31,10 @@ Unreal Editor 5.8 on macOS with synchronized geometry, texture, and audio.
 Progressive HTTP playback, seeking, and looping have been exercised through
 the common core from both Unity/Quest and Unreal/macOS. A
 Windows D3D11 implementation exists but still requires clean-build validation
-on the current renamed repository. Unreal packaged builds and a Nuke
-integration remain planned.
+on the current renamed repository. Unreal packaged builds remain planned. A
+Nuke 17.1v1 macOS plug-in skeleton now loads interactively, and its shared core
+has an implemented demand-driven random-access façade; geometry and texture
+operators remain under development.
 
 The main source-level boundaries are documented in `OpenVolumetricNative/src/core`
 and `docs/ENGINE_INTEGRATION.md`.
@@ -53,7 +55,7 @@ and `docs/ENGINE_INTEGRATION.md`.
 | Fixed-representation fragment scheduling | Implemented | `mfra`/`tfra` index; Quest playback/seeking/recovery and Unreal recovery validated manually |
 | Adaptive representation switching | Proposed | Design and evaluation plan only |
 | Windows and Unreal packaged deployment | Partially implemented | Current clean-build/runtime validation pending |
-| Nuke integration | Proposed | Architectural feasibility only |
+| Nuke integration | In progress | Nuke 17.1v1 combined local-MP4 reader validated for synchronized geometry/texture, random access, scrubbing, and Write workflows; broader lifecycle validation remains |
 
 The distinction between functional validation and controlled experimental
 evidence is important. Manual tests establish feasibility; they do not by
@@ -943,7 +945,7 @@ fallback.
 | Unreal Engine 5.8 Editor on macOS | Dynamic Mesh, transient BGRA texture, procedural audio | Local and progressive HTTP playback implemented and manually validated |
 | Unreal packaged applications | Initial macOS target | Dependency staging and packaged-build validation outstanding |
 | Linux | Core only | Native core can build; no engine rendering integration |
-| Nuke | Feasibility planned | Not implemented |
+| Nuke 17.1v1 on macOS | Native NDK plug-in | Geometry and RGBA texture sources implemented; synchronized visual validation pending |
 
 The Android preset targets:
 
@@ -1440,12 +1442,14 @@ codec/mode combinations must continue to fail explicitly.
 
 ### 14.4 Offline applications
 
-A Nuke integration would require a different evaluation style from Unity.
-Rather than continuously advancing a DSP clock, it would request deterministic
-geometry and imagery for arbitrary timeline frames, including backwards and
-out-of-order evaluation. The container and timestamp model can support this,
-but the public core API needs a stronger pull-based, frame-at-time interface
-and explicit concurrency rules.
+`OpenVolumetricFrameReader` implements Nuke's required evaluation style. Unlike
+the continuously advancing Unity and Unreal sessions, it requests deterministic
+geometry and imagery for exact timeline timestamps, including backwards and
+out-of-order evaluation. It reconstructs temporal geometry by widening preroll
+to an earlier reference when required, coalesces identical concurrent requests,
+and returns immutable owned presentations through a bounded LRU cache. Different
+cache misses serialize around one mutable FFmpeg/Draco session; hosts explicitly
+cancel obsolete request generations when source or timeline evaluation changes.
 
 ## 15. Novel design decisions versus implementation choices
 
@@ -1582,7 +1586,10 @@ The most significant limitations of the current system are:
   validated.
 - The engine-neutral adaptive policy supports arbitrary compatible ladders,
   but current authoring presets still emit only Low and High representations.
-- A Nuke integration remains planned.
+- The Nuke 17.1v1 macOS integration is implemented for local MP4 reading and
+  deterministic geometry/texture evaluation. Nuke audio presentation,
+  authoring, remote/package sources, cross-platform binaries, and complete
+  lifecycle validation remain future work.
 - Error recovery generally stops or seeks the pipeline; damaged-sample
   concealment is limited.
 - The current system has been evaluated on a small content set and does not

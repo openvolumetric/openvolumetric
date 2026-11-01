@@ -17,6 +17,7 @@ add_library(OpenVolumetricCore STATIC
   container/FFmpegMp4VolumetricContainer.cpp
   container/GeometryPacket.cpp
   decoding/AdaptivePlayerCoordinator.cpp
+  decoding/OpenVolumetricFrameReader.cpp
   decoding/OpenVolumetricPlayer.cpp
   geometry/DracoPointCloudDecoder.cpp
   geometry/GeometryDecoderDraco.cpp
@@ -84,6 +85,7 @@ set(OPENVOLUMETRIC_PUBLIC_HEADERS
   decoding/IAVDecoder.h
   decoding/IDecoder.h
   decoding/IGeometryDecoder.h
+  decoding/OpenVolumetricFrameReader.h
   decoding/OpenVolumetricPlayer.h
   geometry/Mesh.h
   io/IByteSource.h

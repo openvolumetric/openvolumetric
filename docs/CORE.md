@@ -43,6 +43,13 @@ only when both are available. Unity uploads it through its native render
 callback; Unreal converts the same engine-neutral presentation into its
 dynamic mesh and transient texture resources.
 
+Offline and timeline hosts use `OpenVolumetricFrameReader` instead. It has no
+advancing clock: a request names an exact media timestamp and receives one
+shared, immutable, complete presentation. The reader seeks and progressively
+widens its preroll when a temporal geometry update depends on an earlier
+topology reference. Identical in-flight timestamps are coalesced and completed
+presentations are retained in a frame-count- and byte-bounded LRU cache.
+
 For an adaptive manifest, the engine selects an initial representation before
 opening this pipeline. `AdaptivePlayerCoordinator` retains the active
 `OpenVolumetricPlayer` while a private worker opens, seeks, and primes a second
@@ -145,6 +152,11 @@ to an engine adapter.
 - HTTP downloading has one byte-source worker and a byte-budgeted cache.
   Container reads block only on the requested range, while speculative
   fragment read-ahead yields to demanded reads.
+- `OpenVolumetricFrameReader` serializes different cache misses around its one
+  mutable FFmpeg/Draco session. Duplicate timestamps wait on the same result;
+  returned `shared_ptr<const OpenVolumetricPresentation>` values remain valid
+  independently of cache eviction or reader shutdown. Hosts may cancel an
+  obsolete evaluation generation without clearing completed cache entries.
 
 ## Container validation
 

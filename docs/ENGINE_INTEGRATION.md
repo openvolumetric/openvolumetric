@@ -56,6 +56,7 @@ or headers in the native core.
 | `AdaptivePolicy` | Converts representation metadata and runtime observations into deterministic stay, adjacent-switch, or retry-later decisions. |
 | `AdaptivePlayerCoordinator` | Retains active playback while a generation-safe candidate session opens, seeks, primes, and commits atomically at an aligned boundary. |
 | `OpenVolumetricPlayer` | Owns media and geometry decoding, seeking, timestamp matching, and complete CPU-side presentations. |
+| `OpenVolumetricFrameReader` | Provides exact-time, demand-driven immutable presentations, temporal-reference preroll, duplicate-request coalescing, and a bounded LRU cache for offline hosts. |
 | `IAVDecoder` | Opens the combined MP4 and supplies timestamped YUV video, PCM audio, and compressed geometry. |
 | `IGeometryDecoder` | Converts generation-tagged Draco payloads into timestamped engine-neutral `Mesh` values. |
 | `Mesh` | CPU-side indices, positions, normals, and UVs with no engine dependency. |
@@ -111,6 +112,7 @@ to them.
 | Engine audio thread | Call the coordinator's `read_audio()` to pull interleaved floating-point PCM; never initiate rendering or seeking. |
 | Adaptive preparation worker | Open, seek, start, and prime one candidate player; publish only when its generation is current. |
 | HTTP byte-source worker | Fetch demanded ranges and bounded fragment read-ahead without mutating decoder state. |
+| Offline host evaluation thread | Call `OpenVolumetricFrameReader::request()`; different misses serialize, while equal timestamps share one in-flight result. |
 
 An adapter must not invoke FFmpeg or manipulate core queues from an engine
 thread. Runtime seeks are submitted through `AdaptivePlayerCoordinator::seek()`
